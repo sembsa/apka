@@ -1,0 +1,43 @@
+@page "/proposals/{ProjectId}"
+@inject IProjectApi Api
+@inject NavigationManager Nav
+@using Generator.Web.Contracts
+
+<h1>Wybierz, która wygląda lepiej</h1>
+
+@if (_proposals is null)
+{
+    <p aria-live="polite">Przygotowuję trzy propozycje…</p>
+}
+else
+{
+    <div class="propozycje">
+        @foreach (var p in _proposals)
+        {
+            <figure>
+                @* srcdoc, nie src: propozycja nie jest jeszcze zapisana na dysku *@
+                <iframe title="@p.Name" srcdoc="@p.PreviewHtml" sandbox=""></iframe>
+                <figcaption>@p.Name</figcaption>
+                <button data-test="wybierz" @onclick="() => Choose(p.Id)">Ta mi się podoba</button>
+            </figure>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public string ProjectId { get; set; } = string.Empty;
+
+    private IReadOnlyList<ProposalView>? _proposals;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Api.RequestProposalsAsync(ProjectId);
+        _proposals = await Api.GetProposalsAsync(ProjectId);
+    }
+
+    private async Task Choose(string proposalId)
+    {
+        await Api.ChooseProposalAsync(ProjectId, proposalId);
+        Nav.NavigateTo($"/editor/{ProjectId}");
+    }
+}
