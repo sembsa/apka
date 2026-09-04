@@ -126,10 +126,22 @@ Dwie rzeczy warto rozdzielić, bo mieszają się w intuicji:
   Płaci się za zużycie modelu, dokładnie tak samo jak przy `claude -p`.
 - **Kosztuje sposób rozliczenia w produkcji, i to niezależnie od SDK** — patrz sekcja 11.
 
-Gdy wrócimy do SDK, opcje mapują się 1:1 (`cwd`, `allowedTools`, `resume`, `systemPrompt`,
-`settingSources`), więc podmiana dotyka **jednego modułu**. Dlatego interfejs powyżej
-istnieje od pierwszego dnia — nie dlatego, że planujemy migrację, a dlatego, że nie chcemy
-przepisywać połowy aplikacji, jeśli kiedyś będzie sens.
+Po decyzji 1 (C#/.NET) sprawa jest domknięta: **nie ma oficjalnego Agent SDK dla .NET**,
+więc owijka na `claude -p` jest **docelowym kształtem silnika**, nie etapem przejściowym.
+Realną alternatywą na przyszłość jest zejście do Messages API — i wtedy tracimy gotowy
+harness do pracy na plikach, czyli piszemy własną pętlę narzędziową. Świadomy koszt,
+nie opcja na już.
+
+Interfejs `generate(...)` zostaje, ale jego rolą nie jest już „podmiana na SDK w jednym
+module" — to granica testowalności silnika i miejsce, w którym siedzi bramka z 5.1.
+Bramka akceptacji wersji jest **trwałą częścią architektury**: nie posprząta po niej
+żadna późniejsza migracja.
+
+**Konkret pod .NET:** proces `claude -p` czeka 3 sekundy na stdin, jeśli go nie dostanie
+(`Warning: no stdin data received in 3s, proceeding without it` — potwierdzone po obu
+stronach). W `ProcessStartInfo` ustawiamy `RedirectStandardInput = true` i **od razu
+zamykamy** strumień, inaczej doklejamy 3 sekundy do każdego zadania. Prompt idzie
+argumentem, nie przez stdin.
 
 ### 5.1 Kiedy zadanie jest udane (bramka, nie exit code)
 
@@ -175,7 +187,7 @@ Po każdej generacji, przed zapisaniem wersji i pokazaniem jej klientowi:
 |---|---|
 | `Project` | id, kontakt klienta, źródło (`url` \| `idea`), workspaceDir, status |
 | `Proposal` | id, projectId, wariant (A/B/C), brief, wybrany? |
-| `Version` | id, projectId, numer, sessionId, snapshotRef, koszt |
+| `Version` | id, projectId, numer, sessionId, katalog snapshotu, koszt |
 | `Comment` | id, versionId, anchor (`data-cmt-id` albo null), treść, status (`open`/`applied`/`rejected`) |
 | `Job` | id, projectId, typ, status, log, błąd |
 
@@ -195,7 +207,10 @@ To nie jest szczegół implementacyjny — bez tego produkt jest nieużywalny.
 
 ## 8. Rozważone podejścia (stack)
 
-**A. TypeScript/Node — rekomendacja.** Oficjalny Claude Agent SDK, jeden język na front i back,
+> Wynik: wybrany **wariant B (C#/.NET)** — patrz decyzja 1 w sekcji 9. Poniżej zostawiony
+> zapis rozważań, bo tłumaczy, dlaczego rekomendacja A przestała się bronić po decyzji 6.
+
+**A. TypeScript/Node — pierwotna rekomendacja.** Oficjalny Claude Agent SDK, jeden język na front i back,
 działa u Przemka na Windows bez kombinowania. Frontend (podgląd, przypinanie komentarzy)
 i tak jest w JS, więc drugi język byłby dodatkowym kosztem bez zysku.
 
@@ -208,34 +223,18 @@ bez przewagi B (znajomość).
 
 ## 9. Decyzje — zatwierdzone 2026-09-04
 
-Zgodne — zatwierdzone:
-
+1. **Stack: C#/.NET.** Rozstrzygnięte 2026-09-04 na rzecz wariantu B (wersja Przemka).
+   Decyzja 6 wyjęła główny argument z rekomendacji A — przewagą TypeScriptu był oficjalny
+   Agent SDK, którego nie używamy. `claude -p` z .NET to zwykły `Process`, a C# to Wasz
+   język zawodowy. Frontend zostaje w JS.
 2. **Publikacja w v1: podgląd pod naszym linkiem + ZIP do pobrania.** Domeny i hosting osobno.
 3. **Bez kont i logowania w v1.** Projekt = link z tokenem. Auth dokładamy, gdy generator się sprawdzi.
 4. **Wyjście: statyczne HTML + CSS + minimum JS.** Bez frameworka, bez CMS.
-6. **Silnik: `claude -p`, bez Claude Agent SDK na tę chwilę** (sekcja 5).
-
-### ⚠ Do rozstrzygnięcia — sprzeczne decyzje (2026-09-04)
-
-Sebastian i Przemek zdecydowali równolegle, przeciwnie. Nie wybieram za Was; poniżej bilans.
-
-**1. Stack** — Sebastian: **TypeScript/Node**. Przemek: **C#/.NET**
-([recenzja](2026-09-04-generator-stron-plan-recenzja-przemek.md)).
-
-Uczciwie: **decyzja 6 (bez Agent SDK) wyjęła główny argument z rekomendacji A.** Przewagą
-TS był oficjalny Agent SDK — skoro go nie używamy, zostaje tylko „jeden język front+back",
-a frontend i tak jest w JS przy każdym wyborze backendu. Przeciwnie: `claude -p` odpalany
-z .NET to zwykły `Process`, a C# to Wasz dom zawodowy. Argument Przemka („owijka jest
-docelowa, nie przejściowa") jest konsekwencją Waszej własnej decyzji 6, nie kaprysem.
-Jeśli chcecie jednego języka po obu stronach — jest też wariant C#/Blazor, wtedy podgląd
-w iframe i przypinanie komentarzy idą przez JS interop.
-
-**5. Wersjonowanie** — Sebastian: **repo git**, wersja = commit. Przemek: **kopie katalogów**.
-
-Tu argument Przemka jest **mocniejszy niż mój pierwotny**: przy walidacji z 5.2 snapshotem
-zostaje tylko wersja **zaakceptowana**, a odrzucona próba nie zostawia śmiecia w historii.
-Przy git trzeba by generować na branchu i sprzątać nieudane commity. Koszt kopii katalogów:
-diff „przed/po" piszemy sami — przy decyzji 4 to porównanie kilku plików tekstowych.
+5. **Wersjonowanie: kopie katalogów** (wersja Przemka). Snapshotem zostaje **tylko wersja,
+   która przeszła walidację z 5.2** — odrzucona próba nie zostawia śmiecia w historii.
+   Przy git trzeba by generować na branchu i sprzątać nieudane commity. Koszt przyjęty
+   świadomie: diff „przed/po" piszemy sami (przy decyzji 4 to kilka plików tekstowych).
+6. **Silnik: `claude -p`, bez Claude Agent SDK** (sekcja 5).
 
 Podział pracy (propozycja, do potwierdzenia):
 
