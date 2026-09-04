@@ -41,7 +41,7 @@ else
            Kontrakt 5.3. *@
         var zmienioneJest = (wersja.ChangedAnchors?.Count ?? 0) > 0;
         var src = zmienioneJest && _pokazZmiany
-            ? $"{wersja.PreviewUrl}/?zmienione=true"
+            ? $"{wersja.PreviewUrl}?zmienione=true"
             : wersja.PreviewUrl;
 
         @* Tryb podgladu jest JEDNYM zrodlem prawdy o viewporcie (kontrakt 3.2):

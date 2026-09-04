@@ -156,7 +156,7 @@ public class MockProjectApi : IProjectApi
         _projects[id] = project with
         {
             Status = "active",
-            Versions = [new VersionView(1, $"/preview/{id}/1", [], BasedOn: null, ChangedAnchors: [])],
+            Versions = [new VersionView(1, $"/preview/{id}/1/", [], BasedOn: null, ChangedAnchors: [])],
             CurrentVersion = 1,
         };
     }
@@ -263,7 +263,7 @@ public class MockProjectApi : IProjectApi
         {
             RoundsUsed = project.RoundsUsed + 1,
             Versions = [.. project.Versions,
-                new VersionView(numer, $"/preview/{id}/{numer}", [], rodzic, zmienione)],
+                new VersionView(numer, $"/preview/{id}/{numer}/", [], rodzic, zmienione)],
             CurrentVersion = numer,
         };
         _jobs[jobId] = new JobView(jobId, "succeeded", null);

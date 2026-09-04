@@ -412,3 +412,22 @@ telefon" zmienia `style`, a **tekst zostaje identyczny** — porównanie tekstu 
 > zmiany widocznej dla klienta. To cena wybranego wariantu (podświetlanie zamiast dwóch
 > podglądów obok siebie). Fałszywy alarm jest tu tańszy niż przeoczona zmiana: klient
 > widzi obramowanie i sprawdza, zamiast przegapić coś, o co nie prosił.
+
+### 5.4 `previewUrl` MUSI kończyć się ukośnikiem
+
+Strona klienta odwołuje się do swoich zasobów **względnie** (`href="styl.css"`,
+`src="zdjecie.jpg"`) — bo taka trafia do ZIP-a i ma działać po rozpakowaniu gdziekolwiek.
+Dlatego adres podglądu musi być adresem **katalogu**:
+
+```
+dobrze:  /preview/{projectId}/{version}/
+zle:     /preview/{projectId}/{version}
+```
+
+Bez końcowego ukośnika przeglądarka rozwiązuje `styl.css` względem katalogu **nadrzędnego**
+(`/preview/{projectId}/styl.css`) i dostaje `404`. Strona wyświetla się wtedy bez własnego
+arkusza — inny font, brak układu.
+
+To nie jest kosmetyka, tylko **fałszywy obraz produktu**: klient ocenia swoją stronę na
+podstawie podglądu i zgłasza uwagi do wyglądu, którego w rzeczywistej stronie nie ma.
+Trafiło do nas dokładnie tak — wyszło dopiero przy oglądaniu aplikacji, nie w testach.

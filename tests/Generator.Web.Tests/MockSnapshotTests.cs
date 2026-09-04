@@ -75,8 +75,33 @@ public class MockSnapshotTests : IDisposable
         var po = await api.GetAsync(p.Id);
         var wersja = Assert.Single(po.Versions);
         Assert.Equal(1, wersja.Number);
-        Assert.Equal($"/preview/{p.Id}/1", wersja.PreviewUrl);
+        // Ukosnik na koncu jest istotny, nie kosmetyczny — patrz test nizej.
+        Assert.Equal($"/preview/{p.Id}/1/", wersja.PreviewUrl);
         Assert.True(File.Exists(Path.Combine(_root, p.Id, "v1", "index.html")));
+    }
+
+    /// <summary>
+    /// Znalezione przy pokazie w przegladarce. `previewUrl` bez koncowego ukosnika
+    /// („/preview/{id}/1") powoduje, ze przegladarka rozwiazuje relatywne `styl.css`
+    /// O KATALOG WYZEJ — czyli 404. Klient oceniał wtedy swoja strone w podgladzie
+    /// BEZ jej wlasnego arkusza: inny font, inny uklad. Testy tego nie widzialy, bo
+    /// zadny nie sprawdzal, co przegladarka zrobi z adresem wzglednym.
+    /// </summary>
+    [Fact]
+    public async Task Adres_podgladu_konczy_sie_ukosnikiem_bo_strona_ma_adresy_wzgledne()
+    {
+        var api = new MockProjectApi { SimulatedDelay = TimeSpan.Zero, SnapshotRoot = _root };
+        var p = await api.CreateAsync("idea", "Fryzjer");
+        await api.ChooseProposalAsync(p.Id, "p-1");
+        await api.ApplyCommentsAsync(p.Id, 1, []);
+
+        var projekt = await api.GetAsync(p.Id);
+        Assert.All(projekt.Versions, w => Assert.EndsWith("/", w.PreviewUrl));
+
+        // I dowod, ze to ma znaczenie: snapshot faktycznie odwoluje sie relatywnie.
+        var html = await File.ReadAllTextAsync(
+            Path.Combine(_root, p.Id, "v1", "index.html"));
+        Assert.Contains("""href="styl.css""", html);
     }
 
     public void Dispose()
