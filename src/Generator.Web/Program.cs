@@ -5,9 +5,13 @@ using Generator.Web.Preview;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
+// Jeden katalog na snapshoty: mock go zapisuje, /preview z niego czyta. Gdyby te dwie
+// sciezki sie rozjechaly, iframe byłby pusty, a testy komponentow tego nie widza.
+var snapshotRoot = builder.Configuration["Projects:Root"]
+    ?? Path.Combine(Path.GetTempPath(), "generator-stron");
+
 // Backend w pamieci do czasu Planu B. Podmiana na klienta HTTP dotknie tej jednej linii.
-builder.Services.AddSingleton<IProjectApi, MockProjectApi>();
+builder.Services.AddSingleton<IProjectApi>(_ => new MockProjectApi { SnapshotRoot = snapshotRoot });
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
@@ -32,7 +36,6 @@ app.MapRazorComponents<App>()
 
 // Podglad snapshotu wersji. Skrypt zbierajacy klikniecia doklejamy TUTAJ, przy
 // serwowaniu - snapshot na dysku i ZIP klienta zostaja czyste.
-app.MapPreview((projectId, version) =>
-    Path.Combine(builder.Configuration["Projects:Root"] ?? Path.GetTempPath(), projectId, $"v{version}"));
+app.MapPreview((projectId, version) => Path.Combine(snapshotRoot, projectId, $"v{version}"));
 
 app.Run();

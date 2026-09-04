@@ -1698,6 +1698,24 @@ git push
 
 ### Task 8: Ręczne przejście całej ścieżki
 
+> **Wynik przejścia 2026-09-04 (Przemek).** To zadanie zarobiło na siebie w pierwszej
+> minucie: aplikacja nie miała NIGDZIE `@rendermode`, więc chodziła w statycznym SSR
+> i **każdy `@onclick` był martwy** — przy 44 zielonych testach bUnit, bo bUnit zawsze
+> renderuje interaktywnie i tej klasy błędu nie widzi strukturalnie. Naprawione:
+> `<Routes @rendermode="InteractiveServer" />` w `App.razor`, plus `comment-bridge.js`
+> dociągany tagiem `<script>` (nikt go wcześniej nie ładował) i wspólny katalog
+> snapshotów dla mocka i `/preview`.
+>
+> Sprawdzone żądaniami na działającej aplikacji: strona startowa renderuje kreator;
+> `/js/preview-click.js` serwowany (200, `text/javascript`); `/preview/{id}/{n}/` zwraca
+> snapshot z doklejonym `<script>` i nietkniętą treścią klienta; wyjście poza katalog
+> snapshotu (`../../`) daje 404; po poprawce obwód SignalR łączy się (WebSocket w konsoli).
+>
+> **Nieprzeklikane do końca:** kroki 2–3 (formularz → propozycje → klik w blok w iframe
+> → uwaga → runda). Narzędzia przeglądarki przestały odpowiadać (CDP `Page.captureScreenshot`
+> timeout, kliknięcia bez efektu). Do powtórzenia ręcznie — to jedyna część, której
+> bUnit nie potrafi zastąpić.
+
 Jedyne zadanie bez testu jednostkowego: sprawdzenie, czy to **da się przejść jako klient**, a nie czy komponenty działają.
 
 **Files:**

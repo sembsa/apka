@@ -1,5 +1,5 @@
 ﻿<!DOCTYPE html>
-<html lang="en">
+<html lang="pl">
 
 <head>
     <meta charset="utf-8" />
@@ -13,8 +13,11 @@
 </head>
 
 <body>
-    <Routes />
+    @* Bez tego cala aplikacja chodzi w statycznym SSR i kazdy @onclick jest martwy —
+       testy bUnit tego nie widza, bo bUnit zawsze renderuje interaktywnie. *@
+    <Routes @rendermode="InteractiveServer" />
     <ReconnectModal />
+    <script src="/js/comment-bridge.js"></script>
     <script src="@Assets["_framework/blazor.web.js"]"></script>
 </body>
 

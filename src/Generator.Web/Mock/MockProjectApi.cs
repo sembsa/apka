@@ -19,6 +19,13 @@ public class MockProjectApi : IProjectApi
     public MockJobOutcome NextJobOutcome { get; set; } = MockJobOutcome.Success;
     public TimeSpan SimulatedDelay { get; set; } = TimeSpan.FromSeconds(2);
 
+    /// <summary>
+    /// Katalog, w którym mock zapisuje snapshoty wersji. Musi być ten sam, z którego
+    /// czyta `/preview` — endpoint serwuje PLIKI, nie metadane, więc bez zapisu cała
+    /// ścieżka klienta kończy się pustym iframe'em.
+    /// </summary>
+    public string SnapshotRoot { get; set; } = Path.GetTempPath();
+
     public Task<ProjectView> CreateAsync(string source, string description)
     {
         var p = new ProjectView(
@@ -111,11 +118,13 @@ public class MockProjectApi : IProjectApi
                         Note = $"Zrobione: {c.Text}",
                     }),
                 ];
+                var numer = project.Versions.Count + 1;
+                await ZapiszSnapshot(id, numer, comments);
                 _projects[id] = project with
                 {
                     RoundsUsed = project.RoundsUsed + 1,
                     Versions = [.. project.Versions,
-                        new VersionView(project.Versions.Count + 1, $"/preview/{id}/{project.Versions.Count + 1}", [])],
+                        new VersionView(numer, $"/preview/{id}/{numer}", [])],
                 };
                 _jobs[jobId] = new JobView(jobId, "succeeded", null);
                 break;
@@ -131,6 +140,42 @@ public class MockProjectApi : IProjectApi
         }
 
         return jobId;
+    }
+
+    /// <summary>
+    /// Udaje to, co robi VersionStore z Planu A: kladzie na dysk katalog wersji z gotowa
+    /// strona. Bloki maja data-cmt-id opisujace ROLE, nigdy pozycje (kontrakt 3.1) —
+    /// "oferta-1" jest bledem, bo wstawienie elementu przesuwa numery i komentarze
+    /// wskazuja w cudze bloki. Skryptu podgladu tu NIE MA: dokleja go PreviewInjector
+    /// przy serwowaniu, zeby ZIP klienta zostal czysty.
+    /// </summary>
+    private async Task ZapiszSnapshot(string id, int numer, IReadOnlyList<CommentDto> uwagi)
+    {
+        var katalog = Path.Combine(SnapshotRoot, id, $"v{numer}");
+        Directory.CreateDirectory(katalog);
+
+        var uwzglednione = uwagi.Count == 0
+            ? "<!-- wersja poczatkowa -->"
+            : string.Join("\n    ", uwagi.Select(u =>
+                $"<!-- uwzgledniono: {System.Net.WebUtility.HtmlEncode(u.Text)} -->"));
+
+        var html = $"""
+        <html lang="pl">
+        <head><meta charset="utf-8"><title>Fryzjer</title><link rel="stylesheet" href="styl.css"></head>
+        <body>
+            {uwzglednione}
+            <h1 data-cmt-id="hero">Fryzjer Anna</h1>
+            <section data-cmt-id="oferta-strzyzenie"><h2>Strzyżenie</h2><p>60 zł</p></section>
+            <section data-cmt-id="oferta-broda"><h2>Broda</h2><p>40 zł</p></section>
+            <ul data-cmt-id="cennik"><li>Strzyżenie 60 zł</li><li>Broda 40 zł</li></ul>
+            <footer data-cmt-id="kontakt">tel. 600 100 200, ul. Krakowska 5</footer>
+        </body>
+        </html>
+        """;
+
+        await File.WriteAllTextAsync(Path.Combine(katalog, "index.html"), html);
+        await File.WriteAllTextAsync(Path.Combine(katalog, "styl.css"),
+            "body{font-family:system-ui;max-width:38rem;margin:2rem auto;line-height:1.5}");
     }
 
     public Task<JobView> GetJobAsync(string jobId) => Task.FromResult(_jobs[jobId]);
