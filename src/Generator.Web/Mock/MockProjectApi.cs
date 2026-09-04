@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Generator.Web.Contracts;
+using Generator.Web.Preview;
 
 namespace Generator.Web.Mock;
 
@@ -15,6 +16,13 @@ public class MockProjectApi : IProjectApi
     private readonly ConcurrentDictionary<string, ProjectView> _projects = new();
     private readonly ConcurrentDictionary<string, JobView> _jobs = new();
     private readonly ConcurrentDictionary<(string, int), List<CommentDto>> _comments = new();
+
+    /// <summary>
+    /// Kotwice, ktore atrapa „poprawila" do danej wersji wlacznie. Kumuluja sie PO
+    /// RODZICU, nie po numerze: inaczej wersja powstala liniowo gubilaby wyrozniki
+    /// rodzica i podswietlenie pokazywaloby zmiany, ktorych nie bylo.
+    /// </summary>
+    private readonly ConcurrentDictionary<(string, int), HashSet<string>> _wyroznione = new();
 
     public MockJobOutcome NextJobOutcome { get; set; } = MockJobOutcome.Success;
     public TimeSpan SimulatedDelay { get; set; } = TimeSpan.FromSeconds(2);
@@ -104,13 +112,44 @@ public class MockProjectApi : IProjectApi
         var project = _projects[id];
         if (project.Versions.Count > 0) return;
 
-        await ZapiszSnapshot(id, 1, []);
+        await ZapiszSnapshot(id, 1, [], rodzic: null);
         _projects[id] = project with
         {
             Status = "active",
-            Versions = [new VersionView(1, $"/preview/{id}/1", [], BasedOn: null)],
+            Versions = [new VersionView(1, $"/preview/{id}/1", [], BasedOn: null, ChangedAnchors: [])],
             CurrentVersion = 1,
         };
+    }
+
+    /// <summary>
+    /// Kontrakt 5.1. Zamrozenie NIE blokuje powrotu — 4.5 blokuje nowe rundy, a nie
+    /// ogladanie tego, co klient juz ma. Runda sie nie zuzywa, bo model sie nie uruchamia.
+    /// </summary>
+    public Task RollbackAsync(string id, int version)
+    {
+        var project = _projects[id];
+        if (project.Versions.All(v => v.Number != version))
+            throw new ArgumentOutOfRangeException(nameof(version), $"nie ma wersji {version}");
+
+        _projects[id] = project with { CurrentVersion = version };
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// To, co w produkcji robi silnik: ma snapshoty na dysku, wiec on liczy zmiany
+    /// (kontrakt 5.3). Frontend nie sciaga dwoch pelnych wersji strony do przegladarki.
+    /// </summary>
+    private async Task<IReadOnlyList<string>> PoliczZmiany(string id, int numer, int? rodzic)
+    {
+        if (rodzic is not { } r) return [];
+
+        var plikRodzica = Path.Combine(SnapshotRoot, id, $"v{r}", "index.html");
+        var plikWersji = Path.Combine(SnapshotRoot, id, $"v{numer}", "index.html");
+        if (!File.Exists(plikRodzica) || !File.Exists(plikWersji)) return [];
+
+        return await ZmienioneBloki.Policz(
+            await File.ReadAllTextAsync(plikRodzica),
+            await File.ReadAllTextAsync(plikWersji));
     }
 
     public async Task<string> ApplyCommentsAsync(string id, int version, IReadOnlyList<CommentDto> comments)
@@ -180,12 +219,14 @@ public class MockProjectApi : IProjectApi
         // to nie jest ostatnia w historii.
         var rodzic = project.CurrentVersion > 0 ? project.CurrentVersion : (int?)null;
 
-        await ZapiszSnapshot(id, numer, comments);
+        await ZapiszSnapshot(id, numer, comments, rodzic);
+        var zmienione = await PoliczZmiany(id, numer, rodzic);
+
         _projects[id] = project with
         {
             RoundsUsed = project.RoundsUsed + 1,
             Versions = [.. project.Versions,
-                new VersionView(numer, $"/preview/{id}/{numer}", [], rodzic)],
+                new VersionView(numer, $"/preview/{id}/{numer}", [], rodzic, zmienione)],
             CurrentVersion = numer,
         };
         _jobs[jobId] = new JobView(jobId, "succeeded", null);
@@ -210,10 +251,25 @@ public class MockProjectApi : IProjectApi
     /// wskazuja w cudze bloki. Skryptu podgladu tu NIE MA: dokleja go PreviewInjector
     /// przy serwowaniu, zeby ZIP klienta zostal czysty.
     /// </summary>
-    private async Task ZapiszSnapshot(string id, int numer, IReadOnlyList<CommentDto> uwagi)
+    private async Task ZapiszSnapshot(
+        string id, int numer, IReadOnlyList<CommentDto> uwagi, int? rodzic)
     {
         var katalog = Path.Combine(SnapshotRoot, id, $"v{numer}");
         Directory.CreateDirectory(katalog);
+
+        // Dziedziczymy wyrozniki po RODZICU i dokladamy kotwice z tej rundy.
+        var wyroznione = rodzic is { } r && _wyroznione.TryGetValue((id, r), out var poprzednie)
+            ? new HashSet<string>(poprzednie, StringComparer.Ordinal)
+            : new HashSet<string>(StringComparer.Ordinal);
+        foreach (var kotwica in uwagi.Select(u => u.Anchor).OfType<string>())
+            wyroznione.Add(kotwica);
+        _wyroznione[(id, numer)] = wyroznione;
+
+        // Atrapa „poprawia" blok zmieniajac styl, a nie tekst — dokladnie tak, jak model
+        // odpowiada na „powieksz telefon". Gdyby zmieniala tekst, porownanie po
+        // TextContent tez by dzialalo i nie sprawdzalibysmy niczego trudnego.
+        string Styl(string kotwica) =>
+            wyroznione.Contains(kotwica) ? " style=\"font-size:1.25em\"" : "";
 
         var uwzglednione = uwagi.Count == 0
             ? "<!-- wersja poczatkowa -->"
@@ -225,11 +281,11 @@ public class MockProjectApi : IProjectApi
         <head><meta charset="utf-8"><title>Fryzjer</title><link rel="stylesheet" href="styl.css"></head>
         <body>
             {uwzglednione}
-            <h1 data-cmt-id="hero">Fryzjer Anna</h1>
-            <section data-cmt-id="oferta-strzyzenie"><h2>Strzyżenie</h2><p>60 zł</p></section>
-            <section data-cmt-id="oferta-broda"><h2>Broda</h2><p>40 zł</p></section>
-            <ul data-cmt-id="cennik"><li>Strzyżenie 60 zł</li><li>Broda 40 zł</li></ul>
-            <footer data-cmt-id="kontakt">tel. 600 100 200, ul. Krakowska 5</footer>
+            <h1 data-cmt-id="hero"{Styl("hero")}>Fryzjer Anna</h1>
+            <section data-cmt-id="oferta-strzyzenie"{Styl("oferta-strzyzenie")}><h2>Strzyżenie</h2><p>60 zł</p></section>
+            <section data-cmt-id="oferta-broda"{Styl("oferta-broda")}><h2>Broda</h2><p>40 zł</p></section>
+            <ul data-cmt-id="cennik"{Styl("cennik")}><li>Strzyżenie 60 zł</li><li>Broda 40 zł</li></ul>
+            <footer data-cmt-id="kontakt"{Styl("kontakt")}>tel. 600 100 200, ul. Krakowska 5</footer>
         </body>
         </html>
         """;

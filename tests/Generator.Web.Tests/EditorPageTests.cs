@@ -243,6 +243,8 @@ public class EditorPageTests : BunitContext
             wewnetrzny.ApplyCommentsAsync(id, version, comments);
         public Task<IReadOnlyList<CommentDto>> GetCommentsAsync(string id, int version) =>
             wewnetrzny.GetCommentsAsync(id, version);
+        public Task RollbackAsync(string id, int version) =>
+            wewnetrzny.RollbackAsync(id, version);
     }
 
     [Fact]

@@ -7,11 +7,16 @@ namespace Generator.Web.Contracts;
 /// liniowym — czyli w kazdym, ktory testujemy — i cicho klamaloby dokladnie tam,
 /// gdzie rollback ma sens.
 /// </param>
+/// <param name="ChangedAnchors">
+/// Bloki rozne od rodzica (kontrakt 5.3). Liczy je ten, kto ma snapshoty — silnik,
+/// a u nas mock; frontend tylko pokazuje.
+/// </param>
 public record VersionView(
     int Number,
     string PreviewUrl,
     IReadOnlyList<string> OrphanedAnchors,
-    int? BasedOn = null);
+    int? BasedOn = null,
+    IReadOnlyList<string>? ChangedAnchors = null);
 
 /// <param name="CurrentVersion">
 /// Wersja, ktora klient oglada. Po powrocie do starszej „aktualna" przestaje znaczyc
