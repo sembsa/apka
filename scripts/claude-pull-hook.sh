@@ -40,7 +40,15 @@ AHEAD="$(git rev-list --count "$UPSTREAM..HEAD" 2>/dev/null)" || quiet
 LOG="$(git log --oneline --no-decorate "HEAD..$UPSTREAM" 2>/dev/null | head -20)"
 FILES="$(git diff --stat "HEAD..$UPSTREAM" 2>/dev/null | tail -30)"
 
-if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+# Blokuje TYLKO zmiany w plikach śledzonych. Untracked celowo nie blokują:
+# fast-forward ich nie tyka, a przy pracy subagentów w drzewie prawie zawsze coś
+# untracked leży (nowe pliki zadania przed commitem) — poprzednia wersja sprawdzała
+# `git status --porcelain` i przez to nie pobierała niczego przez cały czas wykonywania
+# planu. Jeśli nadchodzący commit doda plik, który koliduje z untracked, git sam odmówi
+# fast-forwardu i wpadniemy w gałąź "fast-forward się nie udał" niżej.
+# (git status, nie git diff-index: diff-index fałszywie alarmuje przy nieodświeżonym
+# stat-cache, np. zaraz po klonie albo reset --hard — sprawdzone.)
+if [ -n "$(git status --porcelain --untracked-files=no 2>/dev/null)" ]; then
   # Brudne drzewo — nie tykamy go automatycznie.
   MSG="$(printf 'GIT: %s nowych commitów na %s, ale NIE pobrano — masz niezacommitowane zmiany.\nZróbcie to ręcznie, świadomie (CLAUDE.md: pull --rebase --autostash, potem git stash list i grep na markery).\n\nCzeka:\n%s\n\nPliki:\n%s' \
     "$BEHIND" "$UPSTREAM" "$LOG" "$FILES")"
