@@ -11,10 +11,16 @@ SHARED_MEM="$REPO_ROOT/.claude/memory"
 # szukamy istniejącego katalogu, bo tylko Claude Code zna prawidłowy slug.
 PROJECTS="$HOME/.claude/projects"
 PROJECT_DIR=""
+# Na Windows (Git Bash) $REPO_ROOT to /c/Users/..., a Claude Code sluguje ścieżkę
+# windowsową (C:\Users\... -> C--Users-...) — stąd dodatkowy kandydat z cygpath.
+WIN_ROOT=""
+command -v cygpath >/dev/null 2>&1 && WIN_ROOT="$(cygpath -w "$REPO_ROOT")"
 for SLUG in \
   "$(printf '%s' "$REPO_ROOT" | sed 's#[/.]#-#g')" \
-  "$(printf '%s' "$REPO_ROOT" | sed 's#/#-#g')"
+  "$(printf '%s' "$REPO_ROOT" | sed 's#/#-#g')" \
+  "$(printf '%s' "$WIN_ROOT" | sed 's#[\\:.]#-#g')"
 do
+  [ -n "$SLUG" ] || continue
   if [ -d "$PROJECTS/$SLUG" ]; then PROJECT_DIR="$PROJECTS/$SLUG"; break; fi
 done
 
