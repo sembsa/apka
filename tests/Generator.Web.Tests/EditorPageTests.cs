@@ -88,6 +88,62 @@ public class EditorPageTests : BunitContext
         Assert.Equal(rundyPrzed, po.RoundsUsed);
     }
 
+    /// <summary>
+    /// Decyzja Przemka 2026-09-04: klient MA widziec, co zrobilismy z jego uwagami.
+    /// Wczesniej raport `applied` + Note, ktory silnik uczciwie wystawia, nie trafial mu
+    /// przed oczy — uwagi sa zakotwiczone w wersji, a po rundzie klient patrzy juz na
+    /// nastepna. Czytamy wiec uwagi poprzedniej wersji, nie tylko biezacej.
+    /// </summary>
+    [Fact]
+    public async Task Po_udanej_rundzie_klient_widzi_co_zrobilismy_z_uwagami()
+    {
+        var (api, id) = await Setup();
+        var wersjaPrzed = (await api.GetAsync(id)).Versions[^1].Number;
+        api.SeedComments(id, wersjaPrzed, "telefon za mało widoczny");
+
+        var cut = Render<Editor>(ps => ps.Add(p => p.ProjectId, id));
+        cut.WaitForAssertion(() => Assert.NotNull(cut.Find("[data-test='popraw']")));
+        await cut.Find("[data-test='popraw']").ClickAsync(new());
+
+        cut.WaitForAssertion(() => Assert.NotNull(cut.Find("[data-test='zrobione']")));
+        var raport = cut.Find("[data-test='zrobione']").TextContent;
+        Assert.Contains("telefon za mało widoczny", raport);
+        Assert.Contains("Zrobione", raport);
+    }
+
+    [Fact]
+    public async Task Raport_zostaje_po_odswiezeniu_strony()
+    {
+        // Gdyby zyl tylko w polu komponentu, pierwszy F5 kasowalby klientowi
+        // potwierdzenie. Renderujemy od zera, bez klikania.
+        var (api, id) = await Setup();
+        var wersjaPrzed = (await api.GetAsync(id)).Versions[^1].Number;
+        api.SeedComments(id, wersjaPrzed, "cennik nad opiniami");
+        await api.ApplyCommentsAsync(id, wersjaPrzed,
+            await api.GetCommentsAsync(id, wersjaPrzed));
+
+        var cut = Render<Editor>(ps => ps.Add(p => p.ProjectId, id));
+
+        cut.WaitForAssertion(() => Assert.NotNull(cut.Find("[data-test='zrobione']")));
+        Assert.Contains("cennik nad opiniami", cut.Find("[data-test='zrobione']").TextContent);
+    }
+
+    [Fact]
+    public async Task Bez_historii_nie_ma_pustej_sekcji_raportu()
+    {
+        // Wersja 1: nie bylo jeszcze zadnej rundy, wiec nie ma o czym raportowac.
+        var api = new MockProjectApi { SimulatedDelay = TimeSpan.Zero };
+        JSInterop.Mode = JSRuntimeMode.Loose;
+        Services.AddSingleton<IProjectApi>(api);
+        var p = await api.CreateAsync("idea", "Fryzjer");
+        await api.ChooseProposalAsync(p.Id, "p-1");
+
+        var cut = Render<Editor>(ps => ps.Add(x => x.ProjectId, p.Id));
+
+        cut.WaitForAssertion(() => Assert.NotNull(cut.Find("iframe")));
+        Assert.Empty(cut.FindAll("[data-test='zrobione']"));
+    }
+
     [Fact]
     public async Task Osierocone_kotwice_sa_widoczne_nigdy_wyciszane()
     {

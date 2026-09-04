@@ -55,6 +55,17 @@ else
 
     <CommentList Comments="_comments" OnWithdraw="Withdraw" />
 
+    @* Decyzja Przemka: klient MA widziec, co zrobilismy z jego uwagami. Bez tego raport
+       per commentId, ktory silnik uczciwie wystawia (3.3), nie trafialby mu przed oczy —
+       uwagi zyja w wersji, a po rundzie klient patrzy juz na nastepna. *@
+    @if (_zrobione.Count > 0)
+    {
+        <section data-test="zrobione">
+            <h2>Co zrobiliśmy z Twoimi uwagami</h2>
+            <CommentList Comments="_zrobione" />
+        </section>
+    }
+
     <button data-test="popraw" disabled="@(_comments.Count == 0 || _project.Status == "frozen" || _job?.Status == "running")"
             @onclick="Apply">
         Popraw to
@@ -70,6 +81,7 @@ else
 
     private ProjectView? _project;
     private List<CommentDto> _comments = [];
+    private List<CommentDto> _zrobione = [];
     private CommentDto? _draft;
     private string _draftText = string.Empty;
     private JobView? _job;
@@ -81,6 +93,13 @@ else
         _project = await Api.GetAsync(ProjectId);
         var wersja = _project.Versions.Count > 0 ? _project.Versions[^1].Number : 1;
         _comments = [.. await Api.GetCommentsAsync(ProjectId, wersja)];
+
+        // Raport czytamy z API, nie z pamieci komponentu — inaczej pierwszy F5
+        // kasowalby klientowi potwierdzenie tego, o co prosil.
+        _zrobione = wersja > 1
+            ? [.. (await Api.GetCommentsAsync(ProjectId, wersja - 1))
+                .Where(c => c.Status == "applied")]
+            : [];
     }
 
     private void Draft(CommentDto comment)

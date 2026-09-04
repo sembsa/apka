@@ -196,6 +196,14 @@ jest uczciwą odpowiedzią i klient musi ją zobaczyć. Komentarz bez wpisu w
 Wynika z tego wymóg planu, sekcja 4 („klient musi wiedzieć, że został zrozumiany"):
 `note` jest tekstem **przy komentarzu**, nie zbiorczym podsumowaniem wersji.
 
+**Doprecyzowanie po przejściu ścieżki klienta (decyzja Przemka, 2026-09-04):** raport
+`applied` + `note` musi **trafić klientowi przed oczy**, a nie tylko istnieć w danych.
+Uwagi są zakotwiczone w wersji, więc po udanej rundzie klient patrzy już na następną i
+lista uwag bieżącej wersji jest pusta — bez osobnej sekcji cały raport przepadałby, choć
+silnik uczciwie go wystawia. Frontend czyta więc uwagi **wersji poprzedniej** i pokazuje
+te ze statusem `applied` (`Editor`, sekcja „Co zrobiliśmy z Twoimi uwagami”). Czytamy z
+API, nie z pamięci komponentu — inaczej pierwszy F5 kasuje klientowi potwierdzenie.
+
 ### 3.4 Osierocony komentarz — anchor żyje w obrębie wersji
 
 Większość problemu rozwiązuje model danych z sekcji 6 planu: **`Comment` należy do
