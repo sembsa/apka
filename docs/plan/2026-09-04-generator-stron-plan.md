@@ -50,7 +50,9 @@ nie czytać specyfikację.
 ## 4. Pętla komentarzy (rdzeń produktu)
 
 Podgląd strony w iframe. Generator wstrzykuje do każdego bloku stabilny atrybut
-`data-cmt-id` (np. `hero`, `oferta-1`, `kontakt`). Klik w blok w trybie komentowania
+`data-cmt-id` (np. `hero`, `oferta-strzyzenie`, `kontakt` — id opisuje **rolę**, nigdy
+pozycję; `oferta-1` jest błędem, patrz [kontrakt 3.1](../api-contract.md#31-data-cmt-id-nadaje-generator--i-nie-mogą-to-być-numery-porządkowe)).
+Klik w blok w trybie komentowania
 przypina komentarz do tego id. Komentarz bez klikniętego bloku = komentarz globalny
 („całość za ciemna").
 
@@ -71,10 +73,17 @@ Klient musi wiedzieć, że został zrozumiany.
 
 ### Stabilność `data-cmt-id` — nic jej nie pilnuje samo z siebie
 
-Model przepisujący stronę w piątej rundzie może zmienić `oferta-1` na `oferta-glowna`
-albo scalić dwie sekcje. Wtedy komentarze przypięte do zniknionego id są osierocone,
-a klient klika w podgląd, w którym jego uwagi wskazują w pustkę — i model nie zgłosi
-tego jako błędu, bo po jego stronie wszystko się udało. Bramka walidacyjna jest w 5.2.
+Model przepisujący stronę w piątej rundzie może zmienić `oferta-strzyzenie` na
+`oferta-glowna` albo scalić dwie sekcje. Wtedy komentarze przypięte do zniknionego id
+są osierocone, a klient klika w podgląd, w którym jego uwagi wskazują w pustkę — i model
+nie zgłosi tego jako błędu, bo po jego stronie wszystko się udało. Bramka walidacyjna
+jest w 5.2.
+
+Do promptu rundy musi wejść **lista `data-cmt-id` z poprzedniej wersji** — bez niej
+„zachowaj id" jest instrukcją bez przedmiotu, a 5.2 nie ma z czym porównywać
+(kontrakt 3.1). Osobny, gorszy przypadek zamyka reguła „rola, nie pozycja": przy id
+pozycyjnych **wstawienie** elementu nie osieroca komentarzy, tylko przesuwa je
+na cudze bloki — cicho podmienia znaczenie, zamiast zgłosić brak.
 
 ## 5. Silnik generowania — warstwa wymienna
 
