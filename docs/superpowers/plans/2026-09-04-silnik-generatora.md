@@ -12,7 +12,7 @@
 - [`docs/plan/2026-09-04-generator-stron-plan.md`](../../plan/2026-09-04-generator-stron-plan.md) — plan produktu (sekcje 5, 5.1, 5.2, 6, 7)
 - [`docs/api-contract.md`](../../api-contract.md) — kontrakt (§2 silnik, §3 komentarze, §4 liczniki i `failed`)
 
-**Zakres:** Plan A obejmuje **wyłącznie silnik**. Plan B (HTTP API z kontraktu §1), Plan C (frontend — pętla komentarzy) i Plan D (kreator wejścia i wybór propozycji) są osobne. C i D to część Przemka.
+**Zakres:** Plan A obejmuje **wyłącznie silnik**. Plan B (HTTP API z kontraktu §1) i Plan C (frontend Blazor — część Przemka) są osobne.
 
 ## Global Constraints
 
@@ -2189,5 +2189,4 @@ Silnik jest kompletny i sprawdzony: `dotnet test` przechodzi, a uprząż pokazuj
   wszystkich przebiegów rundy, także powtórek), `permissionDenials[]` → `JobFailure.Cause`
   przy `Halted`. Silnik nie zwraca `summary` osobno — tekst per komentarz jest
   w `CommentResult.Note`, zgodnie z §3.3.
-- **Plan C (frontend — pętla komentarzy)** — podgląd, przypinanie, runda, UX przy `failed`, liczniki: [`2026-09-04-frontend-petla-komentarzy.md`](2026-09-04-frontend-petla-komentarzy.md). Część Przemka.
-- **Plan D (kreator wejścia i wybór propozycji)** — sekcje 2 i 3 planu produktu, niezależne od pętli. Część Przemka, jeszcze nienapisany.
+- **Plan C (frontend Blazor)** — kreator, propozycje, pętla komentarzy, UX przy `failed`: [`2026-09-04-frontend-blazor.md`](2026-09-04-frontend-blazor.md). Część Przemka.
