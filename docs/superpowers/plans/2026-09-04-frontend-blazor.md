@@ -414,7 +414,7 @@ git push
 
 Sekcja 2 planu produktu: **maks. 5 pytań w prostym języku.** Żadnego pytania o technologię, fonty, kolory.
 
-- [ ] **Step 1: Napisz failujące testy**
+- [x] **Step 1: Napisz failujące testy**
 
 `tests/Generator.Web.Tests/StartPageTests.cs`:
 
@@ -482,12 +482,12 @@ public class StartPageTests : BunitContext
 }
 ```
 
-- [ ] **Step 2: Uruchom, potwierdź porażkę**
+- [x] **Step 2: Uruchom, potwierdź porażkę**
 
 Run: `dotnet test tests/Generator.Web.Tests --filter StartPageTests -v q`
 Expected: błąd kompilacji — `Start` nie istnieje.
 
-- [ ] **Step 3: Napisz stronę**
+- [x] **Step 3: Napisz stronę**
 
 `src/Generator.Web/Components/Pages/Start.razor`:
 
@@ -554,12 +554,12 @@ Expected: błąd kompilacji — `Start` nie istnieje.
 }
 ```
 
-- [ ] **Step 4: Uruchom testy**
+- [x] **Step 4: Uruchom testy**
 
 Run: `dotnet test tests/Generator.Web.Tests --filter StartPageTests -v q`
 Expected: 4 testy PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/Generator.Web/Components/Pages/Start.razor tests/Generator.Web.Tests/StartPageTests.cs
@@ -581,7 +581,7 @@ git push
 
 Sekcja 3 planu: propozycje pokazujemy **jako podglądy**, klient ma zobaczyć, nie czytać specyfikację. Wybór to **jedno kliknięcie**, bez pisania.
 
-- [ ] **Step 1: Napisz failujące testy**
+- [x] **Step 1: Napisz failujące testy**
 
 `tests/Generator.Web.Tests/ProposalsPageTests.cs`:
 
@@ -638,12 +638,12 @@ public class ProposalsPageTests : BunitContext
 }
 ```
 
-- [ ] **Step 2: Uruchom, potwierdź porażkę**
+- [x] **Step 2: Uruchom, potwierdź porażkę**
 
 Run: `dotnet test tests/Generator.Web.Tests --filter ProposalsPageTests -v q`
 Expected: błąd kompilacji — `Proposals` nie istnieje.
 
-- [ ] **Step 3: Napisz stronę**
+- [x] **Step 3: Napisz stronę**
 
 `src/Generator.Web/Components/Pages/Proposals.razor`:
 
@@ -693,12 +693,12 @@ else
 }
 ```
 
-- [ ] **Step 4: Uruchom testy**
+- [x] **Step 4: Uruchom testy**
 
 Run: `dotnet test tests/Generator.Web.Tests --filter ProposalsPageTests -v q`
 Expected: 3 testy PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/Generator.Web/Components/Pages/Proposals.razor tests/Generator.Web.Tests/ProposalsPageTests.cs
@@ -723,7 +723,7 @@ To zadanie, przed którym sam ostrzegałeś w §3: mostek leży w rdzeniu produk
   - `record ClickPayload(string? Anchor, string Viewport)`
   - **Kontrakt skryptu w iframe:** na klik wysyła `window.parent.postMessage({type:'cmt-click', anchor, viewport}, window.location.origin)`, gdzie `anchor` to wartość `data-cmt-id` najbliższego przodka albo `null`. Bez `x`/`y` — przechodziły przez cały łańcuch i nikt ich nie czytał.
 
-- [ ] **Step 1: Napisz failujące testy**
+- [x] **Step 1: Napisz failujące testy**
 
 `tests/Generator.Web.Tests/CommentBridgeTests.cs`:
 
@@ -806,12 +806,12 @@ public class CommentBridgeTests : BunitContext
 }
 ```
 
-- [ ] **Step 2: Uruchom, potwierdź porażkę**
+- [x] **Step 2: Uruchom, potwierdź porażkę**
 
 Run: `dotnet test tests/Generator.Web.Tests --filter CommentBridgeTests -v q`
 Expected: błąd kompilacji — `CommentBridge` i `ClickPayload` nie istnieją.
 
-- [ ] **Step 3: Zaimplementuj mostek**
+- [x] **Step 3: Zaimplementuj mostek**
 
 `src/Generator.Web/Components/CommentBridge.razor`:
 
@@ -925,12 +925,12 @@ document.addEventListener('click', (e) => {
 }, true);
 ```
 
-- [ ] **Step 4: Uruchom testy**
+- [x] **Step 4: Uruchom testy**
 
 Run: `dotnet test tests/Generator.Web.Tests --filter CommentBridgeTests -v q`
 Expected: 4 testy PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/Generator.Web/Components/CommentBridge.razor src/Generator.Web/wwwroot/js tests/Generator.Web.Tests/CommentBridgeTests.cs
@@ -961,7 +961,7 @@ produktu mówi, że prosta strona ma być prosta również w środku.
   - `static class PreviewEndpoint` z `static void MapPreview(this WebApplication app, Func<string,int,string> snapshotDir)`
   - trasa `GET /preview/{projectId}/{version:int}/{**sciezka}` — zgodna z `PreviewUrl` z Taska 1
 
-- [ ] **Step 1: Napisz failujące testy**
+- [x] **Step 1: Napisz failujące testy**
 
 `tests/Generator.Web.Tests/PreviewInjectorTests.cs`:
 
@@ -1018,12 +1018,12 @@ public class PreviewInjectorTests
 }
 ```
 
-- [ ] **Step 2: Uruchom testy i potwierdź, że failują**
+- [x] **Step 2: Uruchom testy i potwierdź, że failują**
 
 Run: `dotnet test tests/Generator.Web.Tests --filter PreviewInjectorTests -v q`
 Expected: FAIL — kompilacja, `PreviewInjector` nie istnieje (`CS0246`).
 
-- [ ] **Step 3: Napisz injector**
+- [x] **Step 3: Napisz injector**
 
 `src/Generator.Web/Preview/PreviewInjector.cs`:
 
@@ -1047,12 +1047,12 @@ public static class PreviewInjector
 }
 ```
 
-- [ ] **Step 4: Uruchom testy i potwierdź, że przechodzą**
+- [x] **Step 4: Uruchom testy i potwierdź, że przechodzą**
 
 Run: `dotnet test tests/Generator.Web.Tests --filter PreviewInjectorTests -v q`
 Expected: PASS, 4 testy.
 
-- [ ] **Step 5: Zamapuj endpoint**
+- [x] **Step 5: Zamapuj endpoint**
 
 `src/Generator.Web/Preview/PreviewEndpoint.cs`:
 
@@ -1103,12 +1103,12 @@ app.MapPreview((projectId, version) =>
     Path.Combine(builder.Configuration["Projects:Root"] ?? Path.GetTempPath(), projectId, $"v{version}"));
 ```
 
-- [ ] **Step 6: Zbuduj i potwierdź kompilację**
+- [x] **Step 6: Zbuduj i potwierdź kompilację**
 
 Run: `dotnet build src/Generator.Web`
 Expected: Build succeeded.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/Generator.Web/Preview src/Generator.Web/Program.cs tests/Generator.Web.Tests/PreviewInjectorTests.cs
@@ -1128,7 +1128,7 @@ git push
 - Consumes: `CommentDto`
 - Produces: `class CommentList` z `[Parameter] IReadOnlyList<CommentDto> Comments`, `[Parameter] EventCallback<string> OnWithdraw`
 
-- [ ] **Step 1: Napisz failujące testy**
+- [x] **Step 1: Napisz failujące testy**
 
 `tests/Generator.Web.Tests/CommentListTests.cs`:
 
@@ -1203,12 +1203,12 @@ public class CommentListTests : BunitContext
 }
 ```
 
-- [ ] **Step 2: Uruchom, potwierdź porażkę**
+- [x] **Step 2: Uruchom, potwierdź porażkę**
 
 Run: `dotnet test tests/Generator.Web.Tests --filter CommentListTests -v q`
 Expected: błąd kompilacji — `CommentList` nie istnieje.
 
-- [ ] **Step 3: Napisz komponent**
+- [x] **Step 3: Napisz komponent**
 
 `src/Generator.Web/Components/CommentList.razor`:
 
@@ -1243,12 +1243,12 @@ Expected: błąd kompilacji — `CommentList` nie istnieje.
 }
 ```
 
-- [ ] **Step 4: Uruchom testy**
+- [x] **Step 4: Uruchom testy**
 
 Run: `dotnet test tests/Generator.Web.Tests --filter CommentListTests -v q`
 Expected: 5 testów PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/Generator.Web/Components/CommentList.razor tests/Generator.Web.Tests/CommentListTests.cs
@@ -1270,7 +1270,7 @@ git push
 
 Kontrakt §4.3: UI rozgałęzia się **po `handling`**, nie po przyczynie. Sens obu komunikatów: *nic nie przepadło*, a przy `halted` dodatkowo, że problem jest u nas i nie ma sensu klikać ponownie.
 
-- [ ] **Step 1: Napisz failujące testy**
+- [x] **Step 1: Napisz failujące testy**
 
 `tests/Generator.Web.Tests/JobStatusTests.cs`:
 
@@ -1337,12 +1337,12 @@ public class JobStatusTests : BunitContext
 }
 ```
 
-- [ ] **Step 2: Uruchom, potwierdź porażkę**
+- [x] **Step 2: Uruchom, potwierdź porażkę**
 
 Run: `dotnet test tests/Generator.Web.Tests --filter JobStatusTests -v q`
 Expected: błąd kompilacji — `JobStatus` nie istnieje.
 
-- [ ] **Step 3: Napisz komponent**
+- [x] **Step 3: Napisz komponent**
 
 `src/Generator.Web/Components/JobStatus.razor`:
 
@@ -1372,12 +1372,12 @@ Expected: błąd kompilacji — `JobStatus` nie istnieje.
 }
 ```
 
-- [ ] **Step 4: Uruchom testy**
+- [x] **Step 4: Uruchom testy**
 
 Run: `dotnet test tests/Generator.Web.Tests --filter JobStatusTests -v q`
 Expected: 5 testów PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/Generator.Web/Components/JobStatus.razor tests/Generator.Web.Tests/JobStatusTests.cs
@@ -1397,7 +1397,7 @@ git push
 - Consumes: `IProjectApi`, `CommentBridge`, `CommentList`, `JobStatus`
 - Produces: strona `/editor/{projectId}`
 
-- [ ] **Step 1: Napisz failujące testy**
+- [x] **Step 1: Napisz failujące testy**
 
 `tests/Generator.Web.Tests/EditorPageTests.cs`:
 
@@ -1526,7 +1526,7 @@ public class EditorPageTests : BunitContext
 }
 ```
 
-- [ ] **Step 2: Dodaj `ForceOrphaned` i `SeedComments` do mocka, uruchom testy**
+- [x] **Step 2: Dodaj `ForceOrphaned` i `SeedComments` do mocka, uruchom testy**
 
 W `MockProjectApi`:
 
@@ -1562,7 +1562,7 @@ public void SeedComments(string id, int version, params string[] teksty)
 Run: `dotnet test tests/Generator.Web.Tests --filter EditorPageTests -v q`
 Expected: błąd kompilacji — `Editor` nie istnieje.
 
-- [ ] **Step 3: Napisz stronę**
+- [x] **Step 3: Napisz stronę**
 
 `src/Generator.Web/Components/Pages/Editor.razor`:
 
@@ -1681,12 +1681,12 @@ else
 }
 ```
 
-- [ ] **Step 4: Uruchom cały zestaw**
+- [x] **Step 4: Uruchom cały zestaw**
 
 Run: `dotnet test tests/Generator.Web.Tests -v q`
 Expected: wszystkie testy PASS — 32 z Tasków 1–7 (6+4+3+4+5+5+5).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/Generator.Web tests/Generator.Web.Tests
@@ -1721,13 +1721,13 @@ Jedyne zadanie bez testu jednostkowego: sprawdzenie, czy to **da się przejść 
 **Files:**
 - Modify: `src/Generator.Web/Program.cs` (rejestracja mocka, statyczne pliki JS)
 
-- [ ] **Step 1: Uruchom aplikację**
+- [x] **Step 1: Uruchom aplikację**
 
 ```bash
 dotnet run --project src/Generator.Web
 ```
 
-- [ ] **Step 2: Przejdź ścieżkę klienta**
+- [x] **Step 2: Przejdź ścieżkę klienta**
 
 1. `/` → „Nie mam strony", wpisz opis fryzjera → **Dalej**
 2. Trzy podglądy → **Ta mi się podoba**
@@ -1736,18 +1736,18 @@ dotnet run --project src/Generator.Web
 5. Kliknij gdzieś poza blokiem → „Uwaga do całej strony", dodaj drugą uwagę
 6. **Popraw to** → „Claude pracuje nad Twoją stroną…" → po chwili `note` przy każdej uwadze
 
-- [ ] **Step 3: Sprawdź gałęzie awarii**
+- [x] **Step 3: Sprawdź gałęzie awarii**
 
 W `Program.cs` tymczasowo `NextJobOutcome = MockJobOutcome.Halted`, przejdź krok 6 ponownie.
 Oczekiwane: komunikat „nic nie przepadło", licznik poprawek **bez zmian**, uwagi nadal `open`,
 brak przycisku „ponów". Potem `MockJobOutcome.Retrying` — klient widzi dalszą pracę, nie awarię.
 
-- [ ] **Step 4: Zanotuj, co nie zagrało**
+- [x] **Step 4: Zanotuj, co nie zagrało**
 
 Rzeczy do rozstrzygnięcia z Sebastianem (kontrakt, nie UI) wpisz do `docs/api-contract.md`
 jako pytania — nie zgaduj po swojej stronie mostka.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/Generator.Web/Program.cs
