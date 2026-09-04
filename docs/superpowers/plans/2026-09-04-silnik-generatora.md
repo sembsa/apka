@@ -1881,7 +1881,6 @@ using System.Text.RegularExpressions;
 using Generator.Engine.ClaudeCli;
 using Generator.Engine.Gates;
 using Generator.Engine.Model;
-using Generator.Engine.Prompts;
 using Generator.Engine.Storage;
 using Generator.Engine.Versioning;
 
@@ -2085,9 +2084,20 @@ if (args.Length < 2)
 var projectDir = Path.GetFullPath(args[0]);
 var description = args[1];
 
-if (projectDir.StartsWith(Path.GetFullPath(Directory.GetCurrentDirectory()), StringComparison.Ordinal))
+// Katalog projektu NIE moze lezec w drzewie repo — podproces auto-wykrywa CLAUDE.md.
+// Szukamy .git w gore od katalogu projektu; `Directory.GetCurrentDirectory()` nie nadaje
+// sie do tego, bo przy `dotnet run` cwd to katalog projektu, nie root repo.
+static string? FindRepoRoot(string start)
 {
-    Console.Error.WriteLine($"Katalog projektu lezy w drzewie repo: {projectDir}");
+    for (var d = new DirectoryInfo(start); d is not null; d = d.Parent)
+        if (Directory.Exists(Path.Combine(d.FullName, ".git")))
+            return d.FullName;
+    return null;
+}
+
+if (FindRepoRoot(projectDir) is { } repo)
+{
+    Console.Error.WriteLine($"Katalog projektu lezy w drzewie repo ({repo}): {projectDir}");
     Console.Error.WriteLine("Wybierz sciezke poza repo, np. ~/generator-projects/<id>.");
     return 2;
 }
@@ -2101,9 +2111,10 @@ var meta = File.Exists(Path.Combine(projectDir, "project.json"))
 var runner = new ClaudeRunner("claude");
 var service = new GenerationService(runner, projects, versions);
 
-// Pierwsza wersja: brief zamiast uwag. Uwagi to lista pusta.
+// Opis klienta jedzie jako komentarz globalny (nizej). NIE zapisujemy brief.txt
+// do katalogu roboczego: silnik go nie czyta, a VersionStore kopiuje caly katalog,
+// wiec plik wyladowalby w snapshocie i w ZIP-ie klienta.
 Directory.CreateDirectory(versions.WorkDir);
-File.WriteAllText(Path.Combine(versions.WorkDir, "brief.txt"), PromptBuilder.BuildBrief(description));
 
 Console.WriteLine($"Projekt: {meta.Id}");
 Console.WriteLine($"Katalog roboczy: {versions.WorkDir}");
@@ -2135,7 +2146,8 @@ return 0;
 - [ ] **Step 2: Sprawdź, że kompiluje się i broni przed katalogiem w repo**
 
 Run: `dotnet build -v q && dotnet run --project src/Generator.Cli -- ./w-repo "test"`
-Expected: exit 2 i komunikat „Katalog projektu lezy w drzewie repo".
+Expected: exit 2 i komunikat „Katalog projektu lezy w drzewie repo (…)" z podaną ścieżką
+znalezionego repozytorium — dowód, że wykrywanie idzie przez `.git`, nie przez cwd.
 
 - [ ] **Step 3: Uruchom jeden prawdziwy przebieg**
 
