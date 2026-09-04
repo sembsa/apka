@@ -22,6 +22,9 @@ public class VersionStore(string projectDir)
     {
         Directory.CreateDirectory(to);
 
+        if (!Directory.Exists(from))
+            return;
+
         foreach (var file in Directory.EnumerateFiles(from))
             File.Copy(file, Path.Combine(to, Path.GetFileName(file)), overwrite: true);
 

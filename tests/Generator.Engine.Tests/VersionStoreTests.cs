@@ -67,4 +67,45 @@ public class VersionStoreTests : IDisposable
 
         Assert.Equal("b", File.ReadAllText(Path.Combine(again.SnapshotDir, "index.html")));
     }
+
+    [Fact]
+    public void Commit_z_nieistniejacym_WorkDir_tworzy_pusty_snapshot()
+    {
+        var store = new VersionStore(_project);
+        // Nie tworzymy WorkDir - testujemy nieistniejący katalog roboczy
+
+        var meta = store.Commit(1, "s-1", 0.1m, []);
+
+        Assert.True(Directory.Exists(meta.SnapshotDir));
+        Assert.Empty(Directory.EnumerateFiles(meta.SnapshotDir));
+        Assert.Empty(Directory.EnumerateDirectories(meta.SnapshotDir));
+    }
+
+    [Fact]
+    public void Nadpisanie_snapshotu_czyści_pliki_z_poprzedniej_próby()
+    {
+        // Gwarancja kontraktu §4.4: "odrzucona próba nie zostawia klientowi niczego"
+        var store = NewStore();
+
+        // Pierwsza próba: kilka plików i podkatalog
+        File.WriteAllText(Path.Combine(store.WorkDir, "index.html"), "v1");
+        File.WriteAllText(Path.Combine(store.WorkDir, "style.css"), "body { }");
+        Directory.CreateDirectory(Path.Combine(store.WorkDir, "assets"));
+        File.WriteAllText(Path.Combine(store.WorkDir, "assets", "logo.png"), "data");
+        var v1 = store.Commit(1, "s-1", 0.1m, []);
+
+        // Czyszczenie i druga próba: inny zestaw plików
+        File.Delete(Path.Combine(store.WorkDir, "index.html"));
+        File.Delete(Path.Combine(store.WorkDir, "style.css"));
+        Directory.Delete(Path.Combine(store.WorkDir, "assets"), recursive: true);
+        File.WriteAllText(Path.Combine(store.WorkDir, "new.html"), "v2");
+
+        var v2 = store.Commit(1, "s-1", 0.2m, []);
+
+        // Snapshot powinien zawierać TYLKO pliki z drugiej próby
+        Assert.True(File.Exists(Path.Combine(v2.SnapshotDir, "new.html")));
+        Assert.False(File.Exists(Path.Combine(v2.SnapshotDir, "index.html")));
+        Assert.False(File.Exists(Path.Combine(v2.SnapshotDir, "style.css")));
+        Assert.False(Directory.Exists(Path.Combine(v2.SnapshotDir, "assets")));
+    }
 }
