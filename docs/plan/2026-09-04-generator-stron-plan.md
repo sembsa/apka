@@ -307,6 +307,29 @@ pobranego HTML-a — rząd wielkości więcej). Ale rząd „grosze za rundę, n
 już widoczny. `--resume` sprawdzone end-to-end: sesja podjęta, `session_id` ten sam,
 poprawka trafiła w istniejący plik.
 
+**Pierwszy pomiar na prawdziwej stronie (Task 10, 2026-09-05) — zastępuje ekstrapolację
+powyżej dla źródła `Idea`.** Uprząż konsolowa (`Generator.Cli`), pełny przebieg
+`RunRoundAsync` przez prawdziwy `claude -p`, opis klienta: fryzjer w Nowym Sączu
+(strzyżenie damskie/męskie, broda, telefon, adres, godziny) — źródło `SourceKind.Idea`,
+bez pobierania i analizy istniejącej strony. Wygenerowana strona: `index.html` (95 linii)
++ `style.css` (200 linii), 10 bloków z `data-cmt-id`, zero osieroconych kotwic, bramka
+twarda przeszła za pierwszym razem (brak śladów powtórki — koszt zgodny z jednym
+przebiegiem).
+
+| Przebieg | Koszt | Uwagi |
+|---|---|---|
+| generacja v1, prawdziwa strona (fryzjer, `Idea`, `--session-id`) | $0.1391 | `RAPORT ... applied` |
+
+Rzeczywisty koszt wyszedł **poniżej** dolnej granicy z kontraktu §4.2 ($0,50–1,00):
+$0,14 zamiast oczekiwanych $0,50+. Ekstrapolacja „kilka sekcji, treść, analiza pobranego
+HTML-a — rząd wielkości więcej niż $0,037" okazała się zawyżona dla części „kilka sekcji,
+treść": strona z 6 sekcjami i realną treścią kosztowała ~3,8× tyle co trywialna
+jednolinijkowa wersja z tabeli powyżej, a nie ~10×. Do wglądu w wycenie kolejnych
+projektów dla źródła `Idea` lepiej zakładać **$0,10–0,20 za prostą stronę wizytówkową**,
+nie górną granicę z kontraktu §4.2. **Zastrzeżenie:** ten pomiar nie obejmuje ścieżki
+`Url` (pobranie i analiza cudzej strony jako materiału źródłowego) — ten koszt pozostaje
+niezmierzony i może być istotnie wyższy.
+
 **Licznik kosztu sumuje `total_cost_usd`, nie tokeny jednego modelu** — `modelUsage`
 zawiera obok `claude-opus-5` także `claude-haiku-4-5` (wywołania pomocnicze harnessu).
 Limit iteracji na projekt zostaje jako zabezpieczenie.
