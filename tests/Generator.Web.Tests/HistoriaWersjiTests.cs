@@ -28,6 +28,26 @@ public class HistoriaWersjiTests : BunitContext, IDisposable
         return (api, p.Id);
     }
 
+
+    /// <summary>
+    /// Znalezione przy pokazie. Po powrocie do wersji, z ktorej juz zglaszano uwagi, lista
+    /// nie jest pusta — ale sa na niej same uwagi ZASTOSOWANE, a runda wysyla tylko `open`.
+    /// Przycisk byl wiec aktywny i nie robil NIC: zaden komunikat, zadna zmiana. Ta sama
+    /// klasa bledu co „nieudana runda zaprasza do klikania" — warunek liczyl co innego
+    /// niz akcja.
+    /// </summary>
+    [Fact]
+    public async Task Popraw_jest_nieaktywne_gdy_wszystkie_uwagi_sa_juz_zrobione()
+    {
+        var (api, id) = await DwieWersje();
+        await api.RollbackAsync(id, 1);
+        api.SeedComment(id, 1, "kontakt", "telefon za mało widoczny", "applied");
+
+        var cut = Render<Editor>(ps => ps.Add(p => p.ProjectId, id));
+
+        cut.WaitForAssertion(() => Assert.NotNull(cut.Find("[data-test='popraw']")));
+        Assert.True(cut.Find("[data-test='popraw']").HasAttribute("disabled"));
+    }
     [Fact]
     public async Task Historia_pokazuje_wszystkie_wersje_i_znaczy_ogladana()
     {

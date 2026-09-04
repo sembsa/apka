@@ -115,7 +115,10 @@ else
         </section>
     }
 
-    <button data-test="popraw" disabled="@(_comments.Count == 0 || _project.Status == "frozen" || _job.BlokujeNowaRunde())"
+    @* Liczy sie to, co JEST DO WYSLANIA, nie dlugosc listy. Po powrocie do wersji, z
+       ktorej juz zglaszano uwagi, na liscie sa same `applied` — przycisk bylby aktywny
+       i nie robilby nic. *@
+    <button data-test="popraw" disabled="@(DoWyslania().Count == 0 || _project.Status == "frozen" || _job.BlokujeNowaRunde())"
             @onclick="Apply">
         Popraw to
     </button>
@@ -217,6 +220,15 @@ else
     /// mowi czytnikowi ekranu nic. Stad jawny string.
     private string Wybrany(string tryb) => (_viewport == tryb).ToString().ToLowerInvariant();
 
+    /// <summary>
+    /// Uwagi, ktore runda naprawde wysle: TYLKO `open`. Po powrocie do wersji, z ktorej
+    /// juz raz zglaszano uwagi, na liscie sa rowniez te ZASTOSOWANE — wyslane ponownie
+    /// kazalyby modelowi poprawiac to, co jest juz zrobione, i klient placilby runde za
+    /// prace wykonana. Jedno miejsce, bo z tego samego musi wynikac stan przycisku:
+    /// gdy warunek liczyl dlugosc calej listy, przycisk zapraszal i nie robil nic.
+    /// </summary>
+    private List<CommentDto> DoWyslania() => [.. _comments.Where(c => c.Status == "open")];
+
     /// Wybor klienta jest ostateczny — zasiew z urzadzenia go nie nadpisze.
     private void Tryb(string tryb)
     {
@@ -262,10 +274,7 @@ else
     {
         var wersja = _project!.NumerAktualnej();
 
-        // TYLKO `open`. Po powrocie do wersji, z ktorej juz raz zglaszano uwagi, na
-        // liscie sa rowniez te ZASTOSOWANE — wyslane ponownie kazalyby modelowi poprawiac
-        // to, co jest juz zrobione. Klient placilby runde za prace wykonana.
-        var doWyslania = _comments.Where(c => c.Status == "open").ToList();
+        var doWyslania = DoWyslania();
         if (doWyslania.Count == 0) return;
 
         var jobId = await Api.ApplyCommentsAsync(ProjectId, wersja, doWyslania);
