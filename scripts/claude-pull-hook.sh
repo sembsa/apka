@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# Hook UserPromptSubmit: przed każdym promptem sprawdza, co dopchnęła druga osoba,
+# i wstrzykuje listę nowych commitów do kontekstu Claude'a.
+#
+# Świadomie NIE robi `pull --rebase --autostash`. Automatyczny rebase przy każdym
+# prompcie to ta sama pułapka, w którą wpadliśmy oboje 2026-09-04 (patrz CLAUDE.md):
+# nieodtworzony autostash zostawia markery konfliktu w plikach. Hook tylko fast-forwarduje
+# czyste drzewo, a przy brudnym mówi, co jest do zrobienia, i niczego nie rusza.
+#
+# Wyjście: JSON na stdout (hookSpecificOutput.additionalContext) albo cicho, gdy nic nowego.
+set -uo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)" || exit 0
+cd "$REPO" || exit 0
+
+quiet() { printf '{"suppressOutput":true}\n'; exit 0; }
+
+# Escape do stringa JSON: backslash, cudzysłów, taby, potem nowe linie na \n.
+esc() {
+  sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\t/\\t/g' | awk '{ printf "%s\\n", $0 }'
+}
+
+emit() {
+  printf '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"%s"}}\n' "$1"
+}
+
+git rev-parse --git-dir >/dev/null 2>&1 || exit 0
+
+# Offline albo brak dostępu do origin — nie blokujemy pracy, po prostu milczymy.
+git fetch --quiet 2>/dev/null || quiet
+
+UPSTREAM="$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)" || quiet
+[ -n "$UPSTREAM" ] || quiet
+
+BEHIND="$(git rev-list --count "HEAD..$UPSTREAM" 2>/dev/null)" || quiet
+AHEAD="$(git rev-list --count "$UPSTREAM..HEAD" 2>/dev/null)" || quiet
+
+[ "${BEHIND:-0}" -eq 0 ] && quiet   # nic nowego u drugiej osoby
+
+LOG="$(git log --oneline --no-decorate "HEAD..$UPSTREAM" 2>/dev/null | head -20)"
+FILES="$(git diff --stat "HEAD..$UPSTREAM" 2>/dev/null | tail -30)"
+
+if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+  # Brudne drzewo — nie tykamy go automatycznie.
+  MSG="$(printf 'GIT: %s nowych commitów na %s, ale NIE pobrano — masz niezacommitowane zmiany.\nZróbcie to ręcznie, świadomie (CLAUDE.md: pull --rebase --autostash, potem git stash list i grep na markery).\n\nCzeka:\n%s\n\nPliki:\n%s' \
+    "$BEHIND" "$UPSTREAM" "$LOG" "$FILES")"
+  emit "$(printf '%s' "$MSG" | esc)"
+  exit 0
+fi
+
+if [ "${AHEAD:-0}" -gt 0 ]; then
+  # Rozjechane: mamy własne niepushnięte commity, fast-forward niemożliwy.
+  MSG="$(printf 'GIT: historia rozjechana — %s commitów u nas niepushniętych, %s nowych na %s. Fast-forward niemożliwy, potrzebny świadomy rebase.\n\nCzeka:\n%s' \
+    "$AHEAD" "$BEHIND" "$UPSTREAM" "$LOG")"
+  emit "$(printf '%s' "$MSG" | esc)"
+  exit 0
+fi
+
+# Czyste drzewo, jesteśmy tylko z tyłu — bezpieczny fast-forward.
+if git merge --ff-only "$UPSTREAM" --quiet 2>/dev/null; then
+  MSG="$(printf 'GIT: dociągnięto %s nowych commitów od drugiej osoby (fast-forward z %s):\n%s\n\nPliki:\n%s' \
+    "$BEHIND" "$UPSTREAM" "$LOG" "$FILES")"
+else
+  MSG="$(printf 'GIT: %s nowych commitów na %s, ale fast-forward się nie udał. Do sprawdzenia ręcznie.\n\nCzeka:\n%s' \
+    "$BEHIND" "$UPSTREAM" "$LOG")"
+fi
+emit "$(printf '%s' "$MSG" | esc)"

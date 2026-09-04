@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/scripts/claude-pull-hook.sh\"",
+            "timeout": 20,
+            "statusMessage": "Sprawdzam, co dopchnęła druga osoba…"
+          }
+        ]
+      }
+    ]
+  }
+}
