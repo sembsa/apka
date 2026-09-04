@@ -1711,10 +1711,31 @@ git push
 > snapshot z doklejonym `<script>` i nietkniętą treścią klienta; wyjście poza katalog
 > snapshotu (`../../`) daje 404; po poprawce obwód SignalR łączy się (WebSocket w konsoli).
 >
-> **Nieprzeklikane do końca:** kroki 2–3 (formularz → propozycje → klik w blok w iframe
-> → uwaga → runda). Narzędzia przeglądarki przestały odpowiadać (CDP `Page.captureScreenshot`
-> timeout, kliknięcia bez efektu). Do powtórzenia ręcznie — to jedyna część, której
-> bUnit nie potrafi zastąpić.
+> **Przejście domknięte 2026-09-04 (druga próba).** Cała ścieżka klienta przeklikana
+> w przeglądarce od pustej strony do drugiej wersji: kreator → 3 propozycje → wybór →
+> edytor z podglądem → klik w blok w iframe → uwaga → runda → podgląd przeskakuje na
+> `/preview/{id}/2`, licznik pokazuje „1 z 15", konsola bez błędów.
+>
+> **Drugi błąd, którego testy nie mogły złapać:** `ChooseProposalAsync` w mocku ustawiał
+> tylko status i **nie tworzył wersji 1**, więc edytor otwierał się bez iframe'a i klient
+> nie miał w co kliknąć. Testy komponentów tego nie widziały, bo `Setup()` dorabiał sobie
+> wersję ręcznym `ApplyCommentsAsync`. Naprawione, plus test regresji
+> `Wybor_propozycji_tworzy_wersje_1_z_podgladem` (45 testów).
+>
+> Pierwszy klik po współrzędnych dał „Uwaga do całej strony" i wyglądał na błąd kotwicy —
+> okazał się poprawny: klik minął nagłówek i trafił w tło, a `closest('[data-cmt-id]')`
+> słusznie zwrócił `null`. Klik dokładnie w `<h1 data-cmt-id="hero">` daje
+> „Uwaga do bloku: hero", czyli łańcuch iframe → `postMessage` → shim → `[JSInvokable]`
+> → UI działa end-to-end z trzema bramkami bezpieczeństwa włączonymi.
+>
+> **Do przejścia zostają gałęzie `failed`** (`retrying`/`halted`): mock przestawia je
+> tylko z kodu (`NextJobOutcome`), z UI nie ma jak ich wywołać. Pokryte testami
+> (`JobStatusTests`, `Nieudana_runda_nie_zabiera_klientowi_niczego`).
+>
+> **Obserwacja produktowa, nie błąd:** po udanej rundzie lista uwag jest pusta, bo uwagi
+> są zakotwiczone w wersji, a klient patrzy już na następną. Statusy `applied` z notatką
+> „Zrobione: …" nigdy nie trafiają klientowi przed oczy. Do rozstrzygnięcia z Sebastianem:
+> czy klient ma widzieć potwierdzenie, co zostało zrobione z jego uwagami.
 
 Jedyne zadanie bez testu jednostkowego: sprawdzenie, czy to **da się przejść jako klient**, a nie czy komponenty działają.
 
