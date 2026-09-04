@@ -114,8 +114,38 @@ Trzy rzeczy, które z tego wynikają:
   czego chronić poza jedną stroną.
 - **4. Statyczne HTML+CSS, bez frameworka:** zgoda, i to jest też warunek punktu 3
   powyżej — im prostsze wyjście, tym łatwiej sprawdzić, że wersja jest poprawna.
-- **1. Stack** i **5. Wersjonowanie** — zostawiam Przemkowi do decyzji, obie realnie
-  zmieniają zakres. Uzupełnię ten plik, jak zapadną.
+- **1. Stack: C#/.NET** (wariant B, nie rekomendowany A) — decyzja Przemka.
+- **5. Wersjonowanie: kopie katalogów** (snapshoty, nie git) — decyzja Przemka.
+
+### Co z tego wynika dla sekcji 5
+
+Wybór B **usuwa ścieżkę „implementacja prod: Claude Agent SDK"** — nie ma oficjalnego
+Agent SDK dla .NET. Owijka na `claude -p` nie jest więc etapem przejściowym, tylko
+**docelowym kształtem silnika**. To przestawia priorytety:
+
+- interfejs `generate(...)` z sekcji 5 zostaje, ale jego rolą nie jest już „podmiana na
+  SDK w jednym module" — realną alternatywą na przyszłość jest zejście do Messages API
+  (i wtedy tracimy gotowy harness do pracy na plikach, czyli piszemy własną pętlę
+  narzędziową). Warto to zapisać w planie jako świadomy koszt, nie jako opcję na już
+- punkty 1 i 3 tej recenzji **rosną w wagę**, bo nie ma po nich sprzątać żadna
+  późniejsza migracja. Bramka akceptacji wersji jest trwałą częścią architektury
+- dochodzi konkret pod .NET, na który się nadziałem w testach: proces `claude -p`
+  **czeka 3 sekundy na stdin**, jeśli go nie dostanie (`Warning: no stdin data received
+  in 3s, proceeding without it`). W `ProcessStartInfo` trzeba ustawić
+  `RedirectStandardInput = true` i **od razu zamknąć** strumień, inaczej doklejamy
+  3 sekundy do każdego zadania. Prompt idzie argumentem, nie przez stdin
+
+### Co z tego wynika dla wersjonowania
+
+Kopie katalogów dobrze się składają z punktem 3 tej recenzji, lepiej niż git:
+generacja idzie do katalogu roboczego, **przechodzi walidację (`data-cmt-id` + render),
+i dopiero zaakceptowana wersja staje się snapshotem.** Odrzucona próba nie zostawia
+śmiecia w historii, bo historia to katalogi, które sami tworzymy. Przy repo git
+trzeba by generować na branchu i sprzątać nieudane commity.
+
+Koszt do przyjęcia świadomie: diff „przed/po" dla klienta trzeba zrobić samemu
+(dla statycznego HTML+CSS wystarczy porównanie plików tekstowych po nazwie —
+przy decyzji 4 to kilka plików, nie drzewo).
 
 Podział pracy z propozycji przyjmuję (frontend: kreator, wybór propozycji, podgląd
 i przypinanie komentarzy). Kontrakt API robimy wspólnie przed pierwszą linią kodu —
