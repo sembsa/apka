@@ -27,15 +27,7 @@
   <Target Name="BuildFakeClaude" AfterTargets="Build">
     <MSBuild Projects="..\..\src\Generator.FakeClaude\Generator.FakeClaude.csproj"
              Targets="Build"
-             Properties="Configuration=$(Configuration)" />
-    <ItemGroup>
-      <FakeClaudeDll Include="..\..\src\Generator.FakeClaude\bin\$(Configuration)\net10.0\Generator.FakeClaude.dll" />
-      <FakeClaudeConfig Include="..\..\src\Generator.FakeClaude\bin\$(Configuration)\net10.0\Generator.FakeClaude.runtimeconfig.json" />
-      <FakeClaudeDeps Include="..\..\src\Generator.FakeClaude\bin\$(Configuration)\net10.0\Generator.FakeClaude.deps.json" />
-    </ItemGroup>
-    <Copy SourceFiles="@(FakeClaudeDll)" DestinationFolder="$(OutDir)FakeClaude" />
-    <Copy SourceFiles="@(FakeClaudeConfig)" DestinationFolder="$(OutDir)FakeClaude" />
-    <Copy SourceFiles="@(FakeClaudeDeps)" DestinationFolder="$(OutDir)FakeClaude" />
+             Properties="Configuration=$(Configuration);OutDir=$(OutDir)FakeClaude\" />
   </Target>
 
 </Project>
