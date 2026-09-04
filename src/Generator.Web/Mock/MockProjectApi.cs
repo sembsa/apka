@@ -86,10 +86,23 @@ public class MockProjectApi : IProjectApi
             new("p-3", "Klasyczny z cennikiem", "<html><body><h1 data-cmt-id=\"hero\">Fryzjer</h1><ul data-cmt-id=\"cennik\"><li>Strzyżenie 60 zł</li></ul></body></html>"),
         ]);
 
-    public Task ChooseProposalAsync(string id, string proposalId)
+    /// <summary>
+    /// Wybor propozycji MUSI utworzyc wersje 1 — to ona jest pierwsza strona klienta.
+    /// Bez tego edytor otwiera sie bez iframe'a i klient nie ma w co kliknac. Testy
+    /// komponentow tego nie widzialy, bo dorabialy sobie wersje recznym wywolaniem
+    /// ApplyCommentsAsync w Setup().
+    /// </summary>
+    public async Task ChooseProposalAsync(string id, string proposalId)
     {
-        _projects[id] = _projects[id] with { Status = "active" };
-        return Task.CompletedTask;
+        var project = _projects[id];
+        if (project.Versions.Count > 0) return;
+
+        await ZapiszSnapshot(id, 1, []);
+        _projects[id] = project with
+        {
+            Status = "active",
+            Versions = [new VersionView(1, $"/preview/{id}/1", [])],
+        };
     }
 
     public async Task<string> ApplyCommentsAsync(string id, int version, IReadOnlyList<CommentDto> comments)

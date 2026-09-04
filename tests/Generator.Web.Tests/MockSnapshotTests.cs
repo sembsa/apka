@@ -61,6 +61,24 @@ public class MockSnapshotTests : IDisposable
         Assert.Contains("preview-click.js", PreviewInjector.Inject(html, "/js/preview-click.js"));
     }
 
+    [Fact]
+    public async Task Wybor_propozycji_tworzy_wersje_1_z_podgladem()
+    {
+        // Znalezione przeklikaniem, nie testem: edytor otwieral sie bez iframe'a, bo
+        // wybor propozycji ustawial tylko status. Klient nie mial w co kliknac, a wiec
+        // nie mial jak zglosic uwagi — czyli produkt nie istnial.
+        var api = new MockProjectApi { SimulatedDelay = TimeSpan.Zero, SnapshotRoot = _root };
+        var p = await api.CreateAsync("idea", "Fryzjer");
+
+        await api.ChooseProposalAsync(p.Id, "p-1");
+
+        var po = await api.GetAsync(p.Id);
+        var wersja = Assert.Single(po.Versions);
+        Assert.Equal(1, wersja.Number);
+        Assert.Equal($"/preview/{p.Id}/1", wersja.PreviewUrl);
+        Assert.True(File.Exists(Path.Combine(_root, p.Id, "v1", "index.html")));
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
