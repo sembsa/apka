@@ -1741,7 +1741,7 @@ git commit -m "feat(engine): PromptBuilder — previousAnchors, kolejnosc uwag, 
   - stałe `const int RunRetryLimit = 1`, `const int AnchorRetryLimit = 2`
   - `static IReadOnlyList<CommentResult> ParseReport(string resultText, IReadOnlyList<Comment> comments)`
 
-- [ ] **Step 1: Napisz failujące testy**
+- [x] **Step 1: Napisz failujące testy**
 
 `tests/Generator.Engine.Tests/GenerationServiceTests.cs`:
 
@@ -1915,12 +1915,12 @@ public class GenerationServiceTests : IDisposable
 }
 ```
 
-- [ ] **Step 2: Uruchom, potwierdź porażkę**
+- [x] **Step 2: Uruchom, potwierdź porażkę**
 
 Run: `dotnet test tests/Generator.Engine.Tests --filter GenerationServiceTests -v q`
 Expected: błąd kompilacji — `GenerationService` nie istnieje.
 
-- [ ] **Step 3: Zaimplementuj serwis**
+- [x] **Step 3: Zaimplementuj serwis**
 
 `src/Generator.Engine/Jobs/GenerationService.cs`:
 
@@ -2081,12 +2081,12 @@ public partial class GenerationService(IClaudeRunner runner, ProjectStore projec
 }
 ```
 
-- [ ] **Step 4: Uruchom cały zestaw testów**
+- [x] **Step 4: Uruchom cały zestaw testów**
 
 Run: `dotnet test tests/Generator.Engine.Tests -v q`
 Expected: wszystkie testy PASS — 51 z Tasków 1–9 (3+3+6+5+7+10+4+7+6).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/Generator.Engine/Jobs tests/Generator.Engine.Tests/GenerationServiceTests.cs
