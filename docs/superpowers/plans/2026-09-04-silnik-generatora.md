@@ -1398,7 +1398,7 @@ git commit -m "feat(engine): bramki wersji — twarda renderowalnosc, miekkie da
   `VersionMeta Commit(int number, string sessionId, decimal costUsd, IReadOnlyList<string> orphanedAnchors)`,
   `string SnapshotPath(int number)`, `string WorkDir { get; }`
 
-- [ ] **Step 1: Napisz failujące testy**
+- [x] **Step 1: Napisz failujące testy**
 
 `tests/Generator.Engine.Tests/VersionStoreTests.cs`:
 
@@ -1475,12 +1475,12 @@ public class VersionStoreTests : IDisposable
 }
 ```
 
-- [ ] **Step 2: Uruchom, potwierdź porażkę**
+- [x] **Step 2: Uruchom, potwierdź porażkę**
 
 Run: `dotnet test tests/Generator.Engine.Tests --filter VersionStoreTests -v q`
 Expected: błąd kompilacji — `VersionStore` nie istnieje.
 
-- [ ] **Step 3: Zaimplementuj store**
+- [x] **Step 3: Zaimplementuj store**
 
 `src/Generator.Engine/Versioning/VersionStore.cs`:
 
@@ -1520,12 +1520,12 @@ public class VersionStore(string projectDir)
 }
 ```
 
-- [ ] **Step 4: Uruchom testy**
+- [x] **Step 4: Uruchom testy**
 
 Run: `dotnet test tests/Generator.Engine.Tests --filter VersionStoreTests -v q`
 Expected: 4 testy PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/Generator.Engine/Versioning tests/Generator.Engine.Tests/VersionStoreTests.cs
