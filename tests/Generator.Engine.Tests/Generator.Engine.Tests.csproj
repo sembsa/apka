@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Generator.Engine\Generator.Engine.csproj" />
+  </ItemGroup>
+
+  <!-- Atrapa NIE jest ProjectReference: to program konsolowy, nie biblioteka.
+       Budujemy ja do siostrzanego OutDir i odpalamy przez `dotnet <dll>`. -->
+  <Target Name="BuildFakeClaude" AfterTargets="Build">
+    <MSBuild Projects="..\..\src\Generator.FakeClaude\Generator.FakeClaude.csproj"
+             Targets="Build"
+             Properties="Configuration=$(Configuration)" />
+    <ItemGroup>
+      <FakeClaudeDll Include="..\..\src\Generator.FakeClaude\bin\$(Configuration)\net10.0\Generator.FakeClaude.dll" />
+      <FakeClaudeConfig Include="..\..\src\Generator.FakeClaude\bin\$(Configuration)\net10.0\Generator.FakeClaude.runtimeconfig.json" />
+      <FakeClaudeDeps Include="..\..\src\Generator.FakeClaude\bin\$(Configuration)\net10.0\Generator.FakeClaude.deps.json" />
+    </ItemGroup>
+    <Copy SourceFiles="@(FakeClaudeDll)" DestinationFolder="$(OutDir)FakeClaude" />
+    <Copy SourceFiles="@(FakeClaudeConfig)" DestinationFolder="$(OutDir)FakeClaude" />
+    <Copy SourceFiles="@(FakeClaudeDeps)" DestinationFolder="$(OutDir)FakeClaude" />
+  </Target>
+
+</Project>
