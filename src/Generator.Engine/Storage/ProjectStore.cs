@@ -38,12 +38,31 @@ public class ProjectStore(string projectDir)
         return meta;
     }
 
-    public ProjectMeta Load() =>
-        JsonSerializer.Deserialize<ProjectMeta>(File.ReadAllText(MetaPath), Options)
-        ?? throw new InvalidDataException($"project.json nie da sie odczytac: {MetaPath}");
+    public ProjectMeta Load()
+    {
+        try
+        {
+            var json = File.ReadAllText(MetaPath);
+            return JsonSerializer.Deserialize<ProjectMeta>(json, Options)
+                ?? throw new InvalidDataException($"project.json deserializuje sie na null w: {MetaPath}");
+        }
+        catch (IOException ex)
+        {
+            throw new InvalidDataException($"Nie mozna czytac project.json w: {MetaPath}", ex);
+        }
+        catch (System.Text.Json.JsonException ex)
+        {
+            throw new InvalidDataException($"project.json jest uszkodzony lub niepelny w: {MetaPath}", ex);
+        }
+    }
 
-    public void Save(ProjectMeta meta) =>
-        File.WriteAllText(MetaPath, JsonSerializer.Serialize(meta, Options));
+    public void Save(ProjectMeta meta)
+    {
+        var json = JsonSerializer.Serialize(meta, Options);
+        var tmpPath = MetaPath + ".tmp";
+        File.WriteAllText(tmpPath, json);
+        File.Move(tmpPath, MetaPath, overwrite: true);
+    }
 
     /// Runda klienta. Powtorki po awarii jej NIE zuzywaja (kontrakt 4.1).
     public static ProjectMeta WithRoundConsumed(ProjectMeta m) =>

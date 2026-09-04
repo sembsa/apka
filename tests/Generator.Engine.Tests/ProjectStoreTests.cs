@@ -21,6 +21,11 @@ public class ProjectStoreTests : IDisposable
         Assert.Equal(0, meta.RoundsUsed);
         Assert.NotEmpty(meta.Token);
         Assert.True(File.Exists(Path.Combine(_dir, "project.json")));
+
+        // Kontrakt z Taskiem 7: katalog work musi istniec
+        var workDir = Path.Combine(_dir, "work");
+        Assert.True(Directory.Exists(workDir), $"Katalog {workDir} nie istnieje");
+        Assert.Equal(workDir, meta.WorkspaceDir);
     }
 
     [Fact]
@@ -28,15 +33,42 @@ public class ProjectStoreTests : IDisposable
     {
         var store = new ProjectStore(_dir);
         var created = store.Create(SourceKind.Url);
-        var updated = created with { Status = ProjectStatus.Active, SpentUsd = 1.25m };
+
+        // Dodaj версии z prawdziwymi VersionMeta
+        var version1 = new VersionMeta(
+            Number: 1,
+            SessionId: "sess-001",
+            SnapshotDir: "/snapshots/v1",
+            CostUsd: 0.5m,
+            OrphanedAnchors: ["anchor-1", "anchor-2"]);
+
+        var updated = created with
+        {
+            Status = ProjectStatus.Active,
+            SpentUsd = 1.25m,
+            Versions = [version1]
+        };
         store.Save(updated);
 
         var loaded = new ProjectStore(_dir).Load();
 
+        // Sprawdzaj wszystkie pola
         Assert.Equal(ProjectStatus.Active, loaded.Status);
         Assert.Equal(1.25m, loaded.SpentUsd);
         Assert.Equal(created.Id, loaded.Id);
         Assert.Equal(SourceKind.Url, loaded.Source);
+        Assert.Equal(created.Token, loaded.Token);
+        Assert.Equal(15, loaded.RoundsLimit);
+        Assert.Equal(8.00m, loaded.BudgetUsd);
+
+        // Sprawdzaj zagniezdzone Versions
+        Assert.Single(loaded.Versions);
+        var loadedVersion = loaded.Versions[0];
+        Assert.Equal(1, loadedVersion.Number);
+        Assert.Equal("sess-001", loadedVersion.SessionId);
+        Assert.Equal("/snapshots/v1", loadedVersion.SnapshotDir);
+        Assert.Equal(0.5m, loadedVersion.CostUsd);
+        Assert.Equal(["anchor-1", "anchor-2"], loadedVersion.OrphanedAnchors);
     }
 
     [Fact]
@@ -52,5 +84,34 @@ public class ProjectStoreTests : IDisposable
         var afterRound = ProjectStore.WithRoundConsumed(ProjectStore.WithSpend(afterRetry, 0.20m));
         Assert.Equal(1, afterRound.RoundsUsed);
         Assert.Equal(0.40m, afterRound.SpentUsd);
+    }
+
+    [Fact]
+    public void WithRoundConsumed_nie_zmienia_SpentUsd()
+    {
+        // Runda zmienia RoundsUsed, ale wcale nie rusza SpentUsd
+        var meta = new ProjectStore(_dir).Create(SourceKind.Idea);
+        var afterSpend = ProjectStore.WithSpend(meta, 0.5m);
+
+        var afterRound = ProjectStore.WithRoundConsumed(afterSpend);
+
+        Assert.Equal(1, afterRound.RoundsUsed);
+        Assert.Equal(0.5m, afterRound.SpentUsd); // bez zmian
+    }
+
+    [Fact]
+    public void Load_pliku_obciętego_lub_uszkodzonego_rzuca_zrozumialY_blad()
+    {
+        var store = new ProjectStore(_dir);
+        var meta = store.Create(SourceKind.Idea);
+
+        // Podłóż obcięty JSON
+        var projectJsonPath = Path.Combine(_dir, "project.json");
+        File.WriteAllText(projectJsonPath, "{\"Id\":\"test\",\"incomplete");
+
+        // Load powinien rzucić InvalidDataException z MetaPath w treści
+        var ex = Assert.Throws<InvalidDataException>(() => store.Load());
+        Assert.Contains(projectJsonPath, ex.Message);
+        Assert.Contains("uszkodzony", ex.Message, System.StringComparison.OrdinalIgnoreCase);
     }
 }
