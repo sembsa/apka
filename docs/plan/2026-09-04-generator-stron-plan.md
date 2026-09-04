@@ -102,6 +102,8 @@ generate({
 | `--permission-mode acceptEdits` | **bez tego `Write` jest cicho odrzucany, a zadanie kończy się „sukcesem"** — sprawdzone, patrz 5.1. Pod `--restricted` przepuszcza `Write`/`Edit` |
 | `--permission-prompts none` | w produkcji nikt nie odpowiada na prompty — twarda odmowa zamiast czekania na hosta (domyślnie `host`) |
 | `--bare` (produkcja) | pomija auto-wykrywanie `CLAUDE.md`, hooki i auto-memory; autoryzacja **wyłącznie** przez `ANTHROPIC_API_KEY` lub `apiKeyHelper`, OAuth i keychain nie są czytane |
+| `--append-system-prompt` | nasze zasady: „prosta strona, jeden plik HTML + jeden CSS, bez frameworków" |
+| `--model` | wybór modelu (prod: `claude-opus-5`) |
 
 `--restricted` odmawia `bypassPermissions` — sprawdzone: `Error: bypassPermissions not
 supported in restricted mode`, exit 1, natychmiast, bez wywołania modelu.
@@ -112,8 +114,6 @@ fryzjera wjadą nasze zasady pracy w parze i indeks pamięci (koszt, szum, wycie
 kontekstu do artefaktu klienta). `--restricted` tego nie zatrzymuje: ignoruje pliki
 *settings*, nie `CLAUDE.md`. Projekty trzymamy poza drzewem repo, a w produkcji dokładamy
 `--bare`.
-| `--append-system-prompt` | nasze zasady: „prosta strona, jeden plik HTML + jeden CSS, bez frameworków" |
-| `--model` | wybór modelu (prod: `claude-opus-5`) |
 
 Katalog roboczy podprocesu = `workspaceDir`. Claude nie ma dostępu do sieci ani do
 niczego poza katalogiem projektu.
@@ -126,7 +126,7 @@ Dwie rzeczy warto rozdzielić, bo mieszają się w intuicji:
   Płaci się za zużycie modelu, dokładnie tak samo jak przy `claude -p`.
 - **Kosztuje sposób rozliczenia w produkcji, i to niezależnie od SDK** — patrz sekcja 11.
 
-Po decyzji 1 (C#/.NET) sprawa jest domknięta: **nie ma oficjalnego Agent SDK dla .NET**,
+Po decyzji 1 (C#/Blazor) sprawa jest domknięta: **nie ma oficjalnego Agent SDK dla .NET**,
 więc owijka na `claude -p` jest **docelowym kształtem silnika**, nie etapem przejściowym.
 Realną alternatywą na przyszłość jest zejście do Messages API — i wtedy tracimy gotowy
 harness do pracy na plikach, czyli piszemy własną pętlę narzędziową. Świadomy koszt,
@@ -208,7 +208,7 @@ To nie jest szczegół implementacyjny — bez tego produkt jest nieużywalny.
 
 ## 8. Rozważone podejścia (stack)
 
-> Wynik: wybrany **wariant B (C#/.NET)** — patrz decyzja 1 w sekcji 9. Poniżej zostawiony
+> Wynik: wybrany **wariant B, w odmianie C#/Blazor** — patrz decyzja 1 w sekcji 9. Poniżej zostawiony
 > zapis rozważań, bo tłumaczy, dlaczego rekomendacja A przestała się bronić po decyzji 6.
 
 **A. TypeScript/Node — pierwotna rekomendacja.** Oficjalny Claude Agent SDK, jeden język na front i back,
@@ -224,20 +224,6 @@ bez przewagi B (znajomość).
 
 ## 9. Decyzje — zatwierdzone 2026-09-04
 
-<<<<<<< Updated upstream
-1. **Stack: C#/.NET.** Rozstrzygnięte 2026-09-04 na rzecz wariantu B (wersja Przemka).
-   Decyzja 6 wyjęła główny argument z rekomendacji A — przewagą TypeScriptu był oficjalny
-   Agent SDK, którego nie używamy. `claude -p` z .NET to zwykły `Process`, a C# to Wasz
-   język zawodowy. Frontend zostaje w JS.
-2. **Publikacja w v1: podgląd pod naszym linkiem + ZIP do pobrania.** Domeny i hosting osobno.
-3. **Bez kont i logowania w v1.** Projekt = link z tokenem. Auth dokładamy, gdy generator się sprawdzi.
-4. **Wyjście: statyczne HTML + CSS + minimum JS.** Bez frameworka, bez CMS.
-5. **Wersjonowanie: kopie katalogów** (wersja Przemka). Snapshotem zostaje **tylko wersja,
-   która przeszła walidację z 5.2** — odrzucona próba nie zostawia śmiecia w historii.
-   Przy git trzeba by generować na branchu i sprzątać nieudane commity. Koszt przyjęty
-   świadomie: diff „przed/po" piszemy sami (przy decyzji 4 to kilka plików tekstowych).
-6. **Silnik: `claude -p`, bez Claude Agent SDK** (sekcja 5).
-=======
 1. **Stack: C#/Blazor** — jeden język po obu stronach. Rozstrzygnięte przez Przemka
    2026-09-04, po tym jak decyzja 6 wyjęła główny argument z rekomendacji A
    (przewagą TS był oficjalny Agent SDK, którego nie używamy).
@@ -249,7 +235,7 @@ bez przewagi B (znajomość).
    a odrzucona próba nie zostawia śmiecia w historii. Przy git trzeba by generować na branchu
    i sprzątać nieudane commity. Koszt: diff „przed/po" piszemy sami — przy decyzji 4 to
    porównanie kilku plików tekstowych.
-6. **Silnik: `claude -p`, bez Claude Agent SDK** (sekcja 5). Przy C#/.NET nie jest to już
+6. **Silnik: `claude -p`, bez Claude Agent SDK** (sekcja 5). Przy C#/Blazor nie jest to już
    „na tę chwilę" — oficjalnego Agent SDK dla .NET nie ma, więc owijka jest **docelowa**.
 
 ### Co z decyzji 1 wynika (C#/Blazor)
@@ -273,7 +259,6 @@ rozstrzygnięte. Rekomendacja: **Server** — sekcja 7 potrzebuje strumienia pos
 a obwód SignalR daje to bez dorabiania SSE; stan projektu zostaje na serwerze, blisko
 kolejki i katalogów. WASM wymaga osobnego API i własnego kanału postępu, a zyskuje tylko
 tam, gdzie chcemy statyczny hosting — czego przy workerze i tak nie mamy.
->>>>>>> Stashed changes
 
 Podział pracy (propozycja, do potwierdzenia):
 
