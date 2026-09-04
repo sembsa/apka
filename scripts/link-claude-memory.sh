@@ -7,13 +7,27 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SHARED_MEM="$REPO_ROOT/.claude/memory"
 
 # Claude Code trzyma stan projektu w ~/.claude/projects/<slug>, gdzie slug to
-# bezwzględna ścieżka projektu z '/' i '.' zamienionymi na '-'.
-SLUG="$(printf '%s' "$REPO_ROOT" | sed 's#[/.]#-#g')"
-PROJECT_DIR="$HOME/.claude/projects/$SLUG"
-LINK="$PROJECT_DIR/memory"
+# bezwzględna ścieżka projektu ze zamienionymi separatorami. Nie zgadujemy nazwy —
+# szukamy istniejącego katalogu, bo tylko Claude Code zna prawidłowy slug.
+PROJECTS="$HOME/.claude/projects"
+PROJECT_DIR=""
+for SLUG in \
+  "$(printf '%s' "$REPO_ROOT" | sed 's#[/.]#-#g')" \
+  "$(printf '%s' "$REPO_ROOT" | sed 's#/#-#g')"
+do
+  if [ -d "$PROJECTS/$SLUG" ]; then PROJECT_DIR="$PROJECTS/$SLUG"; break; fi
+done
 
+if [ -z "$PROJECT_DIR" ]; then
+  echo "BŁĄD: nie znalazłem katalogu sesji Claude Code dla $REPO_ROOT"
+  echo "Uruchom raz \`claude\` w katalogu repo (utworzy ~/.claude/projects/<slug>), potem ten skrypt ponownie."
+  echo "Kandydaci w $PROJECTS:"
+  /bin/ls "$PROJECTS" 2>/dev/null | grep -i "$(basename "$REPO_ROOT")" || echo "  (brak dopasowań)"
+  exit 1
+fi
+
+LINK="$PROJECT_DIR/memory"
 mkdir -p "$SHARED_MEM"        # najpierw cel, żeby symlink nigdy nie zwisał
-mkdir -p "$PROJECT_DIR"
 
 if [ -L "$LINK" ]; then
   CURRENT="$(readlink "$LINK")"
