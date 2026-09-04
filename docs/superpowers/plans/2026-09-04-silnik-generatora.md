@@ -932,7 +932,7 @@ git commit -m "feat(engine): ClaudeRunner — flagi sandboxa, zamykanie stdin, s
   - `record GateResult(GateVerdict Verdict, string Cause, ClaudeResult? Parsed)`
   - `static class RunGate` z `static GateResult Evaluate(ClaudeRunOutcome outcome)`
 
-- [ ] **Step 1: Napisz failujące testy**
+- [x] **Step 1: Napisz failujące testy**
 
 `tests/Generator.Engine.Tests/RunGateTests.cs`:
 
@@ -1023,12 +1023,12 @@ public class RunGateTests
 }
 ```
 
-- [ ] **Step 2: Uruchom, potwierdź porażkę**
+- [x] **Step 2: Uruchom, potwierdź porażkę**
 
 Run: `dotnet test tests/Generator.Engine.Tests --filter RunGateTests -v q`
 Expected: błąd kompilacji — `RunGate` nie istnieje.
 
-- [ ] **Step 3: Zaimplementuj bramkę**
+- [x] **Step 3: Zaimplementuj bramkę**
 
 `src/Generator.Engine/Gates/RunGate.cs`:
 
@@ -1101,12 +1101,12 @@ public static class RunGate
 }
 ```
 
-- [ ] **Step 4: Uruchom testy**
+- [x] **Step 4: Uruchom testy**
 
 Run: `dotnet test tests/Generator.Engine.Tests --filter RunGateTests -v q`
 Expected: 7 testów PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/Generator.Engine/Gates tests/Generator.Engine.Tests/RunGateTests.cs
