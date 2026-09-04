@@ -184,6 +184,23 @@ public class HistoriaWersjiTests : BunitContext, IDisposable
         Assert.Empty(cut.FindAll("[data-test='zmiany']"));
     }
 
+
+    /// <summary>
+    /// Model „bez kont, token w linku" (decyzja 3 planu) znaczy, ze klient MOZE wejsc na
+    /// link, ktorego serwer nie zna — zly token, usuniety projekt, u nas restart aplikacji.
+    /// To normalna sytuacja klienta, a nie awaria, wiec nie moze konczyc sie 500.
+    /// </summary>
+    [Fact]
+    public void Nieznany_link_daje_komunikat_a_nie_wyjatek()
+    {
+        JSInterop.Mode = JSRuntimeMode.Loose;
+        Services.AddSingleton<IProjectApi>(new MockProjectApi { SimulatedDelay = TimeSpan.Zero });
+
+        var cut = Render<Editor>(ps => ps.Add(p => p.ProjectId, "nie-ma-takiego"));
+
+        cut.WaitForAssertion(() => Assert.NotNull(cut.Find("[data-test='nie-znaleziono']")));
+        Assert.Empty(cut.FindAll("iframe"));
+    }
     public new void Dispose()
     {
         base.Dispose();

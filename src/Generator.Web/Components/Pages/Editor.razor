@@ -5,7 +5,16 @@
 
 <h1>Twoja strona</h1>
 
-@if (_project is null)
+@if (_nieZnaleziono)
+{
+    @* Model „bez kont, token w linku" (decyzja 3) znaczy, ze wejscie na link, ktorego
+       nie znamy, jest normalna sytuacja klienta — nie awaria i nie 500 w twarz. *@
+    <p role="alert" data-test="nie-znaleziono">
+        Nie znaleźliśmy strony pod tym linkiem. Sprawdź, czy jest cały —
+        najlepiej otwórz go jeszcze raz z wiadomości, którą od nas dostałeś.
+    </p>
+}
+else if (_project is null)
 {
     <p>Wczytuję…</p>
 }
@@ -116,11 +125,26 @@ else
     /// Domyslnie WLACZONE: po rundzie klient chce wiedziec, co sie zmienilo.
     private bool _pokazZmiany = true;
 
+    private bool _nieZnaleziono;
+
     protected override async Task OnInitializedAsync() => await Reload();
 
     private async Task Reload()
     {
-        _project = await Api.GetAsync(ProjectId);
+        try
+        {
+            _project = await Api.GetAsync(ProjectId);
+        }
+        catch (KeyNotFoundException)
+        {
+            // Atrapa trzyma stan w pamieci, wiec zna ten wyjatek po restarcie; klient
+            // HTTP z Planu B przyniesie tu 404. Jedno i drugie znaczy „nie ma takiego
+            // projektu", a nie „cos sie zepsulo".
+            _nieZnaleziono = true;
+            _project = null;
+            return;
+        }
+
         var aktualna = _project.Aktualna();
         _comments = [.. await Api.GetCommentsAsync(ProjectId, _project.NumerAktualnej())];
 
