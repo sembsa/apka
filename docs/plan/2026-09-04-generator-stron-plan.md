@@ -223,6 +223,7 @@ bez przewagi B (znajomość).
 
 ## 9. Decyzje — zatwierdzone 2026-09-04
 
+<<<<<<< Updated upstream
 1. **Stack: C#/.NET.** Rozstrzygnięte 2026-09-04 na rzecz wariantu B (wersja Przemka).
    Decyzja 6 wyjęła główny argument z rekomendacji A — przewagą TypeScriptu był oficjalny
    Agent SDK, którego nie używamy. `claude -p` z .NET to zwykły `Process`, a C# to Wasz
@@ -235,6 +236,43 @@ bez przewagi B (znajomość).
    Przy git trzeba by generować na branchu i sprzątać nieudane commity. Koszt przyjęty
    świadomie: diff „przed/po" piszemy sami (przy decyzji 4 to kilka plików tekstowych).
 6. **Silnik: `claude -p`, bez Claude Agent SDK** (sekcja 5).
+=======
+1. **Stack: C#/Blazor** — jeden język po obu stronach. Rozstrzygnięte przez Przemka
+   2026-09-04, po tym jak decyzja 6 wyjęła główny argument z rekomendacji A
+   (przewagą TS był oficjalny Agent SDK, którego nie używamy).
+2. **Publikacja w v1: podgląd pod naszym linkiem + ZIP do pobrania.** Domeny i hosting osobno.
+3. **Bez kont i logowania w v1.** Projekt = link z tokenem. Auth dokładamy, gdy generator się sprawdzi.
+4. **Wyjście: statyczne HTML + CSS + minimum JS.** Bez frameworka, bez CMS.
+5. **Wersjonowanie: kopie katalogów (snapshoty)**, nie repo git. Rozstrzygnięte na rzecz
+   propozycji Przemka: przy walidacji z 5.2 snapshotem zostaje tylko wersja **zaakceptowana**,
+   a odrzucona próba nie zostawia śmiecia w historii. Przy git trzeba by generować na branchu
+   i sprzątać nieudane commity. Koszt: diff „przed/po" piszemy sami — przy decyzji 4 to
+   porównanie kilku plików tekstowych.
+6. **Silnik: `claude -p`, bez Claude Agent SDK** (sekcja 5). Przy C#/.NET nie jest to już
+   „na tę chwilę" — oficjalnego Agent SDK dla .NET nie ma, więc owijka jest **docelowa**.
+
+### Co z decyzji 1 wynika (C#/Blazor)
+
+- **Owijka na `claude -p` jest trwałą częścią architektury, nie rusztowaniem.** Bramki
+  z 5.1 i 5.2 nie posprząta żadna późniejsza migracja na SDK — realną alternatywą na
+  przyszłość jest zejście do Messages API i własna pętla narzędziowa (tracimy gotowy
+  harness do pracy na plikach). Interfejs `generate(...)` z sekcji 5 zostaje.
+- **Silnik: zwykły `Process`.** `ProcessStartInfo` z `RedirectStandardInput = true`
+  i **natychmiastowym zamknięciem** strumienia — inaczej `claude -p` czeka 3 s na stdin
+  (`Warning: no stdin data received in 3s`) i doklejamy to do każdego zadania w kolejce.
+  Prompt idzie argumentem. JSON parsujemy `System.Text.Json`.
+- **Podgląd i przypinanie komentarzy przez JS interop** — to jest cena tej decyzji i leży
+  w sekcji 4, czyli w rdzeniu produktu. Skrypt zbierający kliknięcia wewnątrz iframe jest
+  w JS przy każdym stacku; przy Blazorze dochodzi mostek iframe → `postMessage` → shim JS
+  → `DotNet.invokeMethodAsync` do metody `[JSInvokable]`. Jedna warstwa więcej niż
+  w wariancie TS, do zaprojektowania w `docs/api-contract.md` razem z `data-cmt-id`.
+
+**Nowe pytanie otwarte: Blazor Server czy WebAssembly?** Wynika z decyzji 1 i nie jest
+rozstrzygnięte. Rekomendacja: **Server** — sekcja 7 potrzebuje strumienia postępu zadania,
+a obwód SignalR daje to bez dorabiania SSE; stan projektu zostaje na serwerze, blisko
+kolejki i katalogów. WASM wymaga osobnego API i własnego kanału postępu, a zyskuje tylko
+tam, gdzie chcemy statyczny hosting — czego przy workerze i tak nie mamy.
+>>>>>>> Stashed changes
 
 Podział pracy (propozycja, do potwierdzenia):
 

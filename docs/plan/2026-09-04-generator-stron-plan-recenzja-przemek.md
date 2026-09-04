@@ -121,9 +121,30 @@ Trzy rzeczy, które z tego wynikają:
   czego chronić poza jedną stroną.
 - **4. Statyczne HTML+CSS, bez frameworka:** zgoda, i to jest też warunek punktu 3
   powyżej — im prostsze wyjście, tym łatwiej sprawdzić, że wersja jest poprawna.
-- **1. Stack: TypeScript/Node** — zgoda, przyjmuję rekomendację i zapis z sekcji 9.
-- **5. Wersjonowanie — nie zgadzam się z git, proponuję snapshoty katalogów.**
-  Jedyny punkt sporny w całym planie, uzasadnienie niżej. Do rozstrzygnięcia z Sebastianem.
+- **1. Stack: C#/Blazor** — rozstrzygnięte 2026-09-04, po tym jak Sebastian sam uznał,
+  że decyzja 6 wyjęła główny argument z rekomendacji A. Odradzałem ten wariant
+  (interop w rdzeniu produktu — patrz niżej); decyzja stoi i przyjmuję ją.
+- **5. Wersjonowanie: kopie katalogów (snapshoty)** — rozstrzygnięte na rzecz tej
+  propozycji, Sebastian uznał argument za mocniejszy od swojego pierwotnego.
+
+Oba zapisane w sekcji 9 planu. Sekcja spornych zniknęła.
+
+### Decyzja 1: co przyjąłem i czego nie odradzam już drugi raz
+
+Odradzałem C#/Blazor z jednego powodu i zapisuję go, żeby nie zginął: **podgląd w iframe
+i przypinanie komentarzy to sekcja 4, czyli rdzeń produktu, i to jest dokładnie ta część,
+którą Blazor komplikuje.** Skrypt zbierający kliknięcia w iframe jest w JS przy każdym
+stacku — przy Blazorze dochodzi mostek `postMessage` → shim JS → `DotNet.invokeMethodAsync`
+do `[JSInvokable]`. Jedna warstwa więcej między kliknięciem klienta a modelem danych.
+
+Decyzja jest podjęta, więc to nie jest apel o zmianę — to pozycja, którą trzymam
+w `docs/api-contract.md`: **kontrakt komentarza musi być zaprojektowany od strony
+przeglądarki, nie od strony C#.** Jeśli `data-cmt-id` i status komentarza wymyślimy
+w modelu .NET i dopiero potem przepchniemy przez interop, ta warstwa się zemści.
+
+Druga rzecz, którą ta decyzja pociąga: **owijka na `claude -p` jest docelowa, nie
+przejściowa** (brak Agent SDK dla .NET). Bramki z 5.1 i 5.2 są więc trwałą częścią
+architektury — nie posprząta po nich żadna migracja. To wzmacnia punkty 1 i 3 tej recenzji.
 
 ### Decyzja 5: snapshoty zamiast repo git per projekt
 
@@ -147,12 +168,13 @@ Jeśli Sebastian ma inne argumenty za gitem, ustępuję — to nie jest kwestia,
 warto blokować start. Ale bramka akceptacji wersji z punktu 3 musi zostać niezależnie
 od tego, który wariant wygra.
 
-### Konkret pod Node, niezależny od decyzji
+### Konkret pod .NET, niezależny od decyzji
 
 Proces `claude -p` **czeka 3 sekundy na stdin**, jeśli go nie dostanie
 (`Warning: no stdin data received in 3s, proceeding without it` — złapane w testach).
-Przy `child_process.spawn` trzeba ustawić `stdio: ['ignore', 'pipe', 'pipe']`, inaczej
-doklejamy 3 sekundy do **każdego** zadania w kolejce. Prompt idzie argumentem, nie stdinem.
+W `ProcessStartInfo` trzeba ustawić `RedirectStandardInput = true` i **od razu zamknąć**
+strumień, inaczej doklejamy 3 sekundy do **każdego** zadania w kolejce. Prompt idzie
+argumentem, nie stdinem.
 
 Podział pracy z propozycji przyjmuję (frontend: kreator, wybór propozycji, podgląd
 i przypinanie komentarzy). Kontrakt API robimy wspólnie przed pierwszą linią kodu —
