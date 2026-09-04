@@ -159,8 +159,9 @@ różnica tylko w trybie uprawnień:
 
 Zadanie uznajemy za udane tylko wtedy, gdy **wszystkie** warunki są spełnione:
 
-1. proces wypisał JSON na stdout — przy błędzie startu (np. odmowa `bypassPermissions`)
-   stdout jest **pusty**, komunikat idzie na stderr, exit 1; worker nie może parsować w ciemno
+1. proces wypisał JSON na stdout — przy błędzie startu (np. odmowa `bypassPermissions`,
+   a pod `--bare` brak `ANTHROPIC_API_KEY`) stdout jest **pusty**, komunikat idzie na
+   stderr, exit 1; worker nie może parsować w ciemno
 2. exit 0, `is_error: false`, `subtype: "success"`
 3. `stop_reason: "end_turn"` i `terminal_reason: "completed"`
 4. **`permission_denials` jest puste** — niepuste traktujemy jak błąd zadania, niezależnie
@@ -306,17 +307,17 @@ poprawka trafiła w istniejący plik.
 zawiera obok `claude-opus-5` także `claude-haiku-4-5` (wywołania pomocnicze harnessu).
 Limit iteracji na projekt zostaje jako zabezpieczenie.
 
-**Rozliczenie — to nie jest kwestia SDK.** Dokumentacja Claude Agent SDK stawia to wprost:
-zewnętrznym deweloperom **nie wolno** oferować w swoich produktach loginu claude.ai ani
-limitów subskrypcji bez wcześniejszej zgody Anthropic — produkt ma używać uwierzytelniania
-kluczem API. Napisane jest to o Agent SDK, ale dotyczy sposobu rozliczenia produktu, więc
-**tak samo obejmuje produkcję na `claude -p`**: obsługa obcych, płacących klientów z naszej
-subskrypcji Claude Code nie jest drogą do przodu.
+**Rozliczenie: produkcja musi jechać na kluczu API.** Dokumentacja Anthropic stawia to
+wprost: zewnętrznym deweloperom **nie wolno** oferować w swoich produktach loginu claude.ai
+ani limitów subskrypcji bez wcześniejszej zgody. Napisane jest to przy Agent SDK, ale
+dotyczy sposobu rozliczenia produktu, więc **obejmuje też produkcję na `claude -p`**:
+obsługa obcych, płacących klientów z naszej subskrypcji Claude Code nie jest drogą do przodu.
 
-Wniosek praktyczny: prototyp i dev na własnej subskrypcji — normalne użycie narzędzia
-developerskiego. Pierwszy płacący klient = klucz API i przeliczony koszt na projekt.
-Rezygnacja z Agent SDK **niczego tu nie oszczędza** — oszczędza tylko tyle, ile daje
-brak dodatkowej zależności. Warunki potwierdzić u Anthropic przed startem komercyjnym.
+Prototyp i dev na własnej subskrypcji to normalne użycie narzędzia developerskiego.
+Pierwszy płacący klient = `ANTHROPIC_API_KEY` i przeliczony koszt na projekt.
+Mechanizmem jest `--bare` z sekcji 5 (autoryzacja wyłącznie kluczem, OAuth i keychain
+nie są czytane) — czyli dev i prod różni jedna flaga, nie inny silnik.
+Warunki potwierdzić u Anthropic przed startem komercyjnym.
 
 **Treść pobranej strony to niezaufane wejście.** Strona klienta (albo cudza) może zawierać
 tekst, który udaje instrukcję dla modelu. Pobrany HTML traktujemy jak dane: zapisujemy do
