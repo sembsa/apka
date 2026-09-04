@@ -1900,3 +1900,72 @@ testem. Przy modelu „bez kont, token w linku" (decyzja 3) to normalna sytuacja
 nie awaria; teraz jest ludzki komunikat i `200`, sprawdzone żądaniem. Klient HTTP z
 Planu B przyniesie tu `404` zamiast wyjątku atrapy — jedno i drugie znaczy „nie ma
 takiego projektu", nie „coś się zepsuło".
+
+---
+
+## Dodane po planie: wygląd aplikacji (2026-09-05)
+
+Plan zostawiał to jako „osobną rozmowę". Robione na prośbę Przemka. Dotyczy **naszej**
+aplikacji — wygląd strony klienta jest wynikiem modelu i tu go nie ruszamy; do podglądu
+wstrzykujemy tylko skrypt kliknięć i styl podświetlenia. Bez frameworka i bez npm,
+CSS pisany rękami.
+
+### Styling naprawił błąd danych, nie tylko wygląd
+
+`preview-click.js` liczył viewport z `window.innerWidth < 768` **wewnątrz iframe'a**, a
+iframe nie miał żadnego CSS — czyli miał domyślne 300×150 przeglądarki. Zmierzone:
+okno hosta **1920px**, `innerWidth` w iframe **300px**. Skutek: **każda** uwaga szła do
+kontraktu jako `viewport: "mobile"`, także zgłaszana z monitora. Błąd był jednolity,
+więc niewidoczny — nikt nie miał z czym porównać. Komentarz w tym pliku sam ostrzegał, że
+próg musi być równy progowi, na którym host przełącza szerokość podglądu; host takiego
+progu nigdy nie miał, bo przełącznika nie było. To był kawałek **zaspecyfikowany,
+ale nie zbudowany**, nie mój pomysł.
+
+**Naprawa: host jest źródłem prawdy.** `Editor` ma przełącznik „Komputer / Telefon", ta
+sama wartość steruje szerokością iframe'a i trafia do uwagi. Z JS zniknął próg — skrypt
+w iframe nie wysyła już viewportu wcale, a `hostWidth()` podaje samą szerokość okna;
+decyzję podejmuje `Podglad.TrybDlaOkna` w C#. Jedno miejsce, nie dwa progi w dwóch
+plikach, które musiały się rozjechać (czwarty raz ten sam ruch w tej sesji, po
+`JobViewExtensions`, `ProjectViewExtensions` i `Kotwica`).
+
+Tryb jest **zasiewany z prawdziwego urządzenia** przy pierwszym renderze, więc klient
+otwierający link na telefonie nie zostaje opisany jako „komputer" tylko dlatego, że taka
+jest wartość domyślna pola. Wybór klienta jest ostateczny i zasiew go nie nadpisuje.
+
+W trybie „Komputer" podgląd ma `min-width: 60rem` i **poziomy suwak** przy wąskim oknie,
+zamiast się kurczyć. Gdyby się kurczył, na laptopie 1366px z węższą kolumną tryb znów
+zacząłby kłamać — tym razem *czasami*, co jest gorsze od dzisiejszego „zawsze”.
+
+**Dowód, że kanał nie ma czym skłamać** — podsłuchana wiadomość z iframe'a w działającej
+aplikacji: `{"type":"cmt-click","anchor":"cennik"}`. Żadnego viewportu. To mocniejsze niż
+próba przy zwężonym oknie (której nie dało się wykonać: `outerWidth` tego okna to `0`,
+narzędzie nie zmienia jego rozmiaru).
+
+### Angielszczyzna, którą zobaczyłby klient
+
+Szablon Blazora zostawił teksty po angielsku w **pięciu** miejscach pokazywanych
+klientowi — fryzjerowi, nie nam. Najgorszy jest `ReconnectModal`: Blazor Server na
+słabym łączu pokazuje go **regularnie**, więc „Rejoining the server…" to nie hipoteza.
+Przetłumaczone wszystkie: `ReconnectModal` (6 komunikatów), `MainLayout`
+(„An unhandled error has occurred"), `NotFound`, `app.css`
+(`blazor-error-boundary::after`).
+
+Usunięte martwe selektory (`.valid.modified`, `.invalid`, `.darker-border-checkbox`) —
+odnosiły się do frameworka, którego `App.razor` nigdy nie ładuje.
+
+### Błąd znaleziony przez własny test
+
+`aria-pressed="@(_viewport == "desktop")"` wyglądało poprawnie, ale Blazor renderuje
+`bool` w atrybucie jako **obecność albo brak**, więc czytnik ekranu dostawał puste
+`aria-pressed` — bezwartościowe. Test dostępności to złapał, przeglądarka nie
+pokazałaby tego nigdy.
+
+Osobno: jeden mój test wołał `OnBlockClicked` spoza dispatchera Blazora i wywalał się na
+`InvalidOperationException`. To był błąd testu, nie kodu — prawdziwe wywołanie z JS
+przychodzi już na właściwym wątku.
+
+**Przeklikane:** iframe w trybie „Komputer" ma **1038px** (było 300), w „Telefonie"
+**390px**; `aria-pressed` przeskakuje; podświetlenie zmian i klikanie w bloki działają w
+obu trybach; obramowanie podświetlenia (`outline-offset: 3px`) nie jest przycięte na
+krawędzi podglądu; trzy karty propozycji równej wysokości; strona nie przewija się w
+poziomie; log serwera bez wyjątków. **89 testów.**

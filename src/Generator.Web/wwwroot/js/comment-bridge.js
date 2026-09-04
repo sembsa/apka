@@ -12,9 +12,10 @@ window.commentBridge = (() => {
         if (event.origin !== window.location.origin) return;           // 2. nasze pochodzenie
         const d = event.data;
         if (!d || d.type !== 'cmt-click') return;                      // 3. znany ksztalt
+        // Viewportu tu nie ma: tryb podgladu zna host, bo to on go ustawil.
+        // Liczony w iframe klamal przy kazdym kliknieciu (patrz preview-click.js).
         dotNetRef.invokeMethodAsync('OnBlockClicked', {
           anchor: typeof d.anchor === 'string' ? d.anchor : null,
-          viewport: d.viewport === 'mobile' ? 'mobile' : 'desktop',
         });
       };
       window.addEventListener('message', handler);
@@ -25,3 +26,7 @@ window.commentBridge = (() => {
     },
   };
 })();
+
+// Sama szerokosc okna. Progu tu NIE MA - decyzje „telefon czy komputer" podejmuje C#
+// (Podglad.TrybDlaOkna), zeby nie bylo dwoch progow w dwoch plikach.
+window.hostWidth = () => window.innerWidth;

@@ -3,13 +3,25 @@
 @using Generator.Web.Contracts
 
 @code {
-    /// <summary>Kształt payloadu z iframe. Bez migawki treści — kontrakt 3.2.</summary>
-    public record ClickPayload(string? Anchor, string Viewport);
+    /// <summary>
+    /// Kształt payloadu z iframe. Bez migawki treści — kontrakt 3.2. I bez viewportu:
+    /// tryb podglądu zna host, bo to on go ustawił. Liczony w iframe kłamał przy każdym
+    /// kliknięciu — nieostylowany iframe ma 300px, więc wszystko szło jako „mobile",
+    /// także z monitora 1920px.
+    /// </summary>
+    public record ClickPayload(string? Anchor);
 
     [Parameter] public EventCallback<CommentDto> OnCommentDrafted { get; set; }
 
     /// <summary>Id elementu iframe, z którego wolno przyjmować kliknięcia.</summary>
     [Parameter] public string? IframeId { get; set; }
+
+    /// <summary>
+    /// Tryb, w którym klient PATRZY na podgląd: „desktop" albo „mobile" (kontrakt 3.2).
+    /// Jedno źródło prawdy — host. Nie ma tu progu w pikselach, więc nie ma czemu
+    /// rozjechać się z rzeczywistą szerokością iframe'a.
+    /// </summary>
+    [Parameter] public string Viewport { get; set; } = "desktop";
 
     private DotNetObjectReference<CommentBridge>? _self;
 
@@ -37,7 +49,7 @@
             Id: Guid.NewGuid().ToString(),      // raz, przy dodaniu — kontrakt 3.2 po korekcie
             Anchor: anchor,
             Text: string.Empty,                 // treść dopisuje klient w formularzu
-            Viewport: payload.Viewport,
+            Viewport: Viewport == "mobile" ? "mobile" : "desktop",
             CreatedAt: DateTimeOffset.UtcNow,
             Status: "open",
             Note: null);

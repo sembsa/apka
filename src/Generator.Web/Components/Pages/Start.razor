@@ -6,7 +6,7 @@
 <h1>Zrobimy Ci stronę</h1>
 <p>Odpowiedz jednym akapitem. Resztą zajmiemy się my.</p>
 
-<div role="group">
+<div role="group" class="wybor-zrodla">
     <button data-test="tryb-opis" class="@(_mode == Mode.Idea ? "wybrany" : "")"
             @onclick="() => _mode = Mode.Idea">Nie mam strony</button>
     <button data-test="tryb-url" class="@(_mode == Mode.Url ? "wybrany" : "")"

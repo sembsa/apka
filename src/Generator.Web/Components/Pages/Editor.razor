@@ -1,5 +1,6 @@
 @page "/editor/{ProjectId}"
 @inject IProjectApi Api
+@inject IJSRuntime JS
 @using Generator.Web.Contracts
 @implements IAsyncDisposable
 
@@ -43,8 +44,26 @@ else
             ? $"{wersja.PreviewUrl}/?zmienione=true"
             : wersja.PreviewUrl;
 
+        @* Tryb podgladu jest JEDNYM zrodlem prawdy o viewporcie (kontrakt 3.2):
+           steruje szerokoscia iframe'a i trafia do uwagi. Zadnego progu w pikselach
+           po drugiej stronie, wiec nie ma czemu sie rozjechac. *@
+        <div class="podglad-pasek" data-test="tryb-podgladu">
+            <button data-test="tryb-desktop" class="@(_viewport == Podglad.Desktop ? "wybrany" : null)"
+                    aria-pressed="@Wybrany(Podglad.Desktop)"
+                    @onclick='() => Tryb(Podglad.Desktop)'>
+                Komputer
+            </button>
+            <button data-test="tryb-mobile" class="@(_viewport == Podglad.Mobile ? "wybrany" : null)"
+                    aria-pressed="@Wybrany(Podglad.Mobile)"
+                    @onclick='() => Tryb(Podglad.Mobile)'>
+                Telefon
+            </button>
+        </div>
+
         @* id jest tu potrzebne: shim przyjmuje klikniecia tylko z TEGO iframe'a. *@
-        <iframe id="@_iframeId" title="Podgląd Twojej strony" src="@src"></iframe>
+        <div class="podglad podglad-@_viewport">
+            <iframe id="@_iframeId" title="Podgląd Twojej strony" src="@src"></iframe>
+        </div>
 
         @if (zmienioneJest)
         {
@@ -69,7 +88,7 @@ else
         }
     }
 
-    <CommentBridge OnCommentDrafted="Draft" IframeId="@_iframeId" />
+    <CommentBridge OnCommentDrafted="Draft" IframeId="@_iframeId" Viewport="@_viewport" />
 
     @if (_draft is not null)
     {
@@ -127,7 +146,43 @@ else
 
     private bool _nieZnaleziono;
 
+    /// <summary>
+    /// Tryb podgladu. Zasiewany z prawdziwego urzadzenia, nie ustawiony na sztywno:
+    /// klient otwierajacy link na telefonie ma dostac telefon, a nie „desktop" tylko
+    /// dlatego, ze taka jest wartosc domyslna pola.
+    /// </summary>
+    private string _viewport = Podglad.Desktop;
+    private bool _trybWybranyPrzezKlienta;
+
     protected override async Task OnInitializedAsync() => await Reload();
+
+    /// <summary>
+    /// Zasiew trybu z prawdziwego urzadzenia. Tylko przy pierwszym renderze i tylko gdy
+    /// klient sam jeszcze nie wybral — inaczej kazdy render nadpisywalby jego wybor.
+    /// </summary>
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _trybWybranyPrzezKlienta) return;
+
+        try
+        {
+            var szerokosc = await JS.InvokeAsync<int>("hostWidth");
+            var tryb = Podglad.TrybDlaOkna(szerokosc);
+            if (tryb == _viewport) return;
+
+            _viewport = tryb;
+            StateHasChanged();
+        }
+        catch (JSException)
+        {
+            // Brak funkcji (np. w tescie komponentu) nie jest powodem, zeby wywalic
+            // klientowi strone. Zostaje „desktop".
+        }
+        catch (JSDisconnectedException)
+        {
+            // Klient zamknal karte miedzy renderem a odpowiedzia.
+        }
+    }
 
     private async Task Reload()
     {
@@ -156,6 +211,17 @@ else
             ? [.. (await Api.GetCommentsAsync(ProjectId, rodzic.Number))
                 .Where(c => c.Status == "applied")]
             : [];
+    }
+
+    /// Blazor renderuje bool jako obecnosc atrybutu, a `aria-pressed` bez wartosci nie
+    /// mowi czytnikowi ekranu nic. Stad jawny string.
+    private string Wybrany(string tryb) => (_viewport == tryb).ToString().ToLowerInvariant();
+
+    /// Wybor klienta jest ostateczny — zasiew z urzadzenia go nie nadpisze.
+    private void Tryb(string tryb)
+    {
+        _viewport = tryb;
+        _trybWybranyPrzezKlienta = true;
     }
 
     private void Draft(CommentDto comment)

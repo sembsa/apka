@@ -26,6 +26,54 @@ public class EditorPageTests : BunitContext
         return (api, p.Id);
     }
 
+
+    /// <summary>
+    /// Tryb podgladu jest jednym zrodlem prawdy: ta sama wartosc steruje szerokoscia
+    /// iframe'a i trafia do uwagi (kontrakt 3.2). Test pilnuje, ze te dwa nie rozjada sie
+    /// przy nastepnej zmianie ukladu — a wlasnie na rozjechaniu polegal poprzedni blad.
+    /// </summary>
+    [Fact]
+    public async Task Tryb_telefonu_zmienia_szerokosc_podgladu_i_trafia_do_uwagi()
+    {
+        var (_, id) = await Setup();
+        var cut = Render<Editor>(ps => ps.Add(p => p.ProjectId, id));
+        cut.WaitForAssertion(() => Assert.NotNull(cut.Find("[data-test='tryb-mobile']")));
+
+        // Domyslnie komputer: klasa podgladu i uwaga musza sie zgadzac.
+        Assert.Contains("podglad-desktop", cut.Find(".podglad").GetAttribute("class")!);
+
+        await cut.Find("[data-test='tryb-mobile']").ClickAsync(new());
+
+        cut.WaitForAssertion(() => Assert.Contains(
+            "podglad-mobile", cut.Find(".podglad").GetAttribute("class")!));
+
+        // InvokeAsync, bo `OnBlockClicked` przychodzi z JS na watek dispatchera —
+        // wolanie go wprost z testu to blad testu, nie kodu.
+        var mostek = cut.FindComponent<Generator.Web.Components.CommentBridge>();
+        await cut.InvokeAsync(() => mostek.Instance.OnBlockClicked(
+            new Generator.Web.Components.CommentBridge.ClickPayload("hero")));
+
+        cut.Find("#tresc").Change("telefon za mało widoczny");
+        await cut.Find("[data-test='dodaj']").ClickAsync(new());
+        await cut.Find("[data-test='popraw']").ClickAsync(new());
+
+        var uwagi = await ((MockProjectApi)Services.GetRequiredService<IProjectApi>())
+            .GetCommentsAsync(id, 2);
+        Assert.All(uwagi.Where(u => u.Anchor == "hero"), u => Assert.Equal("mobile", u.Viewport));
+    }
+
+    [Fact]
+    public async Task Przelacznik_trybu_mowi_czytnikom_ktory_jest_wybrany()
+    {
+        // aria-pressed, bo to grupa przyciskow, a nie link — klient na czytniku musi
+        // wiedziec, w ktorym trybie oglada.
+        var (_, id) = await Setup();
+        var cut = Render<Editor>(ps => ps.Add(p => p.ProjectId, id));
+
+        cut.WaitForAssertion(() => Assert.NotNull(cut.Find("[data-test='tryb-desktop']")));
+        Assert.Equal("true", cut.Find("[data-test='tryb-desktop']").GetAttribute("aria-pressed"));
+        Assert.Equal("false", cut.Find("[data-test='tryb-mobile']").GetAttribute("aria-pressed"));
+    }
     [Fact]
     public async Task Klient_nie_ma_zadnego_pola_do_edycji_strony()
     {

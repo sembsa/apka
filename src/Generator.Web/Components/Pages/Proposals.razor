@@ -14,7 +14,7 @@ else
     <div class="propozycje">
         @foreach (var p in _proposals)
         {
-            <figure>
+            <figure class="propozycja">
                 @* srcdoc, nie src: propozycja nie jest jeszcze zapisana na dysku *@
                 <iframe title="@p.Name" srcdoc="@p.PreviewHtml" sandbox=""></iframe>
                 <figcaption>@p.Name</figcaption>

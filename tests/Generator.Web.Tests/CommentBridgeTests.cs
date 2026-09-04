@@ -7,6 +7,44 @@ namespace Generator.Web.Tests;
 
 public class CommentBridgeTests : BunitContext
 {
+    /// <summary>
+    /// Sedno poprawki: viewport bierzemy od HOSTA, ktory ustawil tryb podgladu.
+    /// Wczesniej liczyl go skrypt w iframe z `window.innerWidth < 768` — a nieostylowany
+    /// iframe ma domyslne 300px, wiec KAZDA uwaga szla jako „mobile", takze z monitora
+    /// 1920px. Blad byl jednolity, wiec niewidoczny: nikt nie widzial roznicy.
+    /// </summary>
+    [Theory]
+    [InlineData("desktop")]
+    [InlineData("mobile")]
+    public async Task Viewport_w_uwadze_bierze_sie_z_trybu_hosta(string tryb)
+    {
+        JSInterop.Mode = JSRuntimeMode.Loose;
+        CommentDto? drafted = null;
+        var cut = Render<CommentBridge>(ps => ps
+            .Add(p => p.OnCommentDrafted, c => drafted = c)
+            .Add(p => p.Viewport, tryb));
+
+        await cut.Instance.OnBlockClicked(new CommentBridge.ClickPayload("hero"));
+
+        Assert.Equal(tryb, drafted!.Viewport);
+    }
+
+    [Fact]
+    public async Task Nieznany_tryb_hosta_nie_przecieka_do_uwagi()
+    {
+        // Kontrakt 3.2 zna dwie wartosci. Cokolwiek innego to blad po naszej stronie
+        // i nie ma prawa wyladowac w danych klienta.
+        JSInterop.Mode = JSRuntimeMode.Loose;
+        CommentDto? drafted = null;
+        var cut = Render<CommentBridge>(ps => ps
+            .Add(p => p.OnCommentDrafted, c => drafted = c)
+            .Add(p => p.Viewport, "tablet-poziomo"));
+
+        await cut.Instance.OnBlockClicked(new CommentBridge.ClickPayload("hero"));
+
+        Assert.Equal("desktop", drafted!.Viewport);
+    }
+
     [Fact]
     public async Task Klik_w_blok_tworzy_komentarz_z_anchorem_i_stabilnym_id()
     {
@@ -15,7 +53,7 @@ public class CommentBridgeTests : BunitContext
         var cut = Render<CommentBridge>(ps => ps
             .Add(p => p.OnCommentDrafted, c => drafted = c));
 
-        await cut.Instance.OnBlockClicked(new CommentBridge.ClickPayload("oferta-strzyzenie", "desktop"));
+        await cut.Instance.OnBlockClicked(new CommentBridge.ClickPayload("oferta-strzyzenie"));
 
         Assert.NotNull(drafted);
         Assert.Equal("oferta-strzyzenie", drafted.Anchor);
@@ -33,9 +71,10 @@ public class CommentBridgeTests : BunitContext
         JSInterop.Mode = JSRuntimeMode.Loose;
         CommentDto? drafted = null;
         var cut = Render<CommentBridge>(ps => ps
-            .Add(p => p.OnCommentDrafted, c => drafted = c));
+            .Add(p => p.OnCommentDrafted, c => drafted = c)
+            .Add(p => p.Viewport, "mobile"));
 
-        await cut.Instance.OnBlockClicked(new CommentBridge.ClickPayload(null, "mobile"));
+        await cut.Instance.OnBlockClicked(new CommentBridge.ClickPayload(null));
 
         Assert.NotNull(drafted);
         Assert.Null(drafted.Anchor);
@@ -51,8 +90,8 @@ public class CommentBridgeTests : BunitContext
         var cut = Render<CommentBridge>(ps => ps
             .Add(p => p.OnCommentDrafted, c => drafted.Add(c)));
 
-        await cut.Instance.OnBlockClicked(new CommentBridge.ClickPayload("Hero", "desktop"));
-        await cut.Instance.OnBlockClicked(new CommentBridge.ClickPayload("oferta 1", "desktop"));
+        await cut.Instance.OnBlockClicked(new CommentBridge.ClickPayload("Hero"));
+        await cut.Instance.OnBlockClicked(new CommentBridge.ClickPayload("oferta 1"));
 
         Assert.Equal(2, drafted.Count);
         Assert.All(drafted, c => Assert.Null(c.Anchor));
@@ -68,8 +107,8 @@ public class CommentBridgeTests : BunitContext
         var cut = Render<CommentBridge>(ps => ps
             .Add(p => p.OnCommentDrafted, c => drafted.Add(c)));
 
-        await cut.Instance.OnBlockClicked(new CommentBridge.ClickPayload("hero", "desktop"));
-        await cut.Instance.OnBlockClicked(new CommentBridge.ClickPayload("hero", "desktop"));
+        await cut.Instance.OnBlockClicked(new CommentBridge.ClickPayload("hero"));
+        await cut.Instance.OnBlockClicked(new CommentBridge.ClickPayload("hero"));
 
         Assert.Equal(2, drafted.Select(c => c.Id).Distinct().Count());
     }
@@ -83,7 +122,7 @@ public class CommentBridgeTests : BunitContext
         var cut = Render<CommentBridge>(ps => ps
             .Add(p => p.OnCommentDrafted, c => drafted = c));
 
-        await cut.Instance.OnBlockClicked(new CommentBridge.ClickPayload("hero", "desktop"));
+        await cut.Instance.OnBlockClicked(new CommentBridge.ClickPayload("hero"));
 
         var pola = typeof(CommentDto).GetProperties().Select(p => p.Name).ToArray();
         Assert.DoesNotContain("Snapshot", pola);
