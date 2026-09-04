@@ -1893,7 +1893,10 @@ droga powrotna do niej widoczna) → runda na `kontakt` z v1 → v3 podświetla 
 `getComputedStyle` **wewnątrz iframe'a**, nie po samym atrybucie `src`. Wyłącznik zdejmuje
 podświetlenie i klikanie w bloki nadal działa.
 
-**Znalezione po drodze, poza zakresem:** wejście na link projektu, którego serwer nie zna
+**Znalezione po drodze i naprawione:** wejście na link projektu, którego serwer nie zna
 (u nas: restart aplikacji, bo atrapa trzyma stan w pamięci; w produkcji: usunięty lub
-błędny token), daje **500 z wyjątkiem**, a nie ludzki komunikat. Przy modelu „bez kont,
-token w linku" (decyzja 3) to normalna sytuacja klienta, nie awaria.
+błędny token) dawało **500 z wyjątkiem** — znalazłem to we własnym logu serwera, nie
+testem. Przy modelu „bez kont, token w linku" (decyzja 3) to normalna sytuacja klienta,
+nie awaria; teraz jest ludzki komunikat i `200`, sprawdzone żądaniem. Klient HTTP z
+Planu B przyniesie tu `404` zamiast wyjątku atrapy — jedno i drugie znaczy „nie ma
+takiego projektu", nie „coś się zepsuło".
