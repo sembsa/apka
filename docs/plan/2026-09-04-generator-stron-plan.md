@@ -208,12 +208,34 @@ bez przewagi B (znajomość).
 
 ## 9. Decyzje — zatwierdzone 2026-09-04
 
-1. **Stack: TypeScript/Node.** Oficjalny ekosystem, jeden język front+back, działa na Windows.
+Zgodne — zatwierdzone:
+
 2. **Publikacja w v1: podgląd pod naszym linkiem + ZIP do pobrania.** Domeny i hosting osobno.
 3. **Bez kont i logowania w v1.** Projekt = link z tokenem. Auth dokładamy, gdy generator się sprawdzi.
 4. **Wyjście: statyczne HTML + CSS + minimum JS.** Bez frameworka, bez CMS.
-5. **Wersjonowanie: katalog projektu jako repo git**, wersja = commit. Rollback i „przed/po" darmo.
 6. **Silnik: `claude -p`, bez Claude Agent SDK na tę chwilę** (sekcja 5).
+
+### ⚠ Do rozstrzygnięcia — sprzeczne decyzje (2026-09-04)
+
+Sebastian i Przemek zdecydowali równolegle, przeciwnie. Nie wybieram za Was; poniżej bilans.
+
+**1. Stack** — Sebastian: **TypeScript/Node**. Przemek: **C#/.NET**
+([recenzja](2026-09-04-generator-stron-plan-recenzja-przemek.md)).
+
+Uczciwie: **decyzja 6 (bez Agent SDK) wyjęła główny argument z rekomendacji A.** Przewagą
+TS był oficjalny Agent SDK — skoro go nie używamy, zostaje tylko „jeden język front+back",
+a frontend i tak jest w JS przy każdym wyborze backendu. Przeciwnie: `claude -p` odpalany
+z .NET to zwykły `Process`, a C# to Wasz dom zawodowy. Argument Przemka („owijka jest
+docelowa, nie przejściowa") jest konsekwencją Waszej własnej decyzji 6, nie kaprysem.
+Jeśli chcecie jednego języka po obu stronach — jest też wariant C#/Blazor, wtedy podgląd
+w iframe i przypinanie komentarzy idą przez JS interop.
+
+**5. Wersjonowanie** — Sebastian: **repo git**, wersja = commit. Przemek: **kopie katalogów**.
+
+Tu argument Przemka jest **mocniejszy niż mój pierwotny**: przy walidacji z 5.2 snapshotem
+zostaje tylko wersja **zaakceptowana**, a odrzucona próba nie zostawia śmiecia w historii.
+Przy git trzeba by generować na branchu i sprzątać nieudane commity. Koszt kopii katalogów:
+diff „przed/po" piszemy sami — przy decyzji 4 to porównanie kilku plików tekstowych.
 
 Podział pracy (propozycja, do potwierdzenia):
 
