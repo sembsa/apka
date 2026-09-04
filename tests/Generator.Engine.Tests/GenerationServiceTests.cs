@@ -239,6 +239,32 @@ public class GenerationServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Pusty_stdout_bez_sesji_nie_wymusza_resume_przy_powtorce()
+    {
+        // Kontrast do testu powyzej: tam Parsed byl NIEPUSTY (subtype=error), wiec
+        // sesja realnie powstala i powtorka slusznie przechodzi na --resume. Tutaj
+        // pierwszy przebieg nie zwraca ZADNEGO JSON-a (np. padl, zanim model
+        // cokolwiek odpowiedzial) — Parsed == null, sesja mogla nigdy nie powstac.
+        // Zmierzone empirycznie na prawdziwym `claude -p --resume <nieistniejacy-id>`:
+        // exit 1, pusty stdout, stderr "No conversation found with session ID: ...".
+        // Bezwarunkowe przestawienie na --resume zamienialoby taka usterke w
+        // gwarantowany Halted. Powtorka musi wiec nadal probowac --session-id.
+        var (meta, store, versions) = Setup();
+        var runner = new ScriptedRunner(
+            ("", _ => { }),   // brak JSON-a na stdout -> GateVerdict.Retry, Parsed == null
+            (Json("s-1", 0.1m, "RAPORT c1 applied ok"), WritePage("""<h1 data-cmt-id="hero">x</h1>""")));
+
+        var outcome = await new GenerationService(runner, store, versions)
+            .RunRoundAsync(meta, [C("c1", "hero", "x")]);
+
+        Assert.True(outcome.Succeeded);
+        Assert.Equal(2, runner.Calls);
+        Assert.True(runner.Requests[0].IsFirstRun);
+        Assert.True(runner.Requests[1].IsFirstRun);   // NIE --resume — sesja nigdy nie powstala
+        Assert.Equal(runner.Requests[0].SessionId, runner.Requests[1].SessionId);
+    }
+
+    [Fact]
     public async Task Brakujace_kotwice_sa_naprawiane_a_potem_wersja_jest_dostarczana()
     {
         // Kontrakt 3.4: po wyczerpaniu prob wersja IDZIE do klienta z orphanedAnchors.
@@ -264,6 +290,12 @@ public class GenerationServiceTests : IDisposable
         Assert.Equal(["cennik"], outcome.Version!.OrphanedAnchors);
         Assert.Equal(3, runner.Calls);   // proba + AnchorRetryLimit
         Assert.Contains(runner.Instructions, i => i.Contains("Przywroc"));
+
+        // Koszt PROB NAPRAWY kotwic tez musi zostac policzony — nie tylko koszt
+        // glownego przebiegu. Bez tego klient placi za proby naprawy, ktore nigdy
+        // nie trafiaja do SpentUsd. Trzy wywolania po 0.1m kazde.
+        Assert.Equal(0.3m, outcome.SpentUsd);
+        Assert.Equal(0.3m, store.Load().SpentUsd);
 
         // Kazda proba naprawy i tak wznawia sesje z metaV1 (nie sesje "pierwszego
         // przebiegu"), bo projekt juz ma wersje 1.
@@ -304,6 +336,45 @@ public class GenerationServiceTests : IDisposable
         Assert.True(File.Exists(Path.Combine(outcome.Version!.SnapshotDir, "index.html")));
         var html = File.ReadAllText(Path.Combine(outcome.Version!.SnapshotDir, "index.html"));
         Assert.Contains("</html>", html);
+    }
+
+    [Fact]
+    public async Task Odmowa_uprawnien_w_trakcie_naprawy_kotwic_przywraca_backup_i_dostarcza_wersje()
+    {
+        // Wariant kolizji bramek inny niz "JSON OK, zepsuty render": tu sama proba
+        // naprawy dostaje Halt (np. odmowa uprawnien), mimo ze plik, ktory przy
+        // okazji napisala, SAM W SOBIE renderuje sie poprawnie. Efekt naprawy jest
+        // CELOWO poprawnym HTML-em (nie zepsutym): to izoluje sprawdzenie werdyktu
+        // bramki wykonania od sprawdzenia renderu — "repaired" musi byc false dla
+        // KAZDEGO werdyktu innego niz Ok, NIEZALEZNIE od tego, czy plik akurat sie
+        // renderuje. Gdyby kod patrzyl tylko na render (ignorujac Halt), petla
+        // probowalaby dalej zamiast przerwac po pierwszej odmowie — objawiloby sie
+        // to trzecim wywolaniem runnera zamiast oczekiwanych dwoch.
+        var (meta, store, versions) = Setup();
+        var metaV1 = meta with
+        {
+            Versions = [new VersionMeta(1, "s-0", versions.SnapshotPath(1), 0.5m, [])],
+        };
+        Directory.CreateDirectory(versions.SnapshotPath(1));
+        File.WriteAllText(Path.Combine(versions.SnapshotPath(1), "index.html"),
+            """<html><body><h1 data-cmt-id="hero">x</h1><p data-cmt-id="cennik">y</p></body></html>""");
+
+        var denials = """[{"tool_name":"Write","tool_input":{"file_path":"/tmp/index.html"}}]""";
+        var runner = new ScriptedRunner(
+            (Json("s-1", 0.1m, "RAPORT c1 applied ok"), WritePage("""<h1 data-cmt-id="hero">x</h1>""")),        // gubi cennik
+            (Json("s-1", 0.05m, "brak uprawnien", denials), WritePage("""<h1 data-cmt-id="hero">x</h1>""")));   // Halt, ale plik renderuje sie OK
+
+        var outcome = await new GenerationService(runner, store, versions)
+            .RunRoundAsync(metaV1, [C("c1", "hero", "x")]);
+
+        Assert.True(outcome.Succeeded);
+        // Kluczowa asercja: Halt musi przerwac petle PO PIERWSZEJ probie, mimo ze
+        // plik z tej proby sam w sobie by sie wyrenderowal — bez tego (patrzenie
+        // tylko na render) petla probowalaby jeszcze raz, dajac 3 wywolania.
+        Assert.Equal(2, runner.Calls);
+        Assert.Equal(["cennik"], outcome.Version!.OrphanedAnchors);
+        Assert.Equal(0.15m, outcome.SpentUsd);   // 0.1 (glowny przebieg) + 0.05 (odrzucona proba naprawy)
+        Assert.True(RenderValidator.Check(outcome.Version!.SnapshotDir).Ok);
     }
 
     [Fact]

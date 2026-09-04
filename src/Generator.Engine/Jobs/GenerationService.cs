@@ -74,7 +74,18 @@ public partial class GenerationService(IClaudeRunner runner, ProjectStore projec
             {
                 if (attempts > RunRetryLimit)
                     return Failed(meta, FailureHandling.Halted, gate.Cause, attempts, spent);
-                isFirstRun = false;   // sesja juz istnieje po pierwszej probie
+
+                // Sesja istnieje dopiero, gdy CLI zdazylo zwrocic sparsowalny JSON
+                // (gate.Parsed niepuste) — to na tym opiera sie caly --resume.
+                // Przy pustym/niesparsowalnym stdout (np. przebieg padl zanim
+                // model cokolwiek zwrocil) sesja mogla nigdy nie powstac; empirycznie
+                // sprawdzone na prawdziwym `claude -p --resume <nieistniejacy-id>`:
+                // exit 1, pusty stdout, stderr "No conversation found with session
+                // ID: ...". Bezwarunkowe przestawienie na --resume zamienialoby
+                // KAZDA taka usterke w gwarantowany Halted (powtorka od razu pada
+                // na zlym --resume), mimo ze powtorka z --session-id mialaby szanse.
+                if (gate.Parsed is not null)
+                    isFirstRun = false;
                 continue;
             }
 
@@ -134,7 +145,24 @@ public partial class GenerationService(IClaudeRunner runner, ProjectStore projec
             }
             finally
             {
-                Directory.Delete(backupDir, recursive: true);
+                // Sprzatanie w finally moze samo rzucic (uchwyt pliku wciaz
+                // otwarty, wyscig z systemem plikow) — dokladnie tak samo jak przy
+                // Process.Kill w ClaudeRunner.cs. Gdyby anulowanie przyszlo w
+                // trakcie petli naprawy kotwic, OperationCanceledException lecialby
+                // przez ten finally; goly Directory.Delete, ktory akurat wtedy
+                // rzuci (bo proba naprawy trzyma otwarty plik / trwa jeszcze zapis),
+                // ZASTAPILBY je swoim wyjatkiem (np. IOException) i wywolujacy
+                // zapisalby to jako zwykla awarie zamiast uszanowac anulowanie.
+                // Ten catch (Exception) jest wiec celowo szeroki: zaden blad ze
+                // sprzatania nie jest wazniejszy od wyjatku, ktory to sprzatanie
+                // przerwalo — NIE zawezaj do konkretnych typow.
+                try
+                {
+                    Directory.Delete(backupDir, recursive: true);
+                }
+                catch (Exception)
+                {
+                }
             }
         }
 
