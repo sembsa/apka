@@ -349,3 +349,66 @@ Projekt przechodzi w `frozen`. Wtedy:
 
 Co dalej dzieje się z takim projektem, to pytanie o płatności, a te są poza zakresem v1
 (sekcja 10 planu) — nie projektuję tu ścieżki dosprzedaży.
+
+## 5. Historia wersji: powrót i podświetlanie zmian (Przemek)
+
+Dwie decyzje produktowe podjęte przez Przemka 2026-09-04, obie mające konsekwencje dla
+silnika — dlatego są tutaj, nie tylko w kodzie frontendu.
+
+### 5.1 Powrót do wersji przestawia wskaźnik, nie kasuje historii
+
+Powrót do starszej wersji **nie tworzy kopii** — ustawia `project.currentVersion` na
+wybrany numer. Wersje nowsze zostają w historii jako porzucone; nic nie jest usuwane
+(spójne z 4.5: zamrażamy, nie odcinamy).
+
+Wynika z tego twardy wymóg, który łatwo przeoczyć:
+
+> **`currentVersion` ≠ „ostatnia wersja".** Każde miejsce liczące „najnowszą" jako
+> ostatni element listy staje się błędem w chwili pierwszego powrotu. Podgląd, ZIP
+> i wersja, do której trafiają nowe uwagi, idą **za `currentVersion`**.
+
+Kolejna runda po powrocie tworzy wersję o numerze `max(number) + 1` — nie
+`liczba wersji + 1`, bo po powrocie te dwie liczby się rozjeżdżają i doszłoby do
+kolizji numerów.
+
+Powrót **nie zużywa rundy** — nie uruchamia modelu, więc nie ma za co pobierać opłaty
+(logika z 4.4). Wolno go wykonać także przy `frozen`: zamrożenie blokuje *nowe rundy*,
+a nie oglądanie tego, co klient już ma. Nie wolno go wykonać, gdy zadanie jest w toku —
+kończąca się runda przestawiłaby wskaźnik i cicho unieważniła powrót.
+
+### 5.2 Każda wersja zna swojego rodzica (`basedOn`)
+
+```
+Version {
+  number
+  basedOn      // numer wersji, Z KTOREJ ta powstala; null dla pierwszej
+  changedAnchors[]   // data-cmt-id blokow roznych od rodzica
+  orphanedAnchors[]
+}
+```
+
+`basedOn` **nie jest** `number - 1`. Po powrocie do v1 kolejna runda tworzy v3, której
+rodzicem jest **v1, nie v2**. Bez tego pola porównanie „co się zmieniło" dawałoby
+poprawne wyniki w każdym przebiegu liniowym — czyli w każdym, jaki zwykle testujemy —
+i cicho kłamałoby dokładnie tam, gdzie powrót do wersji ma sens.
+
+### 5.3 Zmiany pokazujemy podświetleniem bloków, nie diffem kodu
+
+Odbiorcą tego ekranu jest fryzjer, nie programista, więc diff linii HTML jest
+bezużyteczny. Klient dostaje **swoją stronę z obramowanymi blokami**, które zmieniły się
+względem rodzica. Porównujemy per `data-cmt-id`.
+
+**Wymagane uzupełnienie sekcji 2 (Sebastian):** `changedAnchors[]` liczy ten, kto ma
+snapshoty — czyli silnik, przy tworzeniu wersji. Frontend ma tylko to pokazać;
+gdyby liczył sam, musiałby ściągać dwie pełne wersje strony do przeglądarki.
+
+Porównanie idzie po **znormalizowanym `outerHtml`** bloku (zwinięte białe znaki,
+uporządkowane atrybuty), nie po samym tekście. Powód jest konkretny: prośba „powiększ
+telefon" zmienia `style`, a **tekst zostaje identyczny** — porównanie tekstu zgłosiłoby
+„nic się nie zmieniło" w najczęstszym przypadku.
+
+> **Znane ograniczenie, świadomie przyjęte:** gdy model przy okazji przepisze
+> formatowanie bloku, którego nie dotyczyła żadna uwaga, blok podświetli się mimo braku
+> zmiany widocznej dla klienta. To cena wybranego wariantu (podświetlanie zamiast dwóch
+> podglądów obok siebie). Fałszywy alarm jest tu tańszy niż przeoczona zmiana: klient
+> widzi obramowanie i sprawdza, zamiast przegapić coś, o co nie prosił.
