@@ -15,6 +15,21 @@ Zakładaj, że drugi commit może pojawić się w każdej chwili.
 
 Lokalna konfiguracja (ustaw raz): `git config pull.rebase true && git config rebase.autoStash true`
 
+### Po `pull --rebase --autostash` — zawsze sprawdź, zanim commitujesz
+
+Autostash **może nie zdołać** odtworzyć Twoich zmian (konflikt z tym, co przyszło).
+Wtedy pliki zostają z markerami konfliktu, a `git add -A` wciąga je do commita.
+Zdarzyło się to obu stronom tego samego dnia (`77c4fff`, `d40a6cf`), więc to nie pech:
+
+```bash
+git pull --rebase --autostash
+git stash list                                  # niepusty = autostash NIE wrócił
+grep -rn '^<<<<<<<\|^>>>>>>>' --include='*.md' .   # musi nic nie zwrócić
+```
+
+Dopiero potem `git add`. Jeśli markery są — scal ręcznie i sprawdź ponownie.
+Stasha nie usuwaj, dopóki nie potwierdzisz, że jego treść jest już w plikach.
+
 ## Pamięć współdzielona przez git
 
 Pamięć Claude'a **nie** leży w `~/.claude/projects/.../memory` — leży w repo, w

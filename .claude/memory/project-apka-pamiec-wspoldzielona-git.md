@@ -18,5 +18,10 @@ w `~/.claude` byłaby dla niego niewidoczna; w repo jedzie razem z kodem przez p
 inaczej druga strona jej nie widzi. Przed pisaniem nowej pamięci `git pull --rebase --autostash`
 i sprawdź, czy kolega nie zapisał już tego faktu (wtedy uzupełnij jego plik, nie duplikuj).
 `.claude/memory/MEMORY.md` ma `merge=union` w `.gitattributes`, więc indeks scala się sam.
+
+**Pamięć pisz neutralnie — czytają ją dwie sesje.** „Zapytaj Sebastiana" napisane w sesji
+Sebastiana znaczy „zapytaj swojego użytkownika", ale czytane z sesji Przemka mówi dokładnie
+odwrotnie (poprawka Przemka, 2026-09-04). Pisz „swojego użytkownika", a imion używaj tylko
+tam, gdzie naprawdę chodzi o konkretną osobę.
 Setup na nowej maszynie: `./scripts/link-claude-memory.sh`.
 Zobacz [[feedback-praca-w-parze-git-rytm]].
