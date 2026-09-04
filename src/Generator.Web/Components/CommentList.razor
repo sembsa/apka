@@ -1,0 +1,32 @@
+@using Generator.Web.Contracts
+
+@* Kolejnosc wyswietlania = kolejnosc dodawania (kontrakt 3.2): przy sprzecznych
+   uwagach obowiazuje ostatnia, wiec klient musi widziec, ktora to jest. *@
+<ol class="uwagi">
+    @foreach (var c in Comments)
+    {
+        <li data-test="komentarz-@c.Id" class="uwaga @c.Status">
+            <p class="gdzie">@(c.Anchor is null ? "cała strona" : $"blok: {c.Anchor}")</p>
+            <p class="tresc">@c.Text</p>
+
+            @* Odpowiedz stoi PRZY uwadze, nie w zbiorczym podsumowaniu wersji (3.3). *@
+            @if (c.Note is not null)
+            {
+                <p class="odpowiedz">@c.Note</p>
+            }
+
+            @* Statusu nie dotykamy — frontend umie tylko wycofac wlasna uwage (3.3). *@
+            @if (c.Status == "open")
+            {
+                <button data-test="wycofaj-@c.Id" @onclick="() => OnWithdraw.InvokeAsync(c.Id)">
+                    Wycofaj
+                </button>
+            }
+        </li>
+    }
+</ol>
+
+@code {
+    [Parameter] public IReadOnlyList<CommentDto> Comments { get; set; } = [];
+    [Parameter] public EventCallback<string> OnWithdraw { get; set; }
+}
