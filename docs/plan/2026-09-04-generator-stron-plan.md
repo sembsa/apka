@@ -225,34 +225,10 @@ bez przewagi B (znajomość).
 
 ## 9. Decyzje — zatwierdzone 2026-09-04
 
-<<<<<<< Updated upstream
-=======
-<<<<<<< Updated upstream
-1. **Stack: C#/Blazor Server.** Rozstrzygnięte 2026-09-04 — przyjęty zapis Przemka.
-   Decyzja 6 wyjęła główny argument z rekomendacji A (przewagą TypeScriptu był oficjalny
-   Agent SDK, którego nie używamy); `claude -p` z .NET to zwykły `Process`, a C# to Wasz
-   język zawodowy. Blazor Server, nie WASM — postęp zadań z sekcji 7 jedzie po obwodzie
-   SignalR, bez dorabiania SSE (rekomendacja Przemka).
-
-   **Koszt przyjęty świadomie, zapisany przez Przemka:** skrypt zbierający kliknięcia
-   w iframe jest w JS przy każdym stacku, ale przy Blazorze dochodzi mostek
-   `postMessage` → shim JS → `DotNet.invokeMethodAsync` do `[JSInvokable]` — i leży on
-   dokładnie w rdzeniu produktu (sekcja 4). Konsekwencja dla kontraktu: **komentarz
-   projektujemy od strony przeglądarki, nie od strony modelu .NET** — patrz
-   [`docs/api-contract.md`](../api-contract.md).
-2. **Publikacja w v1: podgląd pod naszym linkiem + ZIP do pobrania.** Domeny i hosting osobno.
-3. **Bez kont i logowania w v1.** Projekt = link z tokenem. Auth dokładamy, gdy generator się sprawdzi.
-4. **Wyjście: statyczne HTML + CSS + minimum JS.** Bez frameworka, bez CMS.
-5. **Wersjonowanie: kopie katalogów** (wersja Przemka). Snapshotem zostaje **tylko wersja,
-   która przeszła walidację z 5.2** — odrzucona próba nie zostawia śmiecia w historii.
-   Przy git trzeba by generować na branchu i sprzątać nieudane commity. Koszt przyjęty
-   świadomie: diff „przed/po" piszemy sami (przy decyzji 4 to kilka plików tekstowych).
-6. **Silnik: `claude -p`, bez Claude Agent SDK** (sekcja 5).
-=======
->>>>>>> Stashed changes
-1. **Stack: C#/Blazor** — jeden język po obu stronach. Rozstrzygnięte przez Przemka
-   2026-09-04, po tym jak decyzja 6 wyjęła główny argument z rekomendacji A
-   (przewagą TS był oficjalny Agent SDK, którego nie używamy).
+1. **Stack: C#/Blazor Server** — jeden język po obu stronach. Rozstrzygnięte 2026-09-04,
+   po tym jak decyzja 6 wyjęła główny argument z rekomendacji A (przewagą TS był oficjalny
+   Agent SDK, którego nie używamy). Sebastian przyjął zapis Przemka wraz z jego
+   rekomendacją **Server, nie WASM**.
 2. **Publikacja w v1: podgląd pod naszym linkiem + ZIP do pobrania.** Domeny i hosting osobno.
 3. **Bez kont i logowania w v1.** Projekt = link z tokenem. Auth dokładamy, gdy generator się sprawdzi.
 4. **Wyjście: statyczne HTML + CSS + minimum JS.** Bez frameworka, bez CMS.
@@ -280,11 +256,11 @@ bez przewagi B (znajomość).
   → `DotNet.invokeMethodAsync` do metody `[JSInvokable]`. Jedna warstwa więcej niż
   w wariancie TS, do zaprojektowania w `docs/api-contract.md` razem z `data-cmt-id`.
 
-**Nowe pytanie otwarte: Blazor Server czy WebAssembly?** Wynika z decyzji 1 i nie jest
-rozstrzygnięte. Rekomendacja: **Server** — sekcja 7 potrzebuje strumienia postępu zadania,
-a obwód SignalR daje to bez dorabiania SSE; stan projektu zostaje na serwerze, blisko
-kolejki i katalogów. WASM wymaga osobnego API i własnego kanału postępu, a zyskuje tylko
-tam, gdzie chcemy statyczny hosting — czego przy workerze i tak nie mamy.
+**Blazor Server czy WebAssembly — rozstrzygnięte 2026-09-04 na Server**, zgodnie
+z rekomendacją Przemka: sekcja 7 potrzebuje strumienia postępu zadania, a obwód SignalR
+daje to bez dorabiania SSE; stan projektu zostaje na serwerze, blisko kolejki i katalogów.
+WASM wymaga osobnego API i własnego kanału postępu, a zyskuje tylko tam, gdzie chcemy
+statyczny hosting — czego przy workerze i tak nie mamy.
 
 Podział pracy — **przyjęty obustronnie 2026-09-04**:
 
