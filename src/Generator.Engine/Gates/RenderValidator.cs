@@ -19,8 +19,19 @@ public static partial class RenderValidator
     [GeneratedRegex("<!--.*?-->", RegexOptions.Singleline)]
     private static partial Regex CommentRegex();
 
-    [GeneratedRegex("""(?:href|src)\s*=\s*["']([^"']+)["']""", RegexOptions.IgnoreCase)]
+    // "(?:^|[\s<])" wymaga, zeby "href"/"src" bylo SAMODZIELNYM atrybutem (poprzedzonym
+    // biala spacja albo poczatkiem tagu), a nie sufiksem innej nazwy — bez tego regex
+    // lapal tez "data-src"/"data-href" (standard przy leniwym ladowaniu obrazkow), przez
+    // co bramka sprawdzalaby plik, ktorego model swiadomie jeszcze nie dolaczyl.
+    [GeneratedRegex("""(?:^|[\s<])(?:href|src)\s*=\s*["']([^"']+)["']""", RegexOptions.IgnoreCase)]
     private static partial Regex LinkRegex();
+
+    /// Skladnia schematu URI z RFC 3986 (scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )).
+    /// Zamiast wyliczac schematy po jednym (mailto/tel/data — a model potrafi wypisac
+    /// "javascript:", "sms:", "about:", "blob:" i cokolwiek jeszcze), rozpoznajemy KAZDY
+    /// schemat URI naraz. To wprost wymagane zamiast listy prefiksow.
+    [GeneratedRegex("^[a-zA-Z][a-zA-Z0-9+.-]*:")]
+    private static partial Regex SchemeRegex();
 
     public static RenderCheck Check(string dir)
     {
@@ -60,6 +71,26 @@ public static partial class RenderValidator
             // i zignorowal siteRoot (tak dziala Path.Combine na Unix), przez co realnie
             // istniejacy plik strony wygladalby jak brakujacy.
             var relative = local.TrimStart('/');
+
+            // Na Windows "\x" albo "C:\x" przeszlyby przez TrimStart('/') nietkniete —
+            // to sciezki zakorzenione we WLASNEJ konwencji tamtej platformy (backslash,
+            // litera dysku), ktorych TrimStart('/') nie zdejmuje. Path.Combine z drugim
+            // argumentem zakorzenionym ODRZUCA pierwszy argument (dokladnie ten sam blad,
+            // ktory juz raz naprawilismy dla wiodacego "/" na Unix) — wiec zamiast skladac
+            // sciezke, zglaszamy to jako problem. Path.IsPathRooted jest CELOWO zalezne od
+            // platformy uruchomieniowej — to wlasnie dzieki temu dziala poprawnie na
+            // maszynie wspoltworcy z Windows. Dodatkowe jawne StartsWith('\\') jest
+            // niezalezne od platformy: "C:\x" i tak zostanie zlapane wczesniej przez
+            // SchemeRegex w IsExternal (litera + dwukropek to poprawna skladnia schematu
+            // URI), wiec jedyny przypadek, ktory realnie dociera az tutaj, to sam wiodacy
+            // backslash — a ten sprawdzamy jawnie, zeby fix byl mutation-testowalny takze
+            // na Unix (Path.IsPathRooted("\x") zwraca tu false z definicji platformy).
+            if (Path.IsPathRooted(relative) || relative.StartsWith('\\'))
+            {
+                problems.Add($"link wskazuje na sciezke zakorzeniona: {local}");
+                continue;
+            }
+
             var resolved = Path.GetFullPath(Path.Combine(siteRoot, relative));
 
             // "../poza-katalog/x.css" moze wskazywac na plik, ktory istnieje na dysku
@@ -95,8 +126,5 @@ public static partial class RenderValidator
     private static bool IsExternal(string target) =>
         target.StartsWith('#') ||
         target.StartsWith("//") ||
-        target.Contains("://") ||
-        target.StartsWith("mailto:", StringComparison.OrdinalIgnoreCase) ||
-        target.StartsWith("tel:", StringComparison.OrdinalIgnoreCase) ||
-        target.StartsWith("data:", StringComparison.OrdinalIgnoreCase);
+        SchemeRegex().IsMatch(target);
 }

@@ -143,6 +143,97 @@ public class RenderValidatorTests : IDisposable
     }
 
     [Fact]
+    public void Dowolny_schemat_uri_jest_pomijany_nie_tylko_wymienione_z_nazwy()
+    {
+        // Fix round 1: model potrafi wygenerowac dowolny schemat URI (typowy wzorzec dla
+        // rozwijanego menu: href="javascript:void(0)"), nie tylko mailto/tel/data z listy.
+        // Rozpoznajemy KAZDY schemat wedlug skladni z RFC 3986 (ALPHA *(ALPHA/DIGIT/+/-/.) ":"),
+        // wiec test celowo bierze schematy spoza jakiejkolwiek listy: javascript:, sms:,
+        // about:, blob:.
+        Write("index.html", """
+        <html><body>
+        <a href="javascript:void(0)" onclick="toggle()">menu</a>
+        <a href="sms:+48123456789">sms</a>
+        <a href="about:blank">o</a>
+        <a href="blob:https://example.com/1234-5678">b</a>
+        </body></html>
+        """);
+
+        var check = RenderValidator.Check(_dir);
+        Assert.True(check.Ok, string.Join("; ", check.Problems));
+    }
+
+    [Fact]
+    public void Atrybut_data_src_nie_jest_traktowany_jako_src()
+    {
+        // Fix round 1, Minor 2: "(?:href|src)" bez granicy lapal tez sufiks "data-src"/
+        // "data-href" (standard przy leniwym ladowaniu obrazkow) — bramka sprawdzalaby
+        // plik, ktorego model swiadomie jeszcze nie dolaczyl, i odrzucala dobra strone.
+        // "thumb.jpg" celowo NIE istnieje w _dir: gdyby regex zlapal "data-src", ten test
+        // by padl (Ok=false, problem z "thumb.jpg").
+        Write("index.html", """
+        <html><body><img data-src="thumb.jpg" data-href="cos.html" alt="leniwe ladowanie"></body></html>
+        """);
+
+        var check = RenderValidator.Check(_dir);
+        Assert.True(check.Ok, string.Join("; ", check.Problems));
+    }
+
+    [Fact]
+    public void Prawdziwy_src_obok_data_src_jest_nadal_sprawdzany()
+    {
+        // Odwrotna strona Minor 2: obcinanie sufiksu nie moze wylaczyc sprawdzania
+        // prawdziwego "src" stojacego tuz obok "data-src" w tym samym tagu.
+        Write("index.html", """
+        <html><body><img data-src="thumb.jpg" src="brak.png" alt="x"></body></html>
+        """);
+
+        var check = RenderValidator.Check(_dir);
+
+        Assert.False(check.Ok);
+        Assert.Contains(check.Problems, p => p.Contains("brak.png"));
+    }
+
+    [Fact]
+    public void Link_na_katalog_z_kropka_tez_uzywa_jego_index_html()
+    {
+        // Fix round 1, Minor 3: komentarz w kodzie wymienial href="./" jako obslugiwany
+        // obok "/" i "galeria/", ale brakowalo dla niego osobnego testu.
+        Write("index.html", """<html><body><a href="./">start</a></body></html>""");
+
+        var check = RenderValidator.Check(_dir);
+        Assert.True(check.Ok, string.Join("; ", check.Problems));
+    }
+
+    [Fact]
+    public void Sciezka_zakorzeniona_po_windowsowsku_nie_jest_skladana_z_katalogiem_wersji()
+    {
+        // Fix round 1, Minor 1: na Windows "\x" jest zakorzenione (backslash to separator
+        // katalogow), wiec Path.Combine(siteRoot, "\x") odrzucilby siteRoot dokladnie tak
+        // samo, jak wczesniej robil to wiodacy "/" na Unix.
+        //
+        // Sama asercja Assert.False(check.Ok) TU nie wystarcza: na Unix "\x" i tak jest
+        // (poprawnie) zglaszane jako problem przez zwykla galaz "plik nie istnieje" —
+        // Path.Combine traktuje tam backslash jako zwykly znak nazwy pliku, wiec Ok=false
+        // wyszedlby nawet bez tego fixa (empirycznie sprawdzone przy mutacji). Zeby test
+        // naprawde pilnowal DODANEJ galezi (a nie przypadkiem tej samej co zawsze), sprawdzam
+        // tresc konkretnego komunikatu "zakorzeniona", ktory pojawia sie WYLACZNIE z nowego
+        // sprawdzenia `Path.IsPathRooted(relative) || relative.StartsWith('\\')`.
+        //
+        // To ostatnie (StartsWith('\\')) jest jawnie niezalezne od platformy — dodane celowo,
+        // bo samo Path.IsPathRooted("\x") zwraca na Unix false (backslash nie jest tu
+        // separatorem), wiec bez tego dopisku ten test bylby scenografia na kazdej maszynie
+        // innej niz Windows. Prawdziwa ochrona samego Path.IsPathRooted uruchamia sie dopiero
+        // na Windows wspoltworcy, gdzie zwraca true rowniez dla "\x".
+        Write("index.html", """<html><body><a href="\x">x</a></body></html>""");
+
+        var check = RenderValidator.Check(_dir);
+
+        Assert.False(check.Ok);
+        Assert.Contains(check.Problems, p => p.Contains("zakorzeniona"));
+    }
+
+    [Fact]
     public void Index_html_w_podkatalogu_nie_wystarcza()
     {
         // Serwer statyczny serwuje "/" z korzenia katalogu wersji — index.html schowany
