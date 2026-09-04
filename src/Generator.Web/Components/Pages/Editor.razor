@@ -1,0 +1,115 @@
+@page "/editor/{ProjectId}"
+@inject IProjectApi Api
+@using Generator.Web.Contracts
+
+<h1>Twoja strona</h1>
+
+@if (_project is null)
+{
+    <p>Wczytuję…</p>
+}
+else
+{
+    var wersja = _project.Versions.Count > 0 ? _project.Versions[^1] : null;
+
+    @if (_project.Status == "frozen")
+    {
+        <p role="alert" data-test="zamrozone">
+            Wykorzystaliście wszystkie poprawki w tym pakiecie. Strona i podgląd zostają —
+            nowych poprawek na razie nie wprowadzamy.
+        </p>
+    }
+
+    <p data-test="licznik">
+        Wykorzystane poprawki: @_project.RoundsUsed z @_project.RoundsLimit
+    </p>
+
+    @if (wersja is not null)
+    {
+        @* id jest tu potrzebne: shim przyjmuje klikniecia tylko z TEGO iframe'a. *@
+        <iframe id="@_iframeId" title="Podgląd Twojej strony" src="@wersja.PreviewUrl"></iframe>
+
+        @if (wersja.OrphanedAnchors.Count > 0)
+        {
+            <p role="alert" data-test="osierocone">
+                Uwaga: po ostatniej poprawce zniknęły bloki, do których przypisane były
+                Twoje uwagi (@string.Join(", ", wersja.OrphanedAnchors)). Sprawdź, czy strona
+                nadal zawiera to, co miała.
+            </p>
+        }
+    }
+
+    <CommentBridge OnCommentDrafted="Draft" IframeId="@_iframeId" />
+
+    @if (_draft is not null)
+    {
+        <div data-test="nowa-uwaga">
+            <label for="tresc">
+                @(_draft.Anchor is null ? "Uwaga do całej strony" : $"Uwaga do bloku: {_draft.Anchor}")
+            </label>
+            <textarea id="tresc" rows="3" @bind="_draftText"
+                      placeholder="Napisz swoimi słowami, np. telefon za mało widoczny"></textarea>
+            <button data-test="dodaj" @onclick="AddDraft">Dodaj uwagę</button>
+        </div>
+    }
+
+    <CommentList Comments="_comments" OnWithdraw="Withdraw" />
+
+    <button data-test="popraw" disabled="@(_comments.Count == 0 || _project.Status == "frozen" || _job?.Status == "running")"
+            @onclick="Apply">
+        Popraw to
+    </button>
+
+    <JobStatus Job="_job" />
+}
+
+@code {
+    [Parameter] public string ProjectId { get; set; } = string.Empty;
+
+    private readonly string _iframeId = $"podglad-{Guid.NewGuid():N}";
+
+    private ProjectView? _project;
+    private List<CommentDto> _comments = [];
+    private CommentDto? _draft;
+    private string _draftText = string.Empty;
+    private JobView? _job;
+
+    protected override async Task OnInitializedAsync() => await Reload();
+
+    private async Task Reload()
+    {
+        _project = await Api.GetAsync(ProjectId);
+        var wersja = _project.Versions.Count > 0 ? _project.Versions[^1].Number : 1;
+        _comments = [.. await Api.GetCommentsAsync(ProjectId, wersja)];
+    }
+
+    private void Draft(CommentDto comment)
+    {
+        _draft = comment;
+        _draftText = string.Empty;
+    }
+
+    private void AddDraft()
+    {
+        if (_draft is null || string.IsNullOrWhiteSpace(_draftText)) return;
+
+        // Kolejnosc dodawania ma znaczenie — kontrakt 3.2, przy sprzecznych wygrywa ostatnia.
+        _comments.Add(_draft with { Text = _draftText.Trim() });
+        _draft = null;
+        _draftText = string.Empty;
+    }
+
+    /// Kontrakt 3.3: frontend umie wycofac, dopoki open. Statusu nie zmienia.
+    private void Withdraw(string commentId) =>
+        _comments.RemoveAll(c => c.Id == commentId && c.Status == "open");
+
+    private async Task Apply()
+    {
+        var wersja = _project!.Versions.Count > 0 ? _project.Versions[^1].Number : 1;
+        var jobId = await Api.ApplyCommentsAsync(ProjectId, wersja, _comments);
+        _job = await Api.GetJobAsync(jobId);
+
+        // Kontrakt 4.4: przy nieudanej rundzie komentarze zostaja open i nic nie przepada.
+        if (_job.Status == "succeeded") await Reload();
+    }
+}
