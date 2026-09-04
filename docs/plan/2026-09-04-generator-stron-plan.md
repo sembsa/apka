@@ -200,7 +200,8 @@ Nic więcej w v1. Brak kont, brak zespołów, brak roli.
 a klient musi widzieć, że coś się dzieje. Dlatego:
 
 - kolejka zadań (`Job`), jeden worker na start, jedno zadanie na projekt jednocześnie
-- status przez SSE albo polling `/api/projects/:id/jobs/:jobId`
+- status po obwodzie SignalR (Blazor Server) — bez dorabiania SSE; endpoint `GET /api/jobs/{id}`
+  zostaje jako droga dla klientów poza naszym UI
 - UI: „Claude pracuje nad Twoją stroną…" + to, co już wiadomo (nazwy kroków)
 - zadanie ma twardy limit czasu i limit iteracji na projekt
 
@@ -224,6 +225,31 @@ bez przewagi B (znajomość).
 
 ## 9. Decyzje — zatwierdzone 2026-09-04
 
+<<<<<<< Updated upstream
+=======
+<<<<<<< Updated upstream
+1. **Stack: C#/Blazor Server.** Rozstrzygnięte 2026-09-04 — przyjęty zapis Przemka.
+   Decyzja 6 wyjęła główny argument z rekomendacji A (przewagą TypeScriptu był oficjalny
+   Agent SDK, którego nie używamy); `claude -p` z .NET to zwykły `Process`, a C# to Wasz
+   język zawodowy. Blazor Server, nie WASM — postęp zadań z sekcji 7 jedzie po obwodzie
+   SignalR, bez dorabiania SSE (rekomendacja Przemka).
+
+   **Koszt przyjęty świadomie, zapisany przez Przemka:** skrypt zbierający kliknięcia
+   w iframe jest w JS przy każdym stacku, ale przy Blazorze dochodzi mostek
+   `postMessage` → shim JS → `DotNet.invokeMethodAsync` do `[JSInvokable]` — i leży on
+   dokładnie w rdzeniu produktu (sekcja 4). Konsekwencja dla kontraktu: **komentarz
+   projektujemy od strony przeglądarki, nie od strony modelu .NET** — patrz
+   [`docs/api-contract.md`](../api-contract.md).
+2. **Publikacja w v1: podgląd pod naszym linkiem + ZIP do pobrania.** Domeny i hosting osobno.
+3. **Bez kont i logowania w v1.** Projekt = link z tokenem. Auth dokładamy, gdy generator się sprawdzi.
+4. **Wyjście: statyczne HTML + CSS + minimum JS.** Bez frameworka, bez CMS.
+5. **Wersjonowanie: kopie katalogów** (wersja Przemka). Snapshotem zostaje **tylko wersja,
+   która przeszła walidację z 5.2** — odrzucona próba nie zostawia śmiecia w historii.
+   Przy git trzeba by generować na branchu i sprzątać nieudane commity. Koszt przyjęty
+   świadomie: diff „przed/po" piszemy sami (przy decyzji 4 to kilka plików tekstowych).
+6. **Silnik: `claude -p`, bez Claude Agent SDK** (sekcja 5).
+=======
+>>>>>>> Stashed changes
 1. **Stack: C#/Blazor** — jeden język po obu stronach. Rozstrzygnięte przez Przemka
    2026-09-04, po tym jak decyzja 6 wyjęła główny argument z rekomendacji A
    (przewagą TS był oficjalny Agent SDK, którego nie używamy).
@@ -260,11 +286,12 @@ a obwód SignalR daje to bez dorabiania SSE; stan projektu zostaje na serwerze, 
 kolejki i katalogów. WASM wymaga osobnego API i własnego kanału postępu, a zyskuje tylko
 tam, gdzie chcemy statyczny hosting — czego przy workerze i tak nie mamy.
 
-Podział pracy (propozycja, do potwierdzenia):
+Podział pracy — **przyjęty obustronnie 2026-09-04**:
 
-- **Sebastian:** silnik (adapter `claude -p`, parsowanie JSON, liczniki kosztu), workspace, kolejka, API
+- **Sebastian:** silnik (adapter `claude -p`, bramki 5.1/5.2, liczniki kosztu), workspace, kolejka, API
 - **Przemek:** frontend — kreator wejścia, wybór propozycji, podgląd + przypinanie komentarzy
-- **Wspólnie na start:** kontrakt API i model danych w `docs/api-contract.md`, żeby nie zderzać się w tych samych plikach
+- **Wspólnie, przed pierwszą linią kodu:** [`docs/api-contract.md`](../api-contract.md) —
+  kontrakt silnika wypełnia Sebastian, kontrakt komentarza Przemek (od strony przeglądarki)
 
 ## 10. Poza zakresem v1
 
