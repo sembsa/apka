@@ -1987,7 +1987,13 @@ public partial class GenerationService(IClaudeRunner runner, ProjectStore projec
             {
                 if (attempts > RunRetryLimit)
                     return Failed(FailureHandling.Halted, gate.Cause, attempts, spent);
-                isFirstRun = false;   // sesja juz istnieje po pierwszej probie
+
+                // Sesje uznajemy za istniejaca TYLKO gdy przebieg zwrocil sparsowany JSON.
+                // Sprawdzone na claude 2.1.260: --resume na sesji, ktora nigdy nie powstala,
+                // konczy sie exit 1, pustym stdout i "No conversation found with session ID".
+                // Bezwarunkowe isFirstRun=false skazywaloby wiec kazda powtorke po przebiegu
+                // bez JSON-a na pewna porazke.
+                if (gate.Parsed is not null) isFirstRun = false;
                 continue;
             }
 
