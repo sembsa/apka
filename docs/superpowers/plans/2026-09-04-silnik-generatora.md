@@ -205,16 +205,12 @@ public class FakeClaudeTests
 W `tests/Generator.Engine.Tests/Generator.Engine.Tests.csproj`, wewnątrz `<Project>`, dopisz kopiowanie atrapy do podkatalogu wyjścia testów:
 
 ```xml
-  <ItemGroup>
-    <ProjectReference Include="..\..\src\Generator.FakeClaude\Generator.FakeClaude.csproj">
-      <Private>true</Private>
-      <OutputItemType>none</OutputItemType>
-    </ProjectReference>
-  </ItemGroup>
-  <Target Name="CopyFakeClaude" AfterTargets="Build">
+  <!-- Atrapa NIE jest ProjectReference: to program konsolowy, nie biblioteka.
+       Budujemy ja do siostrzanego OutDir i odpalamy przez `dotnet <dll>`. -->
+  <Target Name="BuildFakeClaude" AfterTargets="Build">
     <MSBuild Projects="..\..\src\Generator.FakeClaude\Generator.FakeClaude.csproj"
-             Targets="Publish"
-             Properties="Configuration=$(Configuration);PublishDir=$(OutDir)FakeClaude\" />
+             Targets="Build"
+             Properties="Configuration=$(Configuration);OutDir=$(OutDir)FakeClaude\" />
   </Target>
 ```
 
