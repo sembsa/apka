@@ -31,6 +31,14 @@ switch (scenario)
     case "crash":
         Console.Error.Write("Error: bypassPermissions not supported in restricted mode");
         return 1;   // stdout celowo pusty
+    case "stdin-wait":
+        // Dla testu ClaudeRunner, ze rodzic zamyka stdin natychmiast po Start().
+        // Jesli rodzic NIE zamknie stdin, ReadToEnd() wisi, az ktos je zamknie —
+        // to jedyny sposob, zeby test czasowy naprawde sprawdzal Close(),
+        // zamiast przechodzic niezaleznie od tego, czy Close() w ogole wywolano.
+        Console.In.ReadToEnd();
+        Console.Out.Write(success);
+        return 0;
     default:
         Console.Error.Write($"nieznany scenariusz: {scenario}");
         return 2;

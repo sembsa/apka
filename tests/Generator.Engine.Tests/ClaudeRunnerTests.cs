@@ -18,15 +18,26 @@ public class ClaudeRunnerTests : IDisposable
     [Fact]
     public async Task Konczy_sie_szybciej_niz_3s_bo_stdin_jest_zamykany()
     {
-        // claude -p czeka 3 s na stdin, jesli strumien nie zostanie zamkniety.
+        // Scenariusz "stdin-wait" (nie "success"!): atrapa robi Console.In.ReadToEnd()
+        // PRZED odpowiedzia, wiec realnie czeka, az rodzic zamknie swoj koniec potoku.
+        // "success" nigdy nie czyta stdin, wiec ten sam test przechodzilby identycznie
+        // nawet gdyby ClaudeRunner w ogole nie wywolywal StandardInput.Close() —
+        // sprawdzone empirycznie (raport Task 4, fix round 1): z "success" test padal
+        // w 56 ms bez wywolania Close() w ogole. Nie "upraszczaj" z powrotem do "success".
+        //
+        // CancellationTokenSource to siatka bezpieczenstwa: gdyby Close() faktycznie
+        // zniknal z ClaudeRunner, atrapa czekalaby na stdin w nieskonczonosc. Bez limitu
+        // caly przebieg `dotnet test` zawiesilby sie zamiast dac czytelna porazke.
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var sw = Stopwatch.StartNew();
-        var outcome = await ForScenario("success").RunAsync(Request());
+        var outcome = await ForScenario("stdin-wait").RunAsync(Request(), cts.Token);
         sw.Stop();
 
         Assert.True(outcome.ProcessStarted);
-        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(2),
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(3),
             $"przebieg zajal {sw.Elapsed} — stdin nie zostal zamkniety?");
         Assert.True(outcome.Elapsed > TimeSpan.Zero);
+        Assert.Contains("\"subtype\":\"success\"", outcome.Stdout);
     }
 
     [Fact]
