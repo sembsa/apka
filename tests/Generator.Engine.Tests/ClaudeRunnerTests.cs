@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json;
 using Generator.Engine.ClaudeCli;
 using Xunit;
 
@@ -99,4 +100,100 @@ public class ClaudeRunnerTests : IDisposable
             new ClaudeRunRequest("/w", "brief", null, IsFirstRun: true), useBare: true);
         Assert.Contains("--bare", prod);
     }
+
+    // --- Fix round 2/5: end-to-end na tym, co FAKTYCZNIE dostaje proces ---
+    //
+    // Powyzszy "Argumenty_zawieraja_wszystkie_flagi_sandboxa" sprawdza tylko liste
+    // zwrocona przez czysta funkcje BuildArguments — nie sprawdza par flaga-wartosc
+    // (podmiana "acceptEdits" <-> "none" miedzy --permission-mode a --permission-prompts
+    // przeszlaby ten test) i nie sprawdza wcale "--output-format"/"json" ani odczytu
+    // ANTHROPIC_API_KEY w RunAsync (odwrocenie "!" tez by przeszlo). Testy nizej
+    // uruchamiaja RunAsync przeciwko scenariuszowi "echo-args", ktory odsyla WLASNE
+    // argv procesu jako JSON — sprawdzamy to, co faktycznie trafilo do podprocesu,
+    // nie to, co ClaudeRunner deklaruje, ze wyslal.
+
+    private static string[] ParseEchoedArgs(string stdout) =>
+        JsonSerializer.Deserialize<string[]>(stdout) ?? [];
+
+    private static int IndexOfFlag(IReadOnlyList<string> argv, string flag)
+    {
+        for (var i = 0; i < argv.Count; i++)
+            if (argv[i] == flag) return i;
+        return -1;
+    }
+
+    private static void AssertFlagValue(IReadOnlyList<string> argv, string flag, string expectedValue)
+    {
+        var i = IndexOfFlag(argv, flag);
+        Assert.True(i >= 0, $"brak flagi {flag} w argv: {string.Join(' ', argv)}");
+        Assert.True(i + 1 < argv.Count, $"flaga {flag} bez wartosci w argv: {string.Join(' ', argv)}");
+        Assert.Equal(expectedValue, argv[i + 1]);
+    }
+
+    [Fact]
+    public async Task Flagi_trafiaja_do_procesu_z_poprawnymi_parami_wartosci()
+    {
+        var runner = new ClaudeRunner("dotnet", [FakeClaude.DllPath, "--scenario", "echo-args"]);
+        var outcome = await runner.RunAsync(Request());
+
+        Assert.True(outcome.ProcessStarted);
+        Assert.Equal(0, outcome.ExitCode);
+        var argv = ParseEchoedArgs(outcome.Stdout);
+
+        AssertFlagValue(argv, "--output-format", "json");
+        AssertFlagValue(argv, "--tools", "Read,Write,Edit,Glob,Grep");
+        AssertFlagValue(argv, "--permission-mode", "acceptEdits");
+        AssertFlagValue(argv, "--permission-prompts", "none");
+        AssertFlagValue(argv, "--model", "claude-opus-5");
+
+        Assert.Contains("-p", argv);
+        Assert.Contains("--restricted", argv);
+        Assert.Contains("--strict-mcp-config", argv);
+        Assert.DoesNotContain("--dangerously-skip-permissions", argv);
+    }
+
+    // Te dwa testy mutuja globalna zmienna srodowiskowa procesu (ANTHROPIC_API_KEY).
+    // Bezpieczne bez osobnej kolekcji xUnit: xUnit domyslnie NIE zrownolegla testow
+    // WEWNATRZ jednej klasy (tylko rozne klasy/kolekcje biegna rownolegle wzgledem
+    // siebie), a zadna inna klasa testowa w tym projekcie nie czyta/ustawia tej
+    // zmiennej. Wartosc poprzednia przywracana w finally niezaleznie od wyniku testu.
+
+    [Fact]
+    public async Task Bare_dodawany_gdy_klucz_api_jest_ustawiony()
+    {
+        var previous = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
+        try
+        {
+            Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", "sk-test-dummy");
+            var runner = new ClaudeRunner("dotnet", [FakeClaude.DllPath, "--scenario", "echo-args"]);
+            var outcome = await runner.RunAsync(Request());
+            var argv = ParseEchoedArgs(outcome.Stdout);
+
+            Assert.Contains("--bare", argv);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", previous);
+        }
+    }
+
+    [Fact]
+    public async Task Bare_pomijany_gdy_klucz_api_nie_jest_ustawiony()
+    {
+        var previous = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
+        try
+        {
+            Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", null);
+            var runner = new ClaudeRunner("dotnet", [FakeClaude.DllPath, "--scenario", "echo-args"]);
+            var outcome = await runner.RunAsync(Request());
+            var argv = ParseEchoedArgs(outcome.Stdout);
+
+            Assert.DoesNotContain("--bare", argv);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", previous);
+        }
+    }
+
 }

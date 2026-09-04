@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 // Atrapa `claude -p` dla testów. Nie waliduje flag poza --scenario;
 // sprawdzanie flag jest zadaniem testów ClaudeRunner, nie atrapy.
 var scenario = "success";
@@ -38,6 +40,12 @@ switch (scenario)
         // zamiast przechodzic niezaleznie od tego, czy Close() w ogole wywolano.
         Console.In.ReadToEnd();
         Console.Out.Write(success);
+        return 0;
+    case "echo-args":
+        // Dla testow end-to-end na BuildArguments/RunAsync: wypisuje WLASNE argv
+        // (to, co faktycznie dostal proces, nie to, co ClaudeRunner mysli, ze wyslal)
+        // jako tablice JSON. Nie czyta stdin.
+        Console.Out.Write(JsonSerializer.Serialize(args));
         return 0;
     default:
         Console.Error.Write($"nieznany scenariusz: {scenario}");
