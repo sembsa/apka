@@ -1,7 +1,7 @@
 # Generator stron dla nietechnicznych klientów — plan v0.1
 
-Status: **propozycja do recenzji**. Sebastian + Przemek czytają i zgłaszają poprawki.
-Nic nie jest zaimplementowane. Sekcja 9 to decyzje, których potrzebujemy od Was.
+Status: **decyzje zatwierdzone 2026-09-04** (sekcja 9). Nic nie jest zaimplementowane.
+Kolejny krok: plan implementacji — dopiero po Waszym „tak" do tego dokumentu.
 
 Klasyfikacja: **architektoniczna** (nowy projekt, brak istniejącego kodu).
 
@@ -98,10 +98,18 @@ generate({
 Katalog roboczy podprocesu = `workspaceDir`. Claude nie ma dostępu do sieci ani do
 niczego poza katalogiem projektu.
 
-**Implementacja prod (później): Claude Agent SDK** (`@anthropic-ai/claude-agent-sdk`,
-oficjalnie Python i TypeScript). Opcje mapują się 1:1 — `cwd`, `allowedTools`, `resume`,
-`systemPrompt`, `settingSources` — więc podmiana dotyka **jednego modułu**.
-Dlatego interfejs powyżej istnieje od pierwszego dnia.
+**W v1 zostajemy przy `claude -p`. Claude Agent SDK — decyzja odłożona** (2026-09-04).
+
+Dwie rzeczy warto rozdzielić, bo mieszają się w intuicji:
+
+- **Samo SDK nic nie kosztuje** — to biblioteka (`@anthropic-ai/claude-agent-sdk`), nie licencja.
+  Płaci się za zużycie modelu, dokładnie tak samo jak przy `claude -p`.
+- **Kosztuje sposób rozliczenia w produkcji, i to niezależnie od SDK** — patrz sekcja 11.
+
+Gdy wrócimy do SDK, opcje mapują się 1:1 (`cwd`, `allowedTools`, `resume`, `systemPrompt`,
+`settingSources`), więc podmiana dotyka **jednego modułu**. Dlatego interfejs powyżej
+istnieje od pierwszego dnia — nie dlatego, że planujemy migrację, a dlatego, że nie chcemy
+przepisywać połowy aplikacji, jeśli kiedyś będzie sens.
 
 ## 6. Model danych
 
@@ -140,19 +148,16 @@ gotowy harness do pracy na plikach. Sensowne, jeśli to ma trafić do firmowej i
 **C. Python.** Oficjalny SDK jest, ale frontend zostaje w JS — czyli dwa języki, jak w B,
 bez przewagi B (znajomość).
 
-## 9. Decyzje do potwierdzenia
+## 9. Decyzje — zatwierdzone 2026-09-04
 
-1. **Stack** — rekomendacja: **A (TypeScript/Node)**. Wybór B zmienia sekcję 5, nie resztę planu.
-2. **Publikacja w v1** — rekomendacja: **podgląd pod naszym linkiem + ZIP do pobrania**.
-   Własne domeny, hosting i certyfikaty to osobny projekt.
-3. **Konta / wielu użytkowników w v1** — rekomendacja: **nie**. Projekt = link z tokenem.
-   Logowanie dokładamy, gdy produkt zadziała.
-4. **Format wyjściowy** — rekomendacja: **statyczne HTML + CSS + minimum JS, bez frameworka
-   i bez CMS**. Prosta strona ma być prosta również w środku (i tania w kolejnej iteracji).
-5. **Wersjonowanie projektu** — rekomendacja: **katalog projektu jako repo git**, wersja = commit.
-   Dostajemy historię, rollback i diff „przed/po" darmo. Alternatywa: kopie katalogów.
+1. **Stack: TypeScript/Node.** Oficjalny ekosystem, jeden język front+back, działa na Windows.
+2. **Publikacja w v1: podgląd pod naszym linkiem + ZIP do pobrania.** Domeny i hosting osobno.
+3. **Bez kont i logowania w v1.** Projekt = link z tokenem. Auth dokładamy, gdy generator się sprawdzi.
+4. **Wyjście: statyczne HTML + CSS + minimum JS.** Bez frameworka, bez CMS.
+5. **Wersjonowanie: katalog projektu jako repo git**, wersja = commit. Rollback i „przed/po" darmo.
+6. **Silnik: `claude -p`, bez Claude Agent SDK na tę chwilę** (sekcja 5).
 
-Oraz podział pracy (do ustalenia, propozycja):
+Podział pracy (propozycja, do potwierdzenia):
 
 - **Sebastian:** silnik (adapter `claude -p`, parsowanie JSON, liczniki kosztu), workspace, kolejka, API
 - **Przemek:** frontend — kreator wejścia, wybór propozycji, podgląd + przypinanie komentarzy
@@ -170,10 +175,17 @@ Konta zespołowe. Własne szablony klienta.
 zwraca `usage`, więc od pierwszego dnia logujemy koszt każdego zadania i pokazujemy sobie
 średnią na projekt. Limit iteracji na projekt chroni przed niespodzianką.
 
-**Rozliczenie i licencja.** Dev na Waszej subskrypcji Claude Code to jedno; produkt
-komercyjny obsługujący obcych klientów najpewniej musi jechać na kluczu API i osobnym
-rozliczeniu. **Do sprawdzenia w warunkach Anthropic przed pierwszym płacącym klientem** —
-nie zgaduję.
+**Rozliczenie — to nie jest kwestia SDK.** Dokumentacja Claude Agent SDK stawia to wprost:
+zewnętrznym deweloperom **nie wolno** oferować w swoich produktach loginu claude.ai ani
+limitów subskrypcji bez wcześniejszej zgody Anthropic — produkt ma używać uwierzytelniania
+kluczem API. Napisane jest to o Agent SDK, ale dotyczy sposobu rozliczenia produktu, więc
+**tak samo obejmuje produkcję na `claude -p`**: obsługa obcych, płacących klientów z naszej
+subskrypcji Claude Code nie jest drogą do przodu.
+
+Wniosek praktyczny: prototyp i dev na własnej subskrypcji — normalne użycie narzędzia
+developerskiego. Pierwszy płacący klient = klucz API i przeliczony koszt na projekt.
+Rezygnacja z Agent SDK **niczego tu nie oszczędza** — oszczędza tylko tyle, ile daje
+brak dodatkowej zależności. Warunki potwierdzić u Anthropic przed startem komercyjnym.
 
 **Treść pobranej strony to niezaufane wejście.** Strona klienta (albo cudza) może zawierać
 tekst, który udaje instrukcję dla modelu. Pobrany HTML traktujemy jak dane: zapisujemy do
