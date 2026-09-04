@@ -175,31 +175,38 @@ Zadanie uznajemy za udane tylko wtedy, gdy **wszystkie** warunki są spełnione:
 3. `stop_reason: "end_turn"` i `terminal_reason: "completed"`
 4. **`permission_denials` jest puste** — niepuste traktujemy jak błąd zadania, niezależnie
    od exit code i `is_error`
-5. artefakt przeszedł walidację z 5.2
+5. artefakt przeszedł **twardą** bramkę z 5.2 (renderowalność)
 
 Błędna konfiguracja uprawnień pali pieniądze cicho: przebieg z tabeli wyżej kosztował
 $0.0128 i nie zostawił ani jednego pliku.
 
-### 5.2 Walidacja wersji przed pokazaniem klientowi
+### 5.2 Walidacja wersji — dwie bramki, różne skutki
 
-Po każdej generacji, przed zapisaniem wersji i pokazaniem jej klientowi:
+Pierwotnie było to jedno sito odrzucające wersję. Po [kontrakcie 3.4](../api-contract.md)
+rozdzielone, bo argument Przemka („nowa wersja bywa lepsza od poprzedniej, a winę za
+zmianę id ponosi model — odrzucenie karałoby klienta za nasz problem") **nie stosuje się
+do strony, która się nie renderuje**: ta jest dla klienta bezużyteczna niezależnie od winy.
 
-1. wyciągnij zbiór `data-cmt-id` z nowej wersji
-2. porównaj ze zbiorem id, do których przypięte są **otwarte** komentarze
-3. brakujące id = **zadanie naprawcze**, nie nowa wersja: dopięcie do promptu
-   („zachowaj atrybuty `data-cmt-id`: …") i powtórka, z limitem prób
-4. sanity check w tym samym kroku: HTML się parsuje, pliki z `changedFiles` istnieją,
-   CSS jest podlinkowany. Wersja, która się nie renderuje, nie dochodzi do klienta
+**Bramka twarda — renderowalność.** HTML się parsuje, pliki z `changedFiles` istnieją,
+CSS jest podlinkowany. Brak = powtórka, a po wyczerpaniu prób **`failed`**: wersja nie
+dochodzi do klienta i nie zostaje snapshotem. To warunek 5 z 5.1.
+
+**Bramka miękka — `data-cmt-id`.** Wyciągnij zbiór id z nowej wersji i porównaj ze zbiorem
+id, do których przypięte są **otwarte** komentarze. Brakujące = powtórka z listą id dopiętą
+do promptu, z limitem prób. Ale po wyczerpaniu prób **wersja jest dostarczana**, z listą
+w `Version.orphanedAnchors[]` widoczną w UI (kontrakt 3.4). Nigdy po cichu.
+
+Kolejność: najpierw twarda. Nie ma sensu sprawdzać anchorów w pliku, który się nie parsuje.
 
 ## 6. Model danych
 
 | Encja | Pola |
 |---|---|
-| `Project` | id, kontakt klienta, źródło (`url` \| `idea`), workspaceDir, status |
+| `Project` | kontakt klienta, źródło (`url` \| `idea`), workspaceDir, status (`…` \| `frozen`), `roundsUsed`, `spentUsd` |
 | `Proposal` | id, projectId, wariant (A/B/C), brief, wybrany? |
-| `Version` | id, projectId, numer, sessionId, katalog snapshotu, koszt |
+| `Version` | id, projectId, numer, sessionId, katalog snapshotu, koszt, `orphanedAnchors[]` |
 | `Comment` | id, versionId, anchor (`data-cmt-id` albo null), treść, status (`open`/`applied`/`rejected`) |
-| `Job` | id, projectId, typ, status, log, błąd |
+| `Job` | id, projectId, typ, status, log, `failure {handling, cause, attempts}` |
 
 Nic więcej w v1. Brak kont, brak zespołów, brak roli.
 

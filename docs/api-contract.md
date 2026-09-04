@@ -25,36 +25,53 @@ a `GET /api/jobs/{id}` zostaje dla klientów poza naszym UI.
 | Metoda | Ścieżka | Zwrot |
 |---|---|---|
 | `POST` | `/api/projects` | `201` + `projectId`, `token` (dostęp bez konta — decyzja 3) |
-| `GET` | `/api/projects/{id}` | stan projektu, lista wersji, aktualna wersja |
+| `GET` | `/api/projects/{id}` | stan projektu (w tym `frozen`), `roundsUsed`/`roundsLimit`, lista wersji, aktualna wersja |
 | `POST` | `/api/projects/{id}/proposals` | `202` + `jobId` — generacja 3 propozycji |
 | `POST` | `/api/projects/{id}/proposals/{proposalId}/choose` | `200` — wybór klienta |
 | `POST` | `/api/projects/{id}/versions` | `202` + `jobId` — wersja 1 z wybranej propozycji |
-| `POST` | `/api/projects/{id}/versions/{n}/comments/apply` | `202` + `jobId` — runda komentarzy |
+| `POST` | `/api/projects/{id}/versions/{n}/comments/apply` | `202` + `jobId` — runda komentarzy; `409`, gdy projekt `frozen` (4.5) |
 | `GET` | `/api/projects/{id}/versions` | lista wersji (numer, data, koszt) |
 | `GET` | `/api/projects/{id}/versions/{n}/preview` | statyczne pliki wersji do iframe |
 | `GET` | `/api/projects/{id}/versions/{n}/zip` | ZIP (decyzja 2) |
-| `GET` | `/api/jobs/{id}` | status zadania |
+| `GET` | `/api/jobs/{id}` | status zadania + `failure {handling, cause, attempts}` (4.3) |
 
 Status zadania: `queued` \| `running` \| `succeeded` \| `failed`. **`failed` obejmuje
-przypadki, w których model „zakończył sukcesem"** — patrz sekcja 2.
+przypadki, w których model „zakończył sukcesem"** — patrz sekcja 2. `cause` z `failure`
+nie idzie do UI; frontend rozgałęzia się po `handling` (4.3).
+
+`spentUsd`/`budgetUsd` (4.1) **nie wychodzą** przez żaden endpoint klienta — licznik rund
+jest dla klienta, budżet tylko dla nas.
 
 ## 2. Kontrakt silnika (Sebastian — wypełniony)
 
 ```
 GenerateRequest {
-  workspaceDir   // katalog projektu, POZA drzewem tego repo (plan, sekcja 5)
-  instruction    // brief albo zestaw komentarzy
-  sessionId?     // brak = pierwszy przebieg (--session-id), obecny = --resume
+  workspaceDir       // katalog projektu, POZA drzewem tego repo (plan, sekcja 5)
+  instruction        // brief albo zestaw komentarzy, w kolejności dodawania (3.2)
+  previousAnchors[]  // lista data-cmt-id z poprzedniej wersji — wchodzi DO promptu (3.1)
+  sessionId?         // brak = pierwszy przebieg (--session-id), obecny = --resume
 }
 
 GenerateResult {
   sessionId
   changedFiles[]
-  summary            // tekst dla klienta: co zostało zmienione
+  summary            // tekst o wersji jako całości
+  commentResults[] { // raport per komentarz, kluczowany naszym Comment.id (3.3)
+    commentId
+    status           // "applied" | "rejected"
+    note             // zdanie PRZY komentarzu, nie w zbiorczym summary
+  }
+  orphanedAnchors[]  // id z previousAnchors nieobecne w tej wersji (3.4)
   totalCostUsd       // suma total_cost_usd, NIE tokeny jednego modelu
   permissionDenials[]
 }
 ```
+
+`previousAnchors[]` jest po stronie silnika odpowiedzią na obowiązek z 3.1: „zachowaj
+`data-cmt-id`" bez listy jest instrukcją bez przedmiotu. Pusta lista = pierwsza wersja.
+
+Statusu **nie czytamy z prozy modelu** (3.3) — prompt rundy żąda raportu per `commentId`,
+a komentarz bez wpisu w `commentResults[]` zostaje `open` i wchodzi do następnej rundy.
 
 Zadanie jest udane tylko wtedy, gdy **wszystkie** warunki są spełnione (plan, 5.1):
 
@@ -62,7 +79,9 @@ Zadanie jest udane tylko wtedy, gdy **wszystkie** warunki są spełnione (plan, 
 2. exit 0, `is_error: false`, `subtype: "success"`
 3. `stop_reason: "end_turn"`, `terminal_reason: "completed"`
 4. **`permissionDenials` jest puste**
-5. wersja przeszła walidację z 5.2 (`data-cmt-id` + renderowalność)
+5. wersja przeszła **twardą** bramkę z 5.2 — renderowalność. Brakujące `data-cmt-id`
+   to bramka **miękka**: po wyczerpaniu prób wersja jest dostarczana z `orphanedAnchors[]`
+   (3.4), a nie odrzucana
 
 Punkt 4 jest nieoczywisty i zmierzony: bez `--permission-mode acceptEdits` `Write` jest
 odrzucany, a JSON i exit code wyglądają na sukces. Frontend **nigdy** nie widzi wersji,
@@ -275,12 +294,14 @@ warianty mapuje na dwa komunikaty:
 | `stop_reason` inny niż `end_turn` (limit, odmowa) | `retrying` | wynik modelu bywa inny przy powtórce |
 | niepuste `permission_denials` | `halted` | nasza konfiguracja — powtórka da to samo |
 | brak klucza / autoryzacja pod `--bare` | `halted` | to samo: deterministyczne, do naprawy u nas |
+| wersja nie renderuje się po wyczerpaniu prób (twarda bramka 5.2) | `halted` | model zawiódł dwa razy na tym samym; trzecia próba to spalony budżet |
 
 Powtórki są **niewidoczne dla klienta** (widzi jedno „pracuję nad tym"), ale widoczne
 w budżecie z 4.1 i w `attempts`. Limit: **jedna** automatyczna powtórka, potem `halted`.
 
-Wyczerpanie ponowień z **5.2 planu** to nie ten przypadek — tam wersja jest dostarczana
-z `orphanedAnchors[]` (sekcja 3.4), więc nie trafia tu w ogóle.
+Wyczerpanie ponowień z **miękkiej** bramki 5.2 to nie ten przypadek — tam wersja jest
+dostarczana z `orphanedAnchors[]` (sekcja 3.4), więc nie trafia tu w ogóle. Wiersz wyżej
+dotyczy wyłącznie bramki **twardej** (renderowalność), rozdzielonej po tej sekcji.
 
 Treść komunikatów pisze frontend — zgodnie z zasadą z sekcji 3 kontrakt oddaje gałąź,
 nie gotowe zdania. Sens obu: *nic nie przepadło*, a przy `halted` dodatkowo, że problem
