@@ -77,7 +77,7 @@ Atrapa idzie pierwsza, bo bez niej żaden test przebiegu nie może istnieć — 
 - Consumes: nic
 - Produces: `Generator.FakeClaude` — konsolowy program. Argumenty: `--scenario <success|denied|crash|stdin-wait>`. Wypisuje na stdout JSON scenariusza i zwraca exit code (0 dla `success`/`denied`, 1 dla `crash` z pustym stdout i komunikatem na stderr). Ścieżkę do jego DLL testy składają z `AppContext.BaseDirectory`.
 
-- [ ] **Step 1: Utwórz solucję i projekty**
+- [x] **Step 1: Utwórz solucję i projekty**
 
 ```bash
 cd /Users/strzesniewski/Temp/apka
@@ -111,7 +111,7 @@ p.write_text(t)
 PY_EDIT
 ```
 
-- [ ] **Step 2: Napisz atrapę**
+- [x] **Step 2: Napisz atrapę**
 
 `src/Generator.FakeClaude/Program.cs` — trzy scenariusze odpowiadają trzem realnym przebiegom zmierzonym 2026-09-04:
 
@@ -163,7 +163,7 @@ switch (scenario)
 }
 ```
 
-- [ ] **Step 3: Napisz test, który sprawdza atrapę**
+- [x] **Step 3: Napisz test, który sprawdza atrapę**
 
 `tests/Generator.Engine.Tests/FakeClaudeTests.cs`:
 
@@ -209,7 +209,7 @@ public class FakeClaudeTests
 }
 ```
 
-- [ ] **Step 4: Zepnij atrapę z testami i uruchom**
+- [x] **Step 4: Zepnij atrapę z testami i uruchom**
 
 W `tests/Generator.Engine.Tests/Generator.Engine.Tests.csproj`, wewnątrz `<Project>`, dopisz kopiowanie atrapy do podkatalogu wyjścia testów:
 
@@ -226,7 +226,7 @@ W `tests/Generator.Engine.Tests/Generator.Engine.Tests.csproj`, wewnątrz `<Proj
 Run: `dotnet test tests/Generator.Engine.Tests -v q`
 Expected: 3 testy PASS. Jeśli `DllPath` nie istnieje — sprawdź, czy `PublishDir` trafił do `bin/Debug/net10.0/FakeClaude/`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Generator.sln src tests .gitignore
@@ -252,7 +252,7 @@ git commit -m "feat(engine): solucja, projekty i atrapa claude dla testow"
   - `record ProjectMeta(string Id, string Token, SourceKind Source, string WorkspaceDir, ProjectStatus Status, int RoundsUsed, int RoundsLimit, decimal SpentUsd, decimal BudgetUsd, IReadOnlyList<VersionMeta> Versions)`
   - `class ProjectStore(string projectDir)` z `ProjectMeta Load()`, `void Save(ProjectMeta meta)`, `ProjectMeta Create(SourceKind source)`, `static ProjectMeta WithRoundConsumed(ProjectMeta m)`, `static ProjectMeta WithSpend(ProjectMeta m, decimal usd)`
 
-- [ ] **Step 1: Napisz failujące testy**
+- [x] **Step 1: Napisz failujące testy**
 
 `tests/Generator.Engine.Tests/ProjectStoreTests.cs`:
 
@@ -315,12 +315,12 @@ public class ProjectStoreTests : IDisposable
 }
 ```
 
-- [ ] **Step 2: Uruchom, potwierdź porażkę**
+- [x] **Step 2: Uruchom, potwierdź porażkę**
 
 Run: `dotnet test tests/Generator.Engine.Tests -v q`
 Expected: błąd kompilacji — `Generator.Engine.Model` i `Generator.Engine.Storage` nie istnieją.
 
-- [ ] **Step 3: Zaimplementuj model i store**
+- [x] **Step 3: Zaimplementuj model i store**
 
 `src/Generator.Engine/Model/CommentModel.cs`:
 
@@ -447,12 +447,12 @@ public class ProjectStore(string projectDir)
 }
 ```
 
-- [ ] **Step 4: Uruchom testy**
+- [x] **Step 4: Uruchom testy**
 
 Run: `dotnet test tests/Generator.Engine.Tests -v q`
 Expected: 6 testów PASS (3 z Taska 1 + 3 nowe).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/Generator.Engine tests/Generator.Engine.Tests
@@ -474,7 +474,7 @@ git commit -m "feat(engine): model projektu i project.json z licznikami rund i b
   - `record ClaudeResult(string SessionId, bool IsError, string Subtype, string StopReason, string TerminalReason, decimal TotalCostUsd, IReadOnlyList<PermissionDenial> PermissionDenials, string ResultText)`
   - `static class ClaudeResultParser` z `static ClaudeResult? TryParse(string? stdout)` — `null`, gdy stdout jest pusty albo nie jest JSON-em
 
-- [ ] **Step 1: Napisz failujące testy**
+- [x] **Step 1: Napisz failujące testy**
 
 `tests/Generator.Engine.Tests/ClaudeResultParserTests.cs`:
 
@@ -544,12 +544,12 @@ public class ClaudeResultParserTests
 }
 ```
 
-- [ ] **Step 2: Uruchom, potwierdź porażkę**
+- [x] **Step 2: Uruchom, potwierdź porażkę**
 
 Run: `dotnet test tests/Generator.Engine.Tests --filter ClaudeResultParserTests -v q`
 Expected: błąd kompilacji — `ClaudeResultParser` nie istnieje.
 
-- [ ] **Step 3: Zaimplementuj parser**
+- [x] **Step 3: Zaimplementuj parser**
 
 `src/Generator.Engine/ClaudeCli/ClaudeResult.cs`:
 
@@ -647,12 +647,12 @@ public static class ClaudeResultParser
 }
 ```
 
-- [ ] **Step 4: Uruchom testy**
+- [x] **Step 4: Uruchom testy**
 
 Run: `dotnet test tests/Generator.Engine.Tests --filter ClaudeResultParserTests -v q`
 Expected: 6 testów PASS (2 fakty + 4 przypadki teorii).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/Generator.Engine/ClaudeCli tests/Generator.Engine.Tests/ClaudeResultParserTests.cs
