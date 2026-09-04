@@ -1,0 +1,60 @@
+@page "/"
+@inject IProjectApi Api
+@inject NavigationManager Nav
+@using Generator.Web.Contracts
+
+<h1>Zrobimy Ci stronę</h1>
+<p>Odpowiedz jednym akapitem. Resztą zajmiemy się my.</p>
+
+<div role="group">
+    <button data-test="tryb-opis" class="@(_mode == Mode.Idea ? "wybrany" : "")"
+            @onclick="() => _mode = Mode.Idea">Nie mam strony</button>
+    <button data-test="tryb-url" class="@(_mode == Mode.Url ? "wybrany" : "")"
+            @onclick="() => _mode = Mode.Url">Mam stronę, ale słabą</button>
+</div>
+
+<form @onsubmit="Send" @onsubmit:preventDefault>
+    @if (_mode == Mode.Idea)
+    {
+        <label for="opis">Opowiedz, czym się zajmujesz i dla kogo</label>
+        <textarea id="opis" rows="5" @bind="_text"
+                  placeholder="Np. Strzygę damsko-męsko w Nowym Sączu, ul. Krakowska 5, tel. 600 100 200, pon-pt 9-18."></textarea>
+    }
+    else
+    {
+        <label for="url">Adres Twojej obecnej strony</label>
+        <input id="url" type="url" @bind="_text" placeholder="https://..." />
+    }
+
+    @if (_error is not null)
+    {
+        <p role="alert">@_error</p>
+    }
+
+    <button type="submit" disabled="@_busy">@(_busy ? "Tworzę…" : "Dalej")</button>
+</form>
+
+@code {
+    private enum Mode { Idea, Url }
+
+    private Mode _mode = Mode.Idea;
+    private string _text = string.Empty;
+    private string? _error;
+    private bool _busy;
+
+    private async Task Send()
+    {
+        if (string.IsNullOrWhiteSpace(_text))
+        {
+            _error = _mode == Mode.Idea
+                ? "Napisz kilka słów o tym, czym się zajmujesz."
+                : "Napisz adres swojej strony.";
+            return;
+        }
+
+        _error = null;
+        _busy = true;
+        var project = await Api.CreateAsync(_mode == Mode.Idea ? "idea" : "url", _text.Trim());
+        Nav.NavigateTo($"/proposals/{project.Id}");
+    }
+}
