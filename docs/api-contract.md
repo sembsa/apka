@@ -138,9 +138,17 @@ Comment (frontend -> POST .../comments/apply)
 
 Trzy pola wymagają uzasadnienia:
 
-- **`id` z przeglądarki, nie z serwera** — przy `202 + jobId` podwójne kliknięcie „Popraw to"
-  jest realne. Id nadane po stronie klienta czyni ponowienie idempotentnym: ten sam
-  komentarz nie wchodzi do rundy dwa razy.
+- **`id` nadawane raz, w chwili dodania komentarza** — przy `202 + jobId` podwójne
+  kliknięcie „Popraw to" jest realne, a id stabilne od momentu powstania czyni ponowienie
+  idempotentnym: ten sam komentarz nie wchodzi do rundy dwa razy.
+
+  > **Korekta 2026-09-04.** Pierwotnie było tu „GUID nadany w przeglądarce, nie z serwera".
+  > To zdanie powstało, gdy żywy był jeszcze wariant TypeScript/Node, i przy **C#/Blazor
+  > Server jest nieprawdziwe** — kod komponentu wykonuje się na serwerze. Własność, o którą
+  > chodziło, zostaje w całości: stan obwodu jest per karta przeglądarki, więc id powstaje
+  > raz na komentarz i nie zmienia się przy ponowieniu. Wymóg dla implementacji brzmi więc
+  > **„raz, przy dodaniu"**, a nie „w przeglądarce" — i tak jest zrealizowany
+  > w `CommentDto` (Plan C, Task 1).
 - **`viewport`** — „telefon za mało widoczny" jest zależne od szerokości, przy której
   klient patrzył. Silnik nie ma jak tego odzyskać z plików, a bez tego komentarz jest
   nierozstrzygalny. To jedyna informacja o kontekście oglądania, którą przekazujemy.

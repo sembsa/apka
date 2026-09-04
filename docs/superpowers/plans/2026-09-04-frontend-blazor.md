@@ -98,7 +98,7 @@
   - `interface IProjectApi` z `Task<ProjectView> CreateAsync(string source, string description)`, `Task<ProjectView> GetAsync(string id)`, `Task<string> RequestProposalsAsync(string id)`, `Task<IReadOnlyList<ProposalView>> GetProposalsAsync(string id)`, `Task ChooseProposalAsync(string id, string proposalId)`, `Task<string> ApplyCommentsAsync(string id, int version, IReadOnlyList<CommentDto> comments)`, `Task<JobView> GetJobAsync(string jobId)`, `Task<IReadOnlyList<CommentDto>> GetCommentsAsync(string id, int version)`
   - `class MockProjectApi : IProjectApi` z przełącznikami `NextJobOutcome` (`Success`/`Retrying`/`Halted`), `SimulatedDelay`
 
-- [ ] **Step 1: Utwórz projekty**
+- [x] **Step 1: Utwórz projekty**
 
 ```bash
 dotnet new blazor -o src/Generator.Web -f net10.0 --interactivity Server --empty
@@ -108,7 +108,7 @@ dotnet add tests/Generator.Web.Tests reference src/Generator.Web
 dotnet add tests/Generator.Web.Tests package bunit --version 2.9.0
 ```
 
-- [ ] **Step 2: Napisz failujące testy mocka**
+- [x] **Step 2: Napisz failujące testy mocka**
 
 `tests/Generator.Web.Tests/MockProjectApiTests.cs`:
 
@@ -213,12 +213,12 @@ public class MockProjectApiTests
 }
 ```
 
-- [ ] **Step 3: Uruchom, potwierdź porażkę**
+- [x] **Step 3: Uruchom, potwierdź porażkę**
 
 Run: `dotnet test tests/Generator.Web.Tests -v q`
 Expected: błąd kompilacji — `Generator.Web.Contracts` i `Generator.Web.Mock` nie istnieją.
 
-- [ ] **Step 4: Zaimplementuj kontrakty i mock**
+- [x] **Step 4: Zaimplementuj kontrakty i mock**
 
 `src/Generator.Web/Contracts/Dtos.cs`:
 
@@ -389,7 +389,7 @@ public class MockProjectApi : IProjectApi
 
 Zarejestruj w `Program.cs`: `builder.Services.AddSingleton<IProjectApi, MockProjectApi>();`
 
-- [ ] **Step 5: Uruchom testy i commituj**
+- [x] **Step 5: Uruchom testy i commituj**
 
 Run: `dotnet test tests/Generator.Web.Tests -v q`
 Expected: 6 testów PASS.
