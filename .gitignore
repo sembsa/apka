@@ -3,3 +3,6 @@
 .superpowers/
 bin/
 obj/
+
+# Artefakt Git Bash na Windows (druga osoba pracuje na Windows)
+*.stackdump

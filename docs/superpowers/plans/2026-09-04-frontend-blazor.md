@@ -4,7 +4,13 @@
 
 > **Stan (2026-09-04, po scaleniu):** Przemek napisał równolegle własny plan tej samej
 > części (`frontend-petla-komentarzy.md`). Scalone w ten dokument, tamten usunięty —
-> repo nie ma dwóch wersji tego, co znaczy Plan C. Co weszło z tamtego planu:
+> repo nie ma dwóch wersji tego, co znaczy Plan C.
+>
+> **Sebastianie:** wiem, że w `b6d4fee` usunąłeś ten plik z adnotacją „wygrywa wersja
+> Przemka" — ustąpiliśmy sobie jednocześnie, dokładnie tak samo jak przy decyzjach 1 i 5.
+> Plik wraca pod Twoją nazwą, bo Przemek wybrał Twoją strukturę i zakres (8 zadań, kreator
+> i propozycje, `note` przy uwadze — tego w moim planie nie było). Treść jest scaleniem
+> obu, nie przywróceniem Twojej wersji: lista zmian niżej. Nic Twojego nie zginęło. Co weszło z tamtego planu:
 > API bUnit **2.x** (`BunitContext`, `Render<T>`) w 25 miejscach zamiast 1.x, które
 > **nie kompiluje się** na `bunit 2.9.0` (`CS0619`, sprawdzone); Task 4a — serwowanie
 > podglądu ze wstrzykiwaniem skryptu, bez którego `PreviewUrl` prowadzi w nicość, a nasz
