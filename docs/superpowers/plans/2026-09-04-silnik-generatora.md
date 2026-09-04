@@ -404,12 +404,29 @@ public class ProjectStore(string projectDir)
         return meta;
     }
 
-    public ProjectMeta Load() =>
-        JsonSerializer.Deserialize<ProjectMeta>(File.ReadAllText(MetaPath), Options)
-        ?? throw new InvalidDataException($"project.json nie da sie odczytac: {MetaPath}");
+    /// Blad odczytu musi nosic sciezke — operator inaczej nie wie, ktory projekt padl.
+    public ProjectMeta Load()
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<ProjectMeta>(File.ReadAllText(MetaPath), Options)
+                ?? throw new InvalidDataException($"project.json jest pusty: {MetaPath}");
+        }
+        catch (Exception ex) when (ex is IOException or JsonException)
+        {
+            throw new InvalidDataException($"project.json nie da sie odczytac: {MetaPath}", ex);
+        }
+    }
 
-    public void Save(ProjectMeta meta) =>
-        File.WriteAllText(MetaPath, JsonSerializer.Serialize(meta, Options));
+    /// Zapis atomowy: project.json jest JEDYNYM zrodlem stanu projektu (bez bazy),
+    /// wiec proces zabity w trakcie WriteAllText zostawilby obciety plik i projekt
+    /// nie do odzyskania. File.Move z overwrite jest atomowy na tym samym wolumenie.
+    public void Save(ProjectMeta meta)
+    {
+        var tmp = MetaPath + ".tmp";
+        File.WriteAllText(tmp, JsonSerializer.Serialize(meta, Options));
+        File.Move(tmp, MetaPath, overwrite: true);
+    }
 
     /// Runda klienta. Powtorki po awarii jej NIE zuzywaja (kontrakt 4.1).
     public static ProjectMeta WithRoundConsumed(ProjectMeta m) =>
