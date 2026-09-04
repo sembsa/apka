@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using System.Diagnostics;
 
 namespace Generator.Engine.ClaudeCli;
@@ -102,16 +101,23 @@ public class ClaudeRunner(string executable, IReadOnlyList<string>? prefixArgs =
                     // OperationCanceledException, na ktorym opiera sie kontrakt
                     // anulowania (patrz komentarz przy return nizej) — kolejka
                     // z Taska 9 zlapalaby cos innego niz oczekuje i zalogowala
-                    // przekroczenie limitu czasu jako awarie. Od .NET Core 3.0
-                    // Kill() na juz zakonczonym procesie jest udokumentowanym
-                    // no-opem, wiec InvalidOperationException tu nie leci —
-                    // jedyny realny wyjatek to Win32Exception (system odmowil
-                    // zabicia procesu), lapany na wszelki wypadek.
+                    // przekroczenie limitu czasu jako awarie. Kill(bool) z
+                    // entireProcessTree: true udokumentowanego rzuca nie tylko
+                    // Win32Exception, ale tez AggregateException ("Not all
+                    // processes in the associated process's descendant tree
+                    // could be terminated") — realny wynik wyscigu, gdy potomek
+                    // (np. wywolany przez claude przez narzedzie) konczy sie
+                    // dokladnie w trakcie zabijania drzewa. Dlatego catch
+                    // (Exception) tutaj CELOWO: to sprzatanie w finally, ktorego
+                    // jedynym zadaniem jest nie przesloniec wyjatku niosacego
+                    // prawdziwa przyczyne (anulowanie) — zaden blad ze sprzatania
+                    // nie jest wazniejszy od tego, co to sprzatanie przerwalo.
+                    // NIE zawezaj z powrotem do konkretnych typow.
                     try
                     {
                         p.Kill(entireProcessTree: true);
                     }
-                    catch (Win32Exception)
+                    catch (Exception)
                     {
                     }
                 }
