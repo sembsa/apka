@@ -677,7 +677,7 @@ git commit -m "feat(engine): parsowanie JSON z claude -p, tolerancyjne na niezna
 
 `prefixArgs` istnieje dla atrapy: testy przekazują `("dotnet", [ścieżka do DLL])`, produkcja `("claude", null)`.
 
-- [ ] **Step 1: Napisz failujące testy**
+- [x] **Step 1: Napisz failujące testy**
 
 `tests/Generator.Engine.Tests/ClaudeRunnerTests.cs`:
 
@@ -781,12 +781,12 @@ public class ClaudeRunnerTests : IDisposable
 }
 ```
 
-- [ ] **Step 2: Uruchom, potwierdź porażkę**
+- [x] **Step 2: Uruchom, potwierdź porażkę**
 
 Run: `dotnet test tests/Generator.Engine.Tests --filter ClaudeRunnerTests -v q`
 Expected: błąd kompilacji — `ClaudeRunner` nie istnieje.
 
-- [ ] **Step 3: Zaimplementuj runnera**
+- [x] **Step 3: Zaimplementuj runnera**
 
 `src/Generator.Engine/ClaudeCli/ClaudeRunRequest.cs`:
 
@@ -904,12 +904,12 @@ public class ClaudeRunner(string executable, IReadOnlyList<string>? prefixArgs =
 }
 ```
 
-- [ ] **Step 4: Uruchom testy**
+- [x] **Step 4: Uruchom testy**
 
 Run: `dotnet test tests/Generator.Engine.Tests --filter ClaudeRunnerTests -v q`
 Expected: 5 testów PASS. Test czasowy jest realnym dowodem, że stdin jest zamykany — atrapa nie czeka na stdin, ale niezamknięty strumień i tak zawiesiłby `ReadToEnd`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/Generator.Engine/ClaudeCli tests/Generator.Engine.Tests/ClaudeRunnerTests.cs
