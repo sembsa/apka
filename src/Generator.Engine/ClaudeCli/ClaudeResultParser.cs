@@ -22,11 +22,11 @@ public static class ClaudeResultParser
                 Subtype: Str(root, "subtype"),
                 StopReason: Str(root, "stop_reason"),
                 TerminalReason: Str(root, "terminal_reason"),
-                TotalCostUsd: root.TryGetProperty("total_cost_usd", out var c) && c.TryGetDecimal(out var d) ? d : 0m,
+                TotalCostUsd: TotalCost(root),
                 PermissionDenials: Denials(root),
                 ResultText: Str(root, "result"));
         }
-        catch (JsonException)
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException)
         {
             return null;
         }
@@ -37,6 +37,14 @@ public static class ClaudeResultParser
             ? v.GetString() ?? string.Empty
             : string.Empty;
 
+    private static decimal TotalCost(JsonElement root)
+    {
+        if (!root.TryGetProperty("total_cost_usd", out var c) || c.ValueKind != JsonValueKind.Number)
+            return 0m;
+
+        return c.TryGetDecimal(out var d) ? d : 0m;
+    }
+
     private static List<PermissionDenial> Denials(JsonElement root)
     {
         var list = new List<PermissionDenial>();
@@ -45,8 +53,13 @@ public static class ClaudeResultParser
 
         foreach (var item in arr.EnumerateArray())
         {
+            // Pomiń element, jeśli nie jest obiektem
+            if (item.ValueKind != JsonValueKind.Object)
+                continue;
+
             string? path = null;
             if (item.TryGetProperty("tool_input", out var input) &&
+                input.ValueKind == JsonValueKind.Object &&
                 input.TryGetProperty("file_path", out var fp) &&
                 fp.ValueKind == JsonValueKind.String)
                 path = fp.GetString();

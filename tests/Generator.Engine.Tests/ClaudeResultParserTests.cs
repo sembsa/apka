@@ -60,4 +60,59 @@ public class ClaudeResultParserTests
     {
         Assert.Null(ClaudeResultParser.TryParse(stdout));
     }
+
+    [Theory]
+    [InlineData("""{"session_id":"x","total_cost_usd":"not_a_number"}""")]
+    [InlineData("""{"session_id":"x","total_cost_usd":null}""")]
+    [InlineData("""{"session_id":"x","total_cost_usd":true}""")]
+    [InlineData("""{"session_id":"x","total_cost_usd":[1,2]}""")]
+    public void Total_cost_usd_zly_typ_daje_zero(string json)
+    {
+        var r = ClaudeResultParser.TryParse(json);
+
+        Assert.NotNull(r);
+        Assert.Equal(0m, r.TotalCostUsd);
+    }
+
+    [Fact]
+    public void Permission_denials_element_niebedacy_obiektem_jest_pomijany()
+    {
+        var json = """
+        {"is_error":false,"session_id":"x",
+        "permission_denials":["string_element",42,null,true,{"tool_name":"Write"}]}
+        """;
+
+        var r = ClaudeResultParser.TryParse(json);
+
+        Assert.NotNull(r);
+        // Только valидный element (ostatni) powinien być czytany
+        var denial = Assert.Single(r.PermissionDenials);
+        Assert.Equal("Write", denial.ToolName);
+        Assert.Null(denial.FilePath);
+    }
+
+    [Fact]
+    public void Tool_input_zly_typ_daje_null_filepath()
+    {
+        var json = """
+        {"is_error":false,"session_id":"x",
+        "permission_denials":[{"tool_name":"Write","tool_input":"string_nie_obiekt"}]}
+        """;
+
+        var r = ClaudeResultParser.TryParse(json);
+
+        Assert.NotNull(r);
+        var denial = Assert.Single(r.PermissionDenials);
+        Assert.Equal("Write", denial.ToolName);
+        Assert.Null(denial.FilePath);
+    }
+
+    [Theory]
+    [InlineData("[1,2,3]")]
+    [InlineData("\"tekst\"")]
+    [InlineData("42")]
+    public void Korzeń_nie_obiekt_daje_null(string json)
+    {
+        Assert.Null(ClaudeResultParser.TryParse(json));
+    }
 }
