@@ -6,3 +6,4 @@ Treść pamięci NIGDY nie trafia tutaj — tylko wskaźnik `- [Tytuł](plik.md)
 - [Rytm gita przy pracy w parze](feedback-praca-w-parze-git-rytm.md) — częsty pull/commit/push autoryzowany z góry, bez pytania
 - [Pamięć współdzielona przez git](project-apka-pamiec-wspoldzielona-git.md) — pamięć leży w repo `.claude/memory`, symlink z ~/.claude
 - [Druga osoba pracuje na Windows](project-apka-druga-osoba-na-windows.md) — Git Bash, skrypty w repo muszą być cross-platform
+- [Sprzeczne decyzje rozstrzyga Sebastian](feedback-sprzeczne-decyzje-rozstrzyga-sebastian.md) — oznacz spór w dokumencie i podaj bilans, nie wybieraj sam
