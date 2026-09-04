@@ -21,11 +21,19 @@
   </ItemGroup>
 
   <!-- Atrapa NIE jest ProjectReference: to program konsolowy, nie biblioteka.
-       Budujemy ja do siostrzanego OutDir i odpalamy przez `dotnet <dll>`. -->
+       Budujemy ja do siostrzanego OutDir i odpalamy przez `dotnet <dll>`.
+       OutDir musi byc jawnie zlozony z $(MSBuildProjectDirectory) tego projektu:
+       $(OutDir) jest wzgledny (np. "bin\Debug\net10.0\"), a MSBuild rozwiazuje
+       wzgledne Properties przekazane do zagniezdzonego <MSBuild> wzgledem
+       katalogu WYWOLYWANEGO projektu (Generator.FakeClaude), nie wywolujacego —
+       bez tego atrapa buduje sie do wlasnego bin/, a testy odpalaja stara kopie
+       zostawiona przez wczesniejszy build (cichy punkt awarii, sprawdzone empirycznie
+       w Tasku 4 fix round 1: FakeClaudeTests i ClaudeRunnerTests padaja na czystym
+       repo, bo katalog $(OutDir)FakeClaude w tests/ nigdy nie powstaje). -->
   <Target Name="BuildFakeClaude" AfterTargets="Build">
     <MSBuild Projects="..\..\src\Generator.FakeClaude\Generator.FakeClaude.csproj"
              Targets="Build"
-             Properties="Configuration=$(Configuration);OutDir=$(OutDir)FakeClaude\" />
+             Properties="Configuration=$(Configuration);OutDir=$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(OutDir)', 'FakeClaude'))" />
   </Target>
 
 </Project>
