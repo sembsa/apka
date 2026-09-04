@@ -108,7 +108,8 @@ public class MockProjectApi : IProjectApi
         _projects[id] = project with
         {
             Status = "active",
-            Versions = [new VersionView(1, $"/preview/{id}/1", [])],
+            Versions = [new VersionView(1, $"/preview/{id}/1", [], BasedOn: null)],
+            CurrentVersion = 1,
         };
     }
 
@@ -170,12 +171,22 @@ public class MockProjectApi : IProjectApi
         ];
 
         var project = _projects[id];
-        var numer = project.Versions.Count + 1;
+
+        // Numer z maksimum, nie z liczby wersji: po powrocie do starszej wersji liczba
+        // elementow przestaje odpowiadac najwyzszemu numerowi i doszloby do kolizji.
+        var numer = project.Versions.Count == 0 ? 1 : project.Versions.Max(v => v.Number) + 1;
+
+        // Rodzicem jest wersja, ktora klient WIDZIAL, gdy zglaszal uwagi — po rollbacku
+        // to nie jest ostatnia w historii.
+        var rodzic = project.CurrentVersion > 0 ? project.CurrentVersion : (int?)null;
+
         await ZapiszSnapshot(id, numer, comments);
         _projects[id] = project with
         {
             RoundsUsed = project.RoundsUsed + 1,
-            Versions = [.. project.Versions, new VersionView(numer, $"/preview/{id}/{numer}", [])],
+            Versions = [.. project.Versions,
+                new VersionView(numer, $"/preview/{id}/{numer}", [], rodzic)],
+            CurrentVersion = numer,
         };
         _jobs[jobId] = new JobView(jobId, "succeeded", null);
     }

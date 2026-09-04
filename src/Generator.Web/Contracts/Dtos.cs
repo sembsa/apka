@@ -1,14 +1,30 @@
 namespace Generator.Web.Contracts;
 
-public record VersionView(int Number, string PreviewUrl, IReadOnlyList<string> OrphanedAnchors);
+/// <param name="BasedOn">
+/// Numer wersji, Z KTOREJ ta powstala (null dla pierwszej). Nie `Number - 1`:
+/// po powrocie do v1 kolejna runda tworzy v3, ktorej rodzicem jest v1, nie v2.
+/// Bez tego pola podswietlanie zmian dawaloby poprawne wyniki w kazdym przypadku
+/// liniowym — czyli w kazdym, ktory testujemy — i cicho klamaloby dokladnie tam,
+/// gdzie rollback ma sens.
+/// </param>
+public record VersionView(
+    int Number,
+    string PreviewUrl,
+    IReadOnlyList<string> OrphanedAnchors,
+    int? BasedOn = null);
 
+/// <param name="CurrentVersion">
+/// Wersja, ktora klient oglada. Po powrocie do starszej „aktualna" przestaje znaczyc
+/// „ostatnia", wiec `Versions[^1]` jest bledem — podglad i ZIP ida ZA tym polem.
+/// </param>
 public record ProjectView(
     string Id,
     string Token,
     string Status,              // "draft" | "active" | "frozen"
     int RoundsUsed,
     int RoundsLimit,
-    IReadOnlyList<VersionView> Versions);
+    IReadOnlyList<VersionView> Versions,
+    int CurrentVersion = 0);    // 0 = nie ma jeszcze zadnej wersji
 
 /// <summary>
 /// Kształt z kontraktu 3.2. Id powstaje RAZ, w chwili dodania komentarza, i nie zmienia

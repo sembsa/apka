@@ -11,7 +11,7 @@
 }
 else
 {
-    var wersja = _project.Versions.Count > 0 ? _project.Versions[^1] : null;
+    var wersja = _project.Aktualna();
 
     @if (_project.Status == "frozen")
     {
@@ -96,13 +96,15 @@ else
     private async Task Reload()
     {
         _project = await Api.GetAsync(ProjectId);
-        var wersja = _project.Versions.Count > 0 ? _project.Versions[^1].Number : 1;
-        _comments = [.. await Api.GetCommentsAsync(ProjectId, wersja)];
+        var aktualna = _project.Aktualna();
+        _comments = [.. await Api.GetCommentsAsync(ProjectId, _project.NumerAktualnej())];
 
         // Raport czytamy z API, nie z pamieci komponentu — inaczej pierwszy F5
-        // kasowalby klientowi potwierdzenie tego, o co prosil.
-        _zrobione = wersja > 1
-            ? [.. (await Api.GetCommentsAsync(ProjectId, wersja - 1))
+        // kasowalby klientowi potwierdzenie tego, o co prosil. Bierzemy go z RODZICA
+        // tej wersji, nie z `numer - 1`: po powrocie do v1 arytmetyka dawalaby v0
+        // i raport znikalby klientowi z oczu.
+        _zrobione = _project.Rodzic(aktualna) is { } rodzic
+            ? [.. (await Api.GetCommentsAsync(ProjectId, rodzic.Number))
                 .Where(c => c.Status == "applied")]
             : [];
     }
@@ -129,7 +131,7 @@ else
 
     private async Task Apply()
     {
-        var wersja = _project!.Versions.Count > 0 ? _project.Versions[^1].Number : 1;
+        var wersja = _project!.NumerAktualnej();
         var jobId = await Api.ApplyCommentsAsync(ProjectId, wersja, _comments);
         _job = await Api.GetJobAsync(jobId);
 
