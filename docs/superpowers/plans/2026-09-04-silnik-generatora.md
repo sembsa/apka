@@ -75,7 +75,7 @@ Atrapa idzie pierwsza, bo bez niej żaden test przebiegu nie może istnieć — 
 
 **Interfaces:**
 - Consumes: nic
-- Produces: `Generator.FakeClaude` — konsolowy program. Argumenty: `--scenario <success|denied|crash>`. Wypisuje na stdout JSON scenariusza i zwraca exit code (0 dla `success`/`denied`, 1 dla `crash` z pustym stdout i komunikatem na stderr). Ścieżkę do jego DLL testy składają z `AppContext.BaseDirectory`.
+- Produces: `Generator.FakeClaude` — konsolowy program. Argumenty: `--scenario <success|denied|crash|stdin-wait>`. Wypisuje na stdout JSON scenariusza i zwraca exit code (0 dla `success`/`denied`, 1 dla `crash` z pustym stdout i komunikatem na stderr). Ścieżkę do jego DLL testy składają z `AppContext.BaseDirectory`.
 
 - [ ] **Step 1: Utwórz solucję i projekty**
 
@@ -146,6 +146,14 @@ switch (scenario)
     case "denied":
         Console.Out.Write(denied);
         return 0;
+    case "stdin-wait":
+        // Czyta stdin PRZED odpowiedzia. Przy zamknietym przez rodzica stdinie
+        // ReadToEnd wraca natychmiast; przy niezamknietym wisi. Bez tego scenariusza
+        // test zamykania stdin w Tasku 4 nie ma czego dowodzic — sprawdzone empirycznie:
+        // po usunieciu StandardInput.Close() test na scenariuszu "success" nadal przechodzil.
+        Console.In.ReadToEnd();
+        Console.Out.Write(success);
+        return 0;
     case "crash":
         Console.Error.Write("Error: bypassPermissions not supported in restricted mode");
         return 1;   // stdout celowo pusty
@@ -179,6 +187,7 @@ public class FakeClaudeTests
     [InlineData("success", 0, true)]
     [InlineData("denied", 0, true)]
     [InlineData("crash", 1, false)]
+    [InlineData("stdin-wait", 0, true)]
     public void Scenariusz_zwraca_oczekiwany_exit_code_i_stdout(string scenario, int exit, bool hasStdout)
     {
         var psi = new ProcessStartInfo("dotnet")
@@ -691,15 +700,21 @@ public class ClaudeRunnerTests : IDisposable
         new(_work, "Utworz prosta strone", sessionId, first);
 
     [Fact]
-    public async Task Konczy_sie_szybciej_niz_3s_bo_stdin_jest_zamykany()
+    public async Task Zamyka_stdin_wiec_proces_czytajacy_stdin_nie_wisi()
     {
-        // claude -p czeka 3 s na stdin, jesli strumien nie zostanie zamkniety.
+        // Scenariusz "stdin-wait" czyta stdin PRZED odpowiedzia — inaczej ten test
+        // nie mialby czego dowodzic. Na scenariuszu "success" przechodzil takze po
+        // usunieciu StandardInput.Close(), bo atrapa stdin nie czytala.
+        // NIE upraszczaj tego z powrotem na "success".
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
         var sw = Stopwatch.StartNew();
-        var outcome = await ForScenario("success").RunAsync(Request());
+        var outcome = await ForScenario("stdin-wait").RunAsync(Request(), cts.Token);
         sw.Stop();
 
         Assert.True(outcome.ProcessStarted);
-        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(2),
+        Assert.Equal(0, outcome.ExitCode);
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(3),
             $"przebieg zajal {sw.Elapsed} — stdin nie zostal zamkniety?");
         Assert.True(outcome.Elapsed > TimeSpan.Zero);
     }
