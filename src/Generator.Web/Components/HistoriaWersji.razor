@@ -1,0 +1,49 @@
+@using Generator.Web.Contracts
+
+@* Kontrakt 5.1: powrot przestawia wskaznik, historia zostaje. Wersje nowsze od
+   aktualnej sa PORZUCONE, nie usuniete — klient musi widziec, ze moze do nich wrocic,
+   inaczej powrot byłby pulapka bez wyjscia. *@
+@if (Project.Versions.Count > 1)
+{
+    <section data-test="historia">
+        <h2>Wersje Twojej strony</h2>
+        <ol>
+            @foreach (var w in Project.Versions.OrderByDescending(v => v.Number))
+            {
+                var aktualna = w.Number == Project.CurrentVersion;
+                var porzucona = w.Number > Project.CurrentVersion;
+
+                <li data-test="wersja-@w.Number" class="@(aktualna ? "aktualna" : null)">
+                    <span>Wersja @w.Number</span>
+
+                    @if (aktualna)
+                    {
+                        <strong data-test="ta-aktualna">— tę teraz oglądasz</strong>
+                    }
+                    else
+                    {
+                        @* Blokada tym samym predykatem, ktory blokuje "Popraw to":
+                           konczaca sie runda przestawi wskaznik i cicho uniewaznilaby
+                           powrot (kontrakt 5.1). *@
+                        <button data-test="wroc-@w.Number"
+                                disabled="@Job.BlokujeNowaRunde()"
+                                @onclick="() => OnRollback.InvokeAsync(w.Number)">
+                            Wróć do tej wersji
+                        </button>
+                    }
+
+                    @if (porzucona)
+                    {
+                        <span data-test="porzucona-@w.Number">(nowsza niż oglądana)</span>
+                    }
+                </li>
+            }
+        </ol>
+    </section>
+}
+
+@code {
+    [Parameter, EditorRequired] public ProjectView Project { get; set; } = default!;
+    [Parameter] public JobView? Job { get; set; }
+    [Parameter] public EventCallback<int> OnRollback { get; set; }
+}

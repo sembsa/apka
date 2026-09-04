@@ -1,6 +1,5 @@
 @implements IAsyncDisposable
 @inject IJSRuntime JS
-@using System.Text.RegularExpressions
 @using Generator.Web.Contracts
 
 @code {
@@ -14,9 +13,9 @@
 
     private DotNetObjectReference<CommentBridge>? _self;
 
-    /// Format z kontraktu 3.1. Id niezgodne z formatem traktujemy jak brak anchora —
-    /// lepiej komentarz globalny niż wskazanie w nieistniejący blok.
-    private static readonly Regex AnchorFormat = new("^[a-z][a-z0-9-]{0,39}$", RegexOptions.Compiled);
+    // Format kotwicy: Kotwica.Poprawna (kontrakt 3.1). Id niezgodne z formatem
+    // traktujemy jak brak anchora — lepiej komentarz globalny niż wskazanie
+    // w nieistniejący blok.
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -30,7 +29,7 @@
     [JSInvokable]
     public async Task OnBlockClicked(ClickPayload payload)
     {
-        var anchor = payload.Anchor is not null && AnchorFormat.IsMatch(payload.Anchor)
+        var anchor = Kotwica.Poprawna(payload.Anchor)
             ? payload.Anchor
             : null;
 

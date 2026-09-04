@@ -27,8 +27,28 @@ else
 
     @if (wersja is not null)
     {
+        @* Podswietlenie wlaczamy FLAGA — zbior zmienionych blokow zna serwer.
+           Kontrakt 5.3. *@
+        var zmienioneJest = (wersja.ChangedAnchors?.Count ?? 0) > 0;
+        var src = zmienioneJest && _pokazZmiany
+            ? $"{wersja.PreviewUrl}/?zmienione=true"
+            : wersja.PreviewUrl;
+
         @* id jest tu potrzebne: shim przyjmuje klikniecia tylko z TEGO iframe'a. *@
-        <iframe id="@_iframeId" title="Podgląd Twojej strony" src="@wersja.PreviewUrl"></iframe>
+        <iframe id="@_iframeId" title="Podgląd Twojej strony" src="@src"></iframe>
+
+        @if (zmienioneJest)
+        {
+            <p data-test="zmiany">
+                <label>
+                    <input type="checkbox" data-test="pokaz-zmiany"
+                           checked="@_pokazZmiany"
+                           @onchange="e => _pokazZmiany = (bool)e.Value!" />
+                    Pokaż, co się zmieniło (@wersja.ChangedAnchors!.Count
+                    @(wersja.ChangedAnchors!.Count == 1 ? "miejsce" : "miejsca"))
+                </label>
+            </p>
+        }
 
         @if (wersja.OrphanedAnchors.Count > 0)
         {
@@ -73,6 +93,8 @@ else
     </button>
 
     <JobStatus Job="_job" />
+
+    <HistoriaWersji Project="_project" Job="_job" OnRollback="Wroc" />
 }
 
 @code {
@@ -90,6 +112,9 @@ else
     private string _draftText = string.Empty;
     private JobView? _job;
     private CancellationTokenSource? _poll;
+
+    /// Domyslnie WLACZONE: po rundzie klient chce wiedziec, co sie zmienilo.
+    private bool _pokazZmiany = true;
 
     protected override async Task OnInitializedAsync() => await Reload();
 
@@ -123,6 +148,20 @@ else
         _comments.Add(_draft with { Text = _draftText.Trim() });
         _draft = null;
         _draftText = string.Empty;
+    }
+
+    /// <summary>
+    /// Kontrakt 5.1. Po powrocie do starszej wersji uwagi zebrane do tej pory przestaja
+    /// dotyczyc tego, co klient widzi — sa zakotwiczone w wersji, ktorej juz nie oglada.
+    /// `Reload` czyta uwagi wersji docelowej, wiec robi to za nas; szkic czyscimy jawnie,
+    /// bo wskazuje na blok z porzuconego podgladu.
+    /// </summary>
+    private async Task Wroc(int wersja)
+    {
+        await Api.RollbackAsync(ProjectId, wersja);
+        _draft = null;
+        _draftText = string.Empty;
+        await Reload();
     }
 
     /// Kontrakt 3.3: frontend umie wycofac, dopoki open. Statusu nie zmienia.
