@@ -589,15 +589,24 @@ public static class ClaudeResultParser
                 Subtype: Str(root, "subtype"),
                 StopReason: Str(root, "stop_reason"),
                 TerminalReason: Str(root, "terminal_reason"),
-                TotalCostUsd: root.TryGetProperty("total_cost_usd", out var c) && c.TryGetDecimal(out var d) ? d : 0m,
+                TotalCostUsd: Money(root, "total_cost_usd"),
                 PermissionDenials: Denials(root),
                 ResultText: Str(root, "result"));
         }
-        catch (JsonException)
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException)
         {
+            // InvalidOperationException: System.Text.Json rzuca je, gdy odczyt nie pasuje
+            // do ValueKind. Niezmiennik tej metody mowi "nigdy nie rzuca", wiec lapiemy
+            // oba typy. Samego Exception NIE lapiemy — zamaskowalby blad w naszym kodzie.
             return null;
         }
     }
+
+    /// TryGetDecimal rzuca InvalidOperationException, gdy pole istnieje, ale nie jest
+    /// liczba ("x", null, true, [1,2]). Sprawdzamy ValueKind przed odczytem.
+    private static decimal Money(JsonElement root, string name) =>
+        root.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number
+        && v.TryGetDecimal(out var d) ? d : 0m;
 
     private static string Str(JsonElement root, string name) =>
         root.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String
@@ -612,8 +621,12 @@ public static class ClaudeResultParser
 
         foreach (var item in arr.EnumerateArray())
         {
+            // TryGetProperty rzuca InvalidOperationException na nie-obiekcie.
+            if (item.ValueKind != JsonValueKind.Object) continue;
+
             string? path = null;
             if (item.TryGetProperty("tool_input", out var input) &&
+                input.ValueKind == JsonValueKind.Object &&
                 input.TryGetProperty("file_path", out var fp) &&
                 fp.ValueKind == JsonValueKind.String)
                 path = fp.GetString();
