@@ -196,4 +196,75 @@ public class ClaudeRunnerTests : IDisposable
         }
     }
 
+    // --- Fix round 2/5: anulowanie nie moze zostawiac sieroty ---
+
+    [Fact]
+    public async Task Anulowanie_zabija_osierocony_proces_potomny()
+    {
+        // "sleep" spi realnie dlugo (30 s) i — jesli podano --pidfile — zapisuje
+        // wlasny PID do pliku PRZED usnieciem. Nie mozna poznac PID przez stdout
+        // z RunAsync: ReadToEndAsync zwraca dopiero po zakonczeniu procesu (EOF),
+        // a proces ma zostac zabity, zanim sam sie zakonczy.
+        //
+        // Recenzja: Dispose() z "using (p)" NIE zabija procesu OS, tylko zwalnia
+        // uchwyty .NET — bez jawnego Kill() prawdziwy dlugo dzialajacy `claude`
+        // zostalby sierota po anulowaniu w kolejce (Task 9), dalej wydajac budzet
+        // i mogac dopisac pliki do katalogu roboczego po tym, jak orkiestrator
+        // uznal zadanie za zakonczone.
+        var pidFile = Path.Combine(_work, "fake-pid.txt");
+        using var cts = new CancellationTokenSource();
+        var runner = new ClaudeRunner("dotnet", [FakeClaude.DllPath, "--scenario", "sleep", "--pidfile", pidFile]);
+        var runTask = runner.RunAsync(Request(), cts.Token);
+
+        var pid = await WaitForPidFileAsync(pidFile, TimeSpan.FromSeconds(5));
+
+        cts.Cancel();
+
+        // Decyzja opisana przy ClaudeRunner.RunAsync: anulowanie propaguje sie jako
+        // OperationCanceledException, nie wraca jako ClaudeRunOutcome.
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => runTask);
+
+        Assert.True(
+            await WaitUntilProcessDeadAsync(pid, TimeSpan.FromSeconds(5)),
+            $"proces {pid} (atrapa --scenario sleep) nadal zyje po anulowaniu — zostal sierota");
+    }
+
+    private static async Task<int> WaitForPidFileAsync(string path, TimeSpan timeout)
+    {
+        var sw = Stopwatch.StartNew();
+        while (sw.Elapsed < timeout)
+        {
+            if (File.Exists(path))
+            {
+                var text = await File.ReadAllTextAsync(path);
+                if (int.TryParse(text, out var pid)) return pid;
+            }
+            await Task.Delay(50);
+        }
+        throw new TimeoutException($"Atrapa nie zapisala PID do {path} w ciagu {timeout}");
+    }
+
+    private static async Task<bool> WaitUntilProcessDeadAsync(int pid, TimeSpan timeout)
+    {
+        var sw = Stopwatch.StartNew();
+        while (sw.Elapsed < timeout)
+        {
+            if (!IsProcessAlive(pid)) return true;
+            await Task.Delay(50);
+        }
+        return !IsProcessAlive(pid);
+    }
+
+    private static bool IsProcessAlive(int pid)
+    {
+        try
+        {
+            using var p = Process.GetProcessById(pid);
+            return !p.HasExited;
+        }
+        catch (ArgumentException)
+        {
+            return false; // proces juz nie istnieje
+        }
+    }
 }

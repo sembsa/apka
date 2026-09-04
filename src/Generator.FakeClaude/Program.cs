@@ -3,8 +3,12 @@ using System.Text.Json;
 // Atrapa `claude -p` dla testów. Nie waliduje flag poza --scenario;
 // sprawdzanie flag jest zadaniem testów ClaudeRunner, nie atrapy.
 var scenario = "success";
+string? pidFile = null;
 for (var i = 0; i < args.Length - 1; i++)
+{
     if (args[i] == "--scenario") scenario = args[i + 1];
+    if (args[i] == "--pidfile") pidFile = args[i + 1];
+}
 
 const string success = """
 {"is_error":false,"subtype":"success","stop_reason":"end_turn","terminal_reason":"completed",
@@ -46,6 +50,16 @@ switch (scenario)
         // (to, co faktycznie dostal proces, nie to, co ClaudeRunner mysli, ze wyslal)
         // jako tablice JSON. Nie czyta stdin.
         Console.Out.Write(JsonSerializer.Serialize(args));
+        return 0;
+    case "sleep":
+        // Dla testu anulowania: spi realnie dlugo, zeby dac czas na Cancel() w
+        // trakcie dzialania procesu. Jesli podano --pidfile, zapisuje tam wlasny
+        // PID PRZED usnieciem — stdout z RunAsync jest dostepny dopiero po
+        // zakonczeniu procesu (ReadToEndAsync czeka na EOF), wiec test nie moze
+        // poznac PID inaczej niz przez plik.
+        if (pidFile is not null) File.WriteAllText(pidFile, Environment.ProcessId.ToString());
+        Task.Delay(TimeSpan.FromSeconds(30)).Wait();
+        Console.Out.Write(success);
         return 0;
     default:
         Console.Error.Write($"nieznany scenariusz: {scenario}");

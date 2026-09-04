@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 
 namespace Generator.Engine.ClaudeCli;
@@ -84,9 +85,44 @@ public class ClaudeRunner(string executable, IReadOnlyList<string>? prefixArgs =
 
             var stdout = p.StandardOutput.ReadToEndAsync(ct);
             var stderr = p.StandardError.ReadToEndAsync(ct);
-            await p.WaitForExitAsync(ct);
+            try
+            {
+                await p.WaitForExitAsync(ct);
+            }
+            finally
+            {
+                // using (p) samo w sobie NIE zabija procesu OS przy Dispose — tylko
+                // zwalnia uchwyty .NET. Bez tego anulowanie (np. limit czasu w
+                // kolejce z Taska 9) zostawia prawdziwego `claude` sierota: dalej
+                // dziala, wydaje budzet i moze dopisac pliki do katalogu roboczego
+                // juz po tym, jak orkiestrator uznal zadanie za zakonczone.
+                if (!p.HasExited)
+                {
+                    // Kill nie moze rzucic dalej: wyjatek z finally ZASTAPILBY
+                    // OperationCanceledException, na ktorym opiera sie kontrakt
+                    // anulowania (patrz komentarz przy return nizej) — kolejka
+                    // z Taska 9 zlapalaby cos innego niz oczekuje i zalogowala
+                    // przekroczenie limitu czasu jako awarie. Od .NET Core 3.0
+                    // Kill() na juz zakonczonym procesie jest udokumentowanym
+                    // no-opem, wiec InvalidOperationException tu nie leci —
+                    // jedyny realny wyjatek to Win32Exception (system odmowil
+                    // zabicia procesu), lapany na wszelki wypadek.
+                    try
+                    {
+                        p.Kill(entireProcessTree: true);
+                    }
+                    catch (Win32Exception)
+                    {
+                    }
+                }
+            }
             sw.Stop();
 
+            // Anulowanie propaguje sie jako OperationCanceledException (rzucony
+            // wyzej przez WaitForExitAsync) zamiast wracac jako ClaudeRunOutcome:
+            // to idiomatyczny kontrakt CancellationToken w .NET, a wywolujacy
+            // (kolejka z Taska 9) i tak musi reagowac na przekroczenie wlasnego
+            // limitu czasu, nie na surowy wynik podprocesu.
             return new ClaudeRunOutcome(true, p.ExitCode, await stdout, await stderr, sw.Elapsed);
         }
     }
