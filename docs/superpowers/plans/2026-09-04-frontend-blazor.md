@@ -1749,10 +1749,34 @@ git push
 > że były dwa. Test: `Nieudana_runda_nie_zaprasza_do_ponownego_klikania` (Theory na obu
 > gałęziach). 50 testów.
 >
-> **Znane ograniczenie, ujawnione przy tej okazji:** edytor pobiera stan zadania raz,
-> nie ma pollingu ani strumienia postępu. Przy `retrying` klient zostaje z „pracuje"
-> i zablokowanym przyciskiem **do odświeżenia strony** — po F5 stan jest poprawny.
-> Domknie to SignalR z sekcji „co dalej"; do tego czasu to świadomy kompromis, nie błąd.
+> **Ograniczenie zdjęte 2026-09-04 (polling).** Edytor pobierał stan zadania raz, więc
+> przy `retrying` klient zostawał z „pracuje" i zablokowanym przyciskiem **do odświeżenia
+> strony**. Teraz `Editor` dopytuje o zadanie w tle (`PeriodicTimer`, domyślnie 2 s;
+> `PollInterval` jest parametrem, bo testy nie mogą czekać sekund) i pętla **ustaje na
+> stanie końcowym oraz przy zdjęciu komponentu** — inaczej każdy klient zostawiałby po
+> sobie timer bijący w API. `Reload` wołamy tylko gdy stan naprawdę się zmienił
+> (rekordy, równość po wartości), więc powtórka nie generuje ruchu na próżno.
+>
+> Żeby dało się to w ogóle zobaczyć, mock musiał **umieć dokończyć powtórkę**: dziś
+> `retrying` wisiało w nieskończoność. Stąd `RetryResolvesAfter` — `null` (domyślnie)
+> zostawia zadanie w `retrying`, bo testy komunikatu i blokady potrzebują stanu, który
+> sam się nie zmienia; aplikacja dev ustawia 4 s. Ścieżka udanej rundy jest wspólna dla
+> `success` i dla udanej powtórki (`Udalo`) — dwa razy to samo osobno rozjechałoby się
+> tak samo jak wcześniej „czy trwa".
+>
+> Przeklikane: powtórka trwa („pracuje", licznik `0 z 15`, wersja 1), a po ~4 s wynik
+> **dochodzi sam** — `pracuje` znika, iframe przeskakuje na `/2`, licznik `1 z 15`,
+> raport „Zrobione: …" na miejscu, URL nietknięty. `halted` po 8 s nadal stoi na
+> komunikacie i nie startuje pollingu (stan końcowy). Wyjście ze strony **w trakcie**
+> powtórki nie zostawiło w logu serwera ani jednej linii — a to najprostszy sposób
+> wywołania renderu w zdjęty komponent.
+>
+> Że test pollingu naprawdę broni pollingu, sprawdziłem wyłączając wywołanie `Dopytuj`:
+> oba testy padają. Czerwony na błędzie kompilacji nie jest dowodem.
+>
+> Wyścig, którego log nie pokazał, ale który istnieje: klient może zamknąć kartę między
+> `GetJobAsync` a renderem. Domknięte sprawdzeniem tokenu po zapytaniu i przechwyceniem
+> `ObjectDisposedException` — wyjątek w wątku tła nie ma kto złapać wyżej.
 >
 > **Obserwacja produktowa, nie błąd:** po udanej rundzie lista uwag jest pusta, bo uwagi
 > są zakotwiczone w wersji, a klient patrzy już na następną. Statusy `applied` z notatką

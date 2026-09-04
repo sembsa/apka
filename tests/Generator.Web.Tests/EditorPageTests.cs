@@ -167,6 +167,84 @@ public class EditorPageTests : BunitContext
             Assert.True(cut.Find("[data-test='popraw']").HasAttribute("disabled")));
     }
 
+    /// <summary>
+    /// Powod istnienia pollingu: przy `retrying` klient zostawal z „pracuje"
+    /// i zablokowanym przyciskiem do konca swiata, bo edytor pobieral stan zadania raz.
+    /// </summary>
+    [Fact]
+    public async Task Powtorka_ktora_sie_udala_dochodzi_bez_odswiezania()
+    {
+        var (api, id) = await Setup(MockJobOutcome.Retrying);
+        api.RetryResolvesAfter = TimeSpan.FromMilliseconds(50);
+        var wersjaPrzed = (await api.GetAsync(id)).Versions[^1].Number;
+        api.SeedComments(id, wersjaPrzed, "telefon za mało widoczny");
+
+        var cut = Render<Editor>(ps => ps
+            .Add(p => p.ProjectId, id)
+            .Add(p => p.PollInterval, TimeSpan.FromMilliseconds(20)));
+        cut.WaitForAssertion(() => Assert.NotNull(cut.Find("[data-test='popraw']")));
+        await cut.Find("[data-test='popraw']").ClickAsync(new());
+
+        // Zadnego ponownego renderu z testu — UI musi sam podniesc zmiane.
+        cut.WaitForAssertion(
+            () => Assert.Contains($"/preview/{id}/{wersjaPrzed + 1}",
+                cut.Find("iframe").GetAttribute("src")!),
+            TimeSpan.FromSeconds(5));
+        Assert.Contains("Zrobione", cut.Find("[data-test='zrobione']").TextContent);
+        Assert.Empty(cut.FindAll("[data-test='pracuje']"));
+    }
+
+    [Fact]
+    public async Task Polling_ustaje_gdy_zadanie_sie_konczy()
+    {
+        // Inaczej kazdy klient zostawia po sobie petle bijaca w API do konca sesji.
+        var (api, id) = await Setup(MockJobOutcome.Retrying);
+        api.RetryResolvesAfter = TimeSpan.FromMilliseconds(50);
+        var liczacy = new LiczacyApi(api);
+        Services.AddSingleton<IProjectApi>(liczacy);
+        var wersjaPrzed = (await api.GetAsync(id)).Versions[^1].Number;
+        api.SeedComments(id, wersjaPrzed, "cennik nad opiniami");
+
+        var cut = Render<Editor>(ps => ps
+            .Add(p => p.ProjectId, id)
+            .Add(p => p.PollInterval, TimeSpan.FromMilliseconds(20)));
+        cut.WaitForAssertion(() => Assert.NotNull(cut.Find("[data-test='popraw']")));
+        await cut.Find("[data-test='popraw']").ClickAsync(new());
+        cut.WaitForAssertion(
+            () => Assert.Contains($"/{wersjaPrzed + 1}", cut.Find("iframe").GetAttribute("src")!),
+            TimeSpan.FromSeconds(5));
+
+        var poZakonczeniu = liczacy.Zapytania;
+        await Task.Delay(300);   // 15 tikow, gdyby petla nadal chodzila
+        Assert.Equal(poZakonczeniu, liczacy.Zapytania);
+    }
+
+    /// Liczy pytania o stan zadania. Nie da sie tego sprawdzic z zewnatrz inaczej.
+    private sealed class LiczacyApi(IProjectApi wewnetrzny) : IProjectApi
+    {
+        private int _zapytania;
+        public int Zapytania => Volatile.Read(ref _zapytania);
+
+        public Task<JobView> GetJobAsync(string jobId)
+        {
+            Interlocked.Increment(ref _zapytania);
+            return wewnetrzny.GetJobAsync(jobId);
+        }
+
+        public Task<ProjectView> CreateAsync(string source, string description) =>
+            wewnetrzny.CreateAsync(source, description);
+        public Task<ProjectView> GetAsync(string id) => wewnetrzny.GetAsync(id);
+        public Task<string> RequestProposalsAsync(string id) => wewnetrzny.RequestProposalsAsync(id);
+        public Task<IReadOnlyList<ProposalView>> GetProposalsAsync(string id) =>
+            wewnetrzny.GetProposalsAsync(id);
+        public Task ChooseProposalAsync(string id, string proposalId) =>
+            wewnetrzny.ChooseProposalAsync(id, proposalId);
+        public Task<string> ApplyCommentsAsync(string id, int version, IReadOnlyList<CommentDto> comments) =>
+            wewnetrzny.ApplyCommentsAsync(id, version, comments);
+        public Task<IReadOnlyList<CommentDto>> GetCommentsAsync(string id, int version) =>
+            wewnetrzny.GetCommentsAsync(id, version);
+    }
+
     [Fact]
     public async Task Osierocone_kotwice_sa_widoczne_nigdy_wyciszane()
     {

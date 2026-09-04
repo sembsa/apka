@@ -1,6 +1,7 @@
 @page "/editor/{ProjectId}"
 @inject IProjectApi Api
 @using Generator.Web.Contracts
+@implements IAsyncDisposable
 
 <h1>Twoja strona</h1>
 
@@ -77,6 +78,9 @@ else
 @code {
     [Parameter] public string ProjectId { get; set; } = string.Empty;
 
+    /// Parametr, bo testy nie moga czekac 2 sekund na tik.
+    [Parameter] public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(2);
+
     private readonly string _iframeId = $"podglad-{Guid.NewGuid():N}";
 
     private ProjectView? _project;
@@ -85,6 +89,7 @@ else
     private CommentDto? _draft;
     private string _draftText = string.Empty;
     private JobView? _job;
+    private CancellationTokenSource? _poll;
 
     protected override async Task OnInitializedAsync() => await Reload();
 
@@ -130,5 +135,58 @@ else
 
         // Kontrakt 4.4: przy nieudanej rundzie komentarze zostaja open i nic nie przepada.
         if (_job.Status == "succeeded") await Reload();
+        else if (_job.WTokuDlaKlienta()) Dopytuj(jobId);
+    }
+
+    /// <summary>
+    /// Zadanie trwa (albo silnik powtarza), a wynik przyjdzie sam — bez tego klient
+    /// zostawal z „pracuje" i zablokowanym przyciskiem do odswiezenia strony.
+    /// Pytamy o stan, nie o dane: `Reload` wolamy tylko wtedy, gdy naprawde jest co
+    /// przeladowac. Petla ustaje na stanie koncowym i przy zamknieciu komponentu —
+    /// inaczej kazdy klient zostawia po sobie timer bijacy w API.
+    /// </summary>
+    private void Dopytuj(string jobId)
+    {
+        _poll?.Cancel();
+        _poll = new CancellationTokenSource();
+        _ = Petla(jobId, _poll.Token);
+    }
+
+    private async Task Petla(string jobId, CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(PollInterval);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct))
+            {
+                var job = await Api.GetJobAsync(jobId);
+
+                // Klient mogl zamknac karte w czasie tego zapytania. Renderowanie
+                // w zdjety komponent rzuca w watku tla, gdzie nikt tego nie lapie.
+                if (ct.IsCancellationRequested) return;
+                if (job == _job) continue;      // rekordy: rownosc po wartosci
+
+                _job = job;
+                if (job.Status == "succeeded") await Reload();
+                await InvokeAsync(StateHasChanged);
+
+                if (!job.WTokuDlaKlienta()) return;   // succeeded albo halted = koniec
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Klient zamknal strone w trakcie rundy. Nie jest to blad.
+        }
+        catch (ObjectDisposedException)
+        {
+            // Reszta wyscigu: obwod zdjety dokladnie w trakcie renderu. Tez nie blad.
+        }
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        _poll?.Cancel();
+        _poll?.Dispose();
+        return ValueTask.CompletedTask;
     }
 }

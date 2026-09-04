@@ -20,6 +20,13 @@ public class MockProjectApi : IProjectApi
     public TimeSpan SimulatedDelay { get; set; } = TimeSpan.FromSeconds(2);
 
     /// <summary>
+    /// Po jakim czasie powtorka (`retrying`) konczy sie sukcesem. `null` = nigdy,
+    /// czyli zadanie zostaje w `retrying` — taki stan potrzebuja testy, ktore sprawdzaja
+    /// sam komunikat i blokade przycisku.
+    /// </summary>
+    public TimeSpan? RetryResolvesAfter { get; set; }
+
+    /// <summary>
     /// Katalog, w którym mock zapisuje snapshoty wersji. Musi być ten sam, z którego
     /// czyta `/preview` — endpoint serwuje PLIKI, nie metadane, więc bez zapisu cała
     /// ścieżka klienta kończy się pustym iframe'em.
@@ -123,28 +130,19 @@ public class MockProjectApi : IProjectApi
         switch (NextJobOutcome)
         {
             case MockJobOutcome.Success:
-                _comments[(id, version)] =
-                [
-                    .. comments.Select(c => c with
-                    {
-                        Status = "applied",
-                        Note = $"Zrobione: {c.Text}",
-                    }),
-                ];
-                var numer = project.Versions.Count + 1;
-                await ZapiszSnapshot(id, numer, comments);
-                _projects[id] = project with
-                {
-                    RoundsUsed = project.RoundsUsed + 1,
-                    Versions = [.. project.Versions,
-                        new VersionView(numer, $"/preview/{id}/{numer}", [])],
-                };
-                _jobs[jobId] = new JobView(jobId, "succeeded", null);
+                await Udalo(jobId, id, version, comments);
                 break;
 
             // Kontrakt 4.4: nieudana runda NIE zuzywa rundy i NIE rusza statusow.
             case MockJobOutcome.Retrying:
                 _jobs[jobId] = new JobView(jobId, "failed", new JobFailureView("retrying", 1));
+
+                // Powtorka, ktora nigdy sie nie konczy, nie jest powtorka. Domyslnie
+                // (null) zadanie zostaje w `retrying` — testy potrzebuja stanu, ktory
+                // sam sie nie zmienia. Aplikacja dev ustawia opoznienie, zeby dalo sie
+                // zobaczyc, ze polling podnosi wynik bez odswiezania strony.
+                if (RetryResolvesAfter is { } opoznienie)
+                    _ = DokonczPowtorke(jobId, id, version, comments, opoznienie);
                 break;
 
             case MockJobOutcome.Halted:
@@ -153,6 +151,45 @@ public class MockProjectApi : IProjectApi
         }
 
         return jobId;
+    }
+
+    /// <summary>
+    /// Udana runda: raport per komentarz, nowy snapshot, podbity licznik. Wspolna dla
+    /// wyniku `success` i dla powtorki, ktora sie w koncu udala — inaczej dwie sciezki
+    /// liczylyby to samo osobno i rozjechalyby sie, jak wczesniej „czy trwa".
+    /// </summary>
+    private async Task Udalo(string jobId, string id, int version, IReadOnlyList<CommentDto> comments)
+    {
+        _comments[(id, version)] =
+        [
+            .. comments.Select(c => c with
+            {
+                Status = "applied",
+                Note = $"Zrobione: {c.Text}",
+            }),
+        ];
+
+        var project = _projects[id];
+        var numer = project.Versions.Count + 1;
+        await ZapiszSnapshot(id, numer, comments);
+        _projects[id] = project with
+        {
+            RoundsUsed = project.RoundsUsed + 1,
+            Versions = [.. project.Versions, new VersionView(numer, $"/preview/{id}/{numer}", [])],
+        };
+        _jobs[jobId] = new JobView(jobId, "succeeded", null);
+    }
+
+    /// <summary>
+    /// Silnik powtarza w tle i po chwili ma wynik. Kontrakt 4.1: powtorka zjada budzet,
+    /// nie runde — tu podbija sie tylko licznik rund tej JEDNEJ udanej proby.
+    /// </summary>
+    private async Task DokonczPowtorke(
+        string jobId, string id, int version, IReadOnlyList<CommentDto> comments, TimeSpan po)
+    {
+        await Task.Delay(po);
+        if (_projects[id].Status == "frozen") return;   // kontrakt 4.5
+        await Udalo(jobId, id, version, comments);
     }
 
     /// <summary>

@@ -11,7 +11,14 @@ var snapshotRoot = builder.Configuration["Projects:Root"]
     ?? Path.Combine(Path.GetTempPath(), "generator-stron");
 
 // Backend w pamieci do czasu Planu B. Podmiana na klienta HTTP dotknie tej jednej linii.
-builder.Services.AddSingleton<IProjectApi>(_ => new MockProjectApi { SnapshotRoot = snapshotRoot });
+builder.Services.AddSingleton<IProjectApi>(_ => new MockProjectApi
+{
+    SnapshotRoot = snapshotRoot,
+
+    // W devie powtorka po chwili sie udaje, zeby dalo sie zobaczyc, ze polling podnosi
+    // wynik bez odswiezania strony. Bez tego `retrying` wisialoby w nieskonczonosc.
+    RetryResolvesAfter = builder.Environment.IsDevelopment() ? TimeSpan.FromSeconds(4) : null,
+});
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
