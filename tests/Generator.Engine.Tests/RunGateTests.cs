@@ -32,6 +32,31 @@ public class RunGateTests
     "session_id":"s-4","total_cost_usd":0.05,"permission_denials":[],"result":"przerwano"}
     """;
 
+    // Rozne subtype niz "success", ale is_error nadal false — sam subtype ma
+    // rozstrzygac o Retry, nie tylko is_error.
+    private const string WrongSubtype = """
+    {"is_error":false,"subtype":"error_max_turns","stop_reason":"end_turn","terminal_reason":"completed",
+    "session_id":"s-5","total_cost_usd":0.02,"permission_denials":[],"result":"za duzo tur"}
+    """;
+
+    // Niepuste permission_denials RAZEM ze stop_reason innym niz end_turn —
+    // rozstrzyga priorytet: denials (deterministyczne) bije stop_reason (przejsciowy).
+    private const string DeniedAndTruncated = """
+    {"is_error":false,"subtype":"success","stop_reason":"max_tokens","terminal_reason":"completed",
+    "session_id":"s-6","total_cost_usd":0.03,
+    "permission_denials":[{"tool_name":"Write","tool_input":{"file_path":"/tmp/index.html"}}],
+    "result":"brak uprawnien i urwany stop_reason"}
+    """;
+
+    // Niepuste permission_denials RAZEM z is_error:true — rozstrzyga priorytet:
+    // denials bije is_error/subtype, bo tylko denials sa deterministyczne.
+    private const string DeniedAndError = """
+    {"is_error":true,"subtype":"error","stop_reason":"end_turn","terminal_reason":"completed",
+    "session_id":"s-7","total_cost_usd":0.04,
+    "permission_denials":[{"tool_name":"Write","tool_input":{"file_path":"/tmp/index.html"}}],
+    "result":"brak uprawnien i is_error"}
+    """;
+
     [Fact]
     public void Udany_przebieg_przechodzi()
     {
@@ -81,6 +106,36 @@ public class RunGateTests
         var g = RunGate.Evaluate(Outcome(Aborted));
         Assert.Equal(GateVerdict.Retry, g.Verdict);
         Assert.Contains("aborted", g.Cause);
+        Assert.Equal(0.05m, g.Parsed!.TotalCostUsd);
+    }
+
+    [Fact]
+    public void Subtype_inny_niz_success_to_Retry()
+    {
+        var g = RunGate.Evaluate(Outcome(WrongSubtype));
+        Assert.Equal(GateVerdict.Retry, g.Verdict);
+        Assert.Contains("error_max_turns", g.Cause);
+        Assert.Equal(0.02m, g.Parsed!.TotalCostUsd);
+    }
+
+    [Fact]
+    public void Permission_denials_ma_priorytet_nad_stop_reason()
+    {
+        var g = RunGate.Evaluate(Outcome(DeniedAndTruncated));
+        Assert.Equal(GateVerdict.Halt, g.Verdict);
+        Assert.Contains("permission_denials", g.Cause);
+        Assert.DoesNotContain("stop_reason", g.Cause);
+        Assert.Equal(0.03m, g.Parsed!.TotalCostUsd);
+    }
+
+    [Fact]
+    public void Permission_denials_ma_priorytet_nad_is_error()
+    {
+        var g = RunGate.Evaluate(Outcome(DeniedAndError));
+        Assert.Equal(GateVerdict.Halt, g.Verdict);
+        Assert.Contains("permission_denials", g.Cause);
+        Assert.DoesNotContain("is_error", g.Cause);
+        Assert.Equal(0.04m, g.Parsed!.TotalCostUsd);
     }
 
     [Fact]
@@ -106,6 +161,7 @@ public class RunGateTests
         var json = Ok.Replace("\"is_error\":false", "\"is_error\":true");
         var g = RunGate.Evaluate(Outcome(json));
         Assert.Equal(GateVerdict.Retry, g.Verdict);
+        Assert.Equal(0.018m, g.Parsed!.TotalCostUsd);
     }
 
     [Fact]

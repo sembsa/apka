@@ -38,6 +38,20 @@ public static class RunGate
             return new GateResult(GateVerdict.Retry,
                 $"brak JSON na stdout (exit {outcome.ExitCode}): {Trim(outcome.StdErr)}", null);
 
+        // 4. Niepuste permission_denials — sprawdzane NAJPIERW spomiedzy warunkow
+        //    liczonych na sparsowanym JSON-ie (zaraz po tym, ze w ogole mamy JSON).
+        //    Gdy uprawnienia zostaly odrzucone, nasza konfiguracja jest zla — zadna
+        //    powtorka tego nie naprawi, niezaleznie od tego, co mowia pozostale pola
+        //    (exit code, is_error, stop_reason). To jedyny deterministyczny warunek
+        //    bramki, wiec ma pierwszenstwo nad wszystkimi innymi — w tym nad exit
+        //    code i is_error, ktore same w sobie moga byc przejsciowe.
+        if (parsed.PermissionDenials.Count > 0)
+        {
+            var names = string.Join(", ", parsed.PermissionDenials.Select(d => d.ToolName));
+            return new GateResult(GateVerdict.Halt,
+                $"niepuste permission_denials: {names}", parsed);
+        }
+
         // 2. Exit code i is_error / subtype.
         if (outcome.ExitCode != 0)
             return new GateResult(GateVerdict.Retry, $"exit code {outcome.ExitCode}", parsed);
@@ -45,15 +59,6 @@ public static class RunGate
         if (parsed.IsError || parsed.Subtype != "success")
             return new GateResult(GateVerdict.Retry,
                 $"is_error={parsed.IsError}, subtype={parsed.Subtype}", parsed);
-
-        // 4. Niepuste permission_denials — nasza konfiguracja, powtorka da to samo.
-        //    Sprawdzane przed stop_reason, bo to przypadek deterministyczny.
-        if (parsed.PermissionDenials.Count > 0)
-        {
-            var names = string.Join(", ", parsed.PermissionDenials.Select(d => d.ToolName));
-            return new GateResult(GateVerdict.Halt,
-                $"niepuste permission_denials: {names}", parsed);
-        }
 
         // 3. stop_reason / terminal_reason.
         if (parsed.StopReason != "end_turn")
