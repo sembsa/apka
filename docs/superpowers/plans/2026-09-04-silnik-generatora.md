@@ -1066,16 +1066,11 @@ public static class RunGate
             return new GateResult(GateVerdict.Retry,
                 $"brak JSON na stdout (exit {outcome.ExitCode}): {Trim(outcome.StdErr)}", null);
 
-        // 2. Exit code i is_error / subtype.
-        if (outcome.ExitCode != 0)
-            return new GateResult(GateVerdict.Retry, $"exit code {outcome.ExitCode}", parsed);
-
-        if (parsed.IsError || parsed.Subtype != "success")
-            return new GateResult(GateVerdict.Retry,
-                $"is_error={parsed.IsError}, subtype={parsed.Subtype}", parsed);
-
-        // 4. Niepuste permission_denials — nasza konfiguracja, powtorka da to samo.
-        //    Sprawdzane przed stop_reason, bo to przypadek deterministyczny.
+        // 2. Niepuste permission_denials — nasza konfiguracja, powtorka da to samo.
+        //    Sprawdzane ZARAZ po sparsowaniu, przed exit code i is_error: gdy mamy JSON
+        //    i widzimy odmowe uprawnien, konfiguracja jest zla i zadna powtorka tego nie
+        //    naprawi, niezaleznie od tego, co mowia pozostale pola. Odwrotna kolejnosc
+        //    dawalaby Retry dla is_error=true + niepuste denials.
         if (parsed.PermissionDenials.Count > 0)
         {
             var names = string.Join(", ", parsed.PermissionDenials.Select(d => d.ToolName));
@@ -1083,7 +1078,15 @@ public static class RunGate
                 $"niepuste permission_denials: {names}", parsed);
         }
 
-        // 3. stop_reason / terminal_reason.
+        // 3. Exit code i is_error / subtype.
+        if (outcome.ExitCode != 0)
+            return new GateResult(GateVerdict.Retry, $"exit code {outcome.ExitCode}", parsed);
+
+        if (parsed.IsError || parsed.Subtype != "success")
+            return new GateResult(GateVerdict.Retry,
+                $"is_error={parsed.IsError}, subtype={parsed.Subtype}", parsed);
+
+        // 4. stop_reason / terminal_reason.
         if (parsed.StopReason != "end_turn")
             return new GateResult(GateVerdict.Retry, $"stop_reason={parsed.StopReason}", parsed);
 
