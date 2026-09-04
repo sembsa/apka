@@ -745,7 +745,7 @@ public class CommentBridgeTests : BunitContext
         var cut = Render<CommentBridge>(ps => ps
             .Add(p => p.OnCommentDrafted, c => drafted = c));
 
-        await cut.Instance.OnBlockClicked(new ClickPayload("oferta-strzyzenie", 120, 340, "desktop"));
+        await cut.Instance.OnBlockClicked(new CommentBridge.ClickPayload("oferta-strzyzenie", "desktop"));
 
         Assert.NotNull(drafted);
         Assert.Equal("oferta-strzyzenie", drafted.Anchor);
@@ -764,7 +764,7 @@ public class CommentBridgeTests : BunitContext
         var cut = Render<CommentBridge>(ps => ps
             .Add(p => p.OnCommentDrafted, c => drafted = c));
 
-        await cut.Instance.OnBlockClicked(new ClickPayload(null, 10, 10, "mobile"));
+        await cut.Instance.OnBlockClicked(new CommentBridge.ClickPayload(null, "mobile"));
 
         Assert.NotNull(drafted);
         Assert.Null(drafted.Anchor);
@@ -780,8 +780,8 @@ public class CommentBridgeTests : BunitContext
         var cut = Render<CommentBridge>(ps => ps
             .Add(p => p.OnCommentDrafted, c => drafted.Add(c)));
 
-        await cut.Instance.OnBlockClicked(new ClickPayload("Hero", 1, 1, "desktop"));
-        await cut.Instance.OnBlockClicked(new ClickPayload("oferta 1", 1, 1, "desktop"));
+        await cut.Instance.OnBlockClicked(new CommentBridge.ClickPayload("Hero", "desktop"));
+        await cut.Instance.OnBlockClicked(new CommentBridge.ClickPayload("oferta 1", "desktop"));
 
         Assert.Equal(2, drafted.Count);
         Assert.All(drafted, c => Assert.Null(c.Anchor));
@@ -796,7 +796,7 @@ public class CommentBridgeTests : BunitContext
         var cut = Render<CommentBridge>(ps => ps
             .Add(p => p.OnCommentDrafted, c => drafted = c));
 
-        await cut.Instance.OnBlockClicked(new ClickPayload("hero", 1, 1, "desktop"));
+        await cut.Instance.OnBlockClicked(new CommentBridge.ClickPayload("hero", "desktop"));
 
         var pola = typeof(CommentDto).GetProperties().Select(p => p.Name).ToArray();
         Assert.DoesNotContain("Snapshot", pola);
