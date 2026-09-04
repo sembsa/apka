@@ -4,12 +4,12 @@
    JobFailureView nie ma pola cause, wiec nie da sie go pokazac przez pomylke. *@
 @if (Job is not null)
 {
-    @if (Job.Status is "queued" or "running" || Job.Failure?.Handling == "retrying")
+    @if (Job.WTokuDlaKlienta())
     {
         @* Powtorka jest dla klienta dalsza praca, nie awaria. Brzmienie z sekcji 7 planu. *@
         <p aria-live="polite" data-test="pracuje">Claude pracuje nad Twoją stroną…</p>
     }
-    else if (Job.Failure?.Handling == "halted")
+    else if (Job.Zatrzymane())
     {
         <p role="alert" data-test="zatrzymane">
             Coś się u nas zacięło i nie udało się wprowadzić poprawek —

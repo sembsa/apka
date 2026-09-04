@@ -1728,9 +1728,31 @@ git push
 > „Uwaga do bloku: hero", czyli łańcuch iframe → `postMessage` → shim → `[JSInvokable]`
 > → UI działa end-to-end z trzema bramkami bezpieczeństwa włączonymi.
 >
-> **Do przejścia zostają gałęzie `failed`** (`retrying`/`halted`): mock przestawia je
-> tylko z kodu (`NextJobOutcome`), z UI nie ma jak ich wywołać. Pokryte testami
-> (`JobStatusTests`, `Nieudana_runda_nie_zabiera_klientowi_niczego`).
+> **Gałęzie `failed` przeklikane 2026-09-04.** Nie miały wyzwalacza w UI, więc dodałem
+> `GET /dev/wynik-rundy/{success|retrying|halted}` — **tylko pod `IsDevelopment()`**,
+> bo w produkcji nie ma mocka i nikt z zewnątrz nie może przestawiać wyniku rundy.
+>
+> `retrying`: „Claude pracuje nad Twoją stroną…", licznik `0 z 15` nieruszony, wersja 1,
+> uwaga nadal `open` i wycofywalna. Po odświeżeniu i rundzie `success` uwaga ocalała,
+> licznik poszedł na `1 z 15`, raport „Zrobione: …" na miejscu.
+> `halted`: komunikat „nic nie przepadło", licznik nieruszony, wersja nietknięta, uwaga
+> `open`. W żadnej gałęzi nie wyciekło ani `halted`/`retrying`, ani budżet (kontrakt 4.3).
+>
+> **Trzeci błąd znaleziony przeklikaniem, nie testem:** UI pisał „Claude pracuje nad
+> Twoją stroną…", a przycisk „Popraw to" był w tym czasie **aktywny** — klient
+> wystartowałby drugie zadanie w trakcie powtórki. Przy `halted` jeszcze gorzej: tekst
+> mówi „klikanie ponownie nic nie zmieni", a przycisk zapraszał do klikania. Przyczyna:
+> `JobStatus` i `Editor` liczyły „czy trwa" **osobno**, a warunek `disabled` patrzył
+> tylko na `Status == "running"` i nie widział `Failure.Handling`. Naprawione jednym
+> miejscem prawdy (`JobViewExtensions`: `WTokuDlaKlienta`, `Zatrzymane`,
+> `BlokujeNowaRunde`) — nie dwiema poprawkami osobno, bo rozjechały się właśnie dlatego,
+> że były dwa. Test: `Nieudana_runda_nie_zaprasza_do_ponownego_klikania` (Theory na obu
+> gałęziach). 50 testów.
+>
+> **Znane ograniczenie, ujawnione przy tej okazji:** edytor pobiera stan zadania raz,
+> nie ma pollingu ani strumienia postępu. Przy `retrying` klient zostaje z „pracuje"
+> i zablokowanym przyciskiem **do odświeżenia strony** — po F5 stan jest poprawny.
+> Domknie to SignalR z sekcji „co dalej"; do tego czasu to świadomy kompromis, nie błąd.
 >
 > **Obserwacja produktowa, nie błąd:** po udanej rundzie lista uwag jest pusta, bo uwagi
 > są zakotwiczone w wersji, a klient patrzy już na następną. Statusy `applied` z notatką

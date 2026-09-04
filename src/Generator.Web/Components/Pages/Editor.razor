@@ -66,7 +66,7 @@ else
         </section>
     }
 
-    <button data-test="popraw" disabled="@(_comments.Count == 0 || _project.Status == "frozen" || _job?.Status == "running")"
+    <button data-test="popraw" disabled="@(_comments.Count == 0 || _project.Status == "frozen" || _job.BlokujeNowaRunde())"
             @onclick="Apply">
         Popraw to
     </button>

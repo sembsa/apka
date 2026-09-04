@@ -144,6 +144,29 @@ public class EditorPageTests : BunitContext
         Assert.Empty(cut.FindAll("[data-test='zrobione']"));
     }
 
+    /// <summary>
+    /// Znalezione przeklikaniem galezi failed: UI pisal „Claude pracuje nad Twoja
+    /// strona…", a przycisk byl aktywny — klient wystartowalby drugie zadanie w trakcie
+    /// powtorki. Przy `halted` jeszcze gorzej: tekst mowi „klikanie ponownie nic nie
+    /// zmieni", a przycisk zaprasza do klikania.
+    /// </summary>
+    [Theory]
+    [InlineData(MockJobOutcome.Retrying)]
+    [InlineData(MockJobOutcome.Halted)]
+    public async Task Nieudana_runda_nie_zaprasza_do_ponownego_klikania(MockJobOutcome wynik)
+    {
+        var (api, id) = await Setup(wynik);
+        var wersja = (await api.GetAsync(id)).Versions[^1].Number;
+        api.SeedComments(id, wersja, "telefon za mało widoczny");
+
+        var cut = Render<Editor>(ps => ps.Add(p => p.ProjectId, id));
+        cut.WaitForAssertion(() => Assert.NotNull(cut.Find("[data-test='popraw']")));
+        await cut.Find("[data-test='popraw']").ClickAsync(new());
+
+        cut.WaitForAssertion(() =>
+            Assert.True(cut.Find("[data-test='popraw']").HasAttribute("disabled")));
+    }
+
     [Fact]
     public async Task Osierocone_kotwice_sa_widoczne_nigdy_wyciszane()
     {
