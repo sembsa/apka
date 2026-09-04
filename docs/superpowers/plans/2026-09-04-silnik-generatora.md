@@ -1128,7 +1128,7 @@ git commit -m "feat(engine): RunGate — piec warunkow z 5.1, denials jako Halt"
   - `static class RenderValidator` z `static RenderCheck Check(string dir)`
   - `static class AnchorExtractor` z `static IReadOnlySet<string> Extract(string dir)` i `static IReadOnlyList<string> Orphaned(IEnumerable<string> previous, IReadOnlySet<string> current)`
 
-- [ ] **Step 1: Napisz failujące testy**
+- [x] **Step 1: Napisz failujące testy**
 
 `tests/Generator.Engine.Tests/RenderValidatorTests.cs`:
 
@@ -1273,12 +1273,12 @@ public class AnchorExtractorTests : IDisposable
 }
 ```
 
-- [ ] **Step 2: Uruchom, potwierdź porażkę**
+- [x] **Step 2: Uruchom, potwierdź porażkę**
 
 Run: `dotnet test tests/Generator.Engine.Tests --filter "RenderValidatorTests|AnchorExtractorTests" -v q`
 Expected: błąd kompilacji — `RenderValidator` i `AnchorExtractor` nie istnieją.
 
-- [ ] **Step 3: Zaimplementuj bramki**
+- [x] **Step 3: Zaimplementuj bramki**
 
 `src/Generator.Engine/Gates/RenderValidator.cs`:
 
@@ -1372,12 +1372,12 @@ public static partial class AnchorExtractor
 }
 ```
 
-- [ ] **Step 4: Uruchom testy**
+- [x] **Step 4: Uruchom testy**
 
 Run: `dotnet test tests/Generator.Engine.Tests --filter "RenderValidatorTests|AnchorExtractorTests" -v q`
 Expected: 10 testów PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/Generator.Engine/Gates tests/Generator.Engine.Tests
