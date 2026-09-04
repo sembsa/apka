@@ -6,3 +6,7 @@ obj/
 
 # Artefakt Git Bash na Windows (druga osoba pracuje na Windows)
 *.stackdump
+
+# Katalogi IDE
+.idea/
+.vs/

@@ -1,0 +1,8 @@
+@* Liczba poprawek widoczna dla klienta (kontrakt 4.1).
+   Budżet w USD tu nie wchodzi i nie wejdzie — klient go nie widzi. *@
+<p data-test="licznik" class="rundy">zostały @(Limit - Uzyte) poprawki</p>
+
+@code {
+    [Parameter] public int Uzyte { get; set; }
+    [Parameter] public int Limit { get; set; }
+}
