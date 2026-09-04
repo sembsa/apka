@@ -1,6 +1,7 @@
 using Generator.Web.Components;
 using Generator.Web.Contracts;
 using Generator.Web.Mock;
+using Generator.Web.Preview;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -28,5 +29,10 @@ app.UseAntiforgery();
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
+
+// Podglad snapshotu wersji. Skrypt zbierajacy klikniecia doklejamy TUTAJ, przy
+// serwowaniu - snapshot na dysku i ZIP klienta zostaja czyste.
+app.MapPreview((projectId, version) =>
+    Path.Combine(builder.Configuration["Projects:Root"] ?? Path.GetTempPath(), projectId, $"v{version}"));
 
 app.Run();
