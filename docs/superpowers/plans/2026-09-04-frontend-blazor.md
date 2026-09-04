@@ -1831,3 +1831,69 @@ Frontend chodzi na mocku i całą ścieżkę klienta da się przejść. Co dalej
 - **Plan B (HTTP API, Sebastian)** — po nim `MockProjectApi` zostaje w projekcie testowym, a produkcja dostaje klienta HTTP za tym samym `IProjectApi`. Żadna strona się nie zmienia.
 - **Wygląd** — ten plan nie dotyka stylowania poza minimum. Generator produkuje strony klientom; jak ma wyglądać **nasza** aplikacja, to osobna rozmowa.
 - **`preview-click.js`** — wstrzykiwanie tego skryptu do podglądu wersji robi backend przy serwowaniu `/preview/...`. To granica, którą trzeba domknąć z Sebastianem w Planie B.
+
+---
+
+## Dodane po planie: historia wersji, powrót i podświetlanie zmian (2026-09-05)
+
+Poza planem, na prośbę Przemka. Dwie decyzje produktowe jego, oba warianty trudniejsze
+z przedstawionych: **powrót przestawia wskaźnik** (nie tworzy kopii) i **zmiany
+pokazujemy podświetleniem bloków** (nie diffem kodu). Kontrakt: sekcja 5.
+
+**Kolejność, która się obroniła.** Najpierw czysty refaktor: `ProjectView.CurrentVersion`
+i `VersionView.BasedOn`, migracja wszystkich `Versions[^1]` przy jeszcze prawdziwym
+niezmienniku `CurrentVersion == Versions[^1].Number`, 52 testy nietknięte i zielone.
+Dopiero na tej siatce rollback. Bez tego kroku każda pomyłka wyglądałaby jak błąd nowej
+funkcji, a nie jak błąd migracji.
+
+**Rzecz, która unieważniłaby całą funkcję.** Baza porównania to `BasedOn`, nie `numer-1`.
+Po powrocie do v1 kolejna runda tworzy v3, której rodzicem jest **v1, nie v2**.
+Implementacja po `numer-1` przechodzi każdy przebieg liniowy — czyli każdy, jaki zwykle
+testujemy — i kłamie dokładnie tam, gdzie powrót ma sens. Dwa testy to rozstrzygają;
+sprawdziłem podmianą, że oba padają przy błędnej bazie. Jeden z nich musiał sięgnąć do
+**treści snapshotu**, bo sama lista zmian przy błędnej bazie wychodziła przypadkiem taka
+sama (kumulacja wyróżników po rodzicu maskowała różnicę). Test, który obie implementacje
+przepuszcza, niczego nie broni — mimo trafnej nazwy.
+
+**Porównujemy znormalizowany `outerHtml`, nie tekst.** „Powiększ telefon" zmienia `style`
+i **zostawia tekst identyczny** — porównanie po `TextContent` zgłosiłoby „nic się nie
+zmieniło" w najczęstszym przypadku tego produktu. Jest na to test i sprawdziłem
+podmianą, że pada przy porównaniu po tekście. Samo przeformatowanie zmianą nie jest,
+inaczej podświetlałaby się cała strona i podświetlenie nie znaczyłoby nic. Parser to
+AngleSharp, nie regex — treść pisze model, a regex na HTML gnije cicho.
+
+**Podświetlenie włącza flaga `?zmienione=true`, nie lista kotwic w URL-u.** Zbiór
+zmienionych bloków zna serwer; przyjmowanie go z query string dawałoby drugie źródło
+prawdy i wpuszczało treść strony wprost do selektora CSS. Każda kotwica przechodzi
+`Kotwica.Poprawna` — format 3.1 wyciągnięty z `CommentBridge` do jednego miejsca, bo
+teraz jest dwóch odbiorców. Na próby wstrzyknięcia jest `Theory`.
+
+**Powrót nie może być pułapką bez wyjścia.** Wersje nowsze od oglądanej są *porzucone*,
+nie usunięte, więc historia pokazuje drogę powrotną także do nich — jest na to test.
+Powrót jest zablokowany, gdy runda trwa (kończąca się runda przestawiłaby wskaźnik i
+cicho unieważniła powrót) — tym samym predykatem `BlokujeNowaRunde`, nie czwartym
+miejscem liczącym „czy coś się dzieje".
+
+### Błąd, którego testy nie widziały — czwarty raz przeklikanie zarobiło na siebie
+
+v3 podświetlał **dwa** bloki (`hero` i `kontakt`), choć powstał z v1, gdzie `hero` nie był
+poprawiany. Przyczyna nie leżała w liczeniu rodzica: po powrocie do v1 `Reload` wciąga
+uwagi tej wersji — **razem z zastosowanymi** — a runda wysyłała całą listę. Model
+„poprawiał" powtórnie to, co już zrobione, a **klient płacił rundę za pracę wykonaną**.
+Testy tego nie widziały, bo wołały API z czystą listą; UI z listą po powrocie nigdy nie
+przeszło przez test. Runda wysyła teraz tylko `open`.
+
+Przy okazji: atrapa **nadpisywała** uwagi wersji, więc raport „co zrobiliśmy" z
+wcześniejszej rundy tej samej wersji przepadałby. Scalanie jest w jednym miejscu
+(`Scal`) — nie wysłać czegoś to jedno, a skasować to drugie.
+
+**Przeklikane:** runda na `hero` → powrót do v1 (podgląd wraca, v2 opisana jako nowsza,
+droga powrotna do niej widoczna) → runda na `kontakt` z v1 → v3 podświetla **tylko
+`kontakt`**, licznik `2 z 15` (powrót rundy nie zabrał), obramowanie liczone przez
+`getComputedStyle` **wewnątrz iframe'a**, nie po samym atrybucie `src`. Wyłącznik zdejmuje
+podświetlenie i klikanie w bloki nadal działa.
+
+**Znalezione po drodze, poza zakresem:** wejście na link projektu, którego serwer nie zna
+(u nas: restart aplikacji, bo atrapa trzyma stan w pamięci; w produkcji: usunięty lub
+błędny token), daje **500 z wyjątkiem**, a nie ludzki komunikat. Przy modelu „bez kont,
+token w linku" (decyzja 3) to normalna sytuacja klienta, nie awaria.

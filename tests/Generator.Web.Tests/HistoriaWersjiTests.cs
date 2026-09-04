@@ -106,6 +106,43 @@ public class HistoriaWersjiTests : BunitContext, IDisposable
             Assert.True(cut.Find("[data-test='wroc-1']").HasAttribute("disabled")));
     }
 
+    /// <summary>
+    /// Znalezione przeklikaniem. Po powrocie do wersji, z ktorej juz raz zglaszano uwagi,
+    /// `Reload` wciaga te uwagi z powrotem na liste — razem z tymi ZASTOSOWANYMI. Runda
+    /// wysylala cala liste, wiec model „poprawial" ponownie to, co bylo juz zrobione:
+    /// klient placi runde za prace wykonana, a podswietlenie pokazuje zmiany, o ktore
+    /// nikt tym razem nie prosil. Testy tego nie widzialy, bo wolaly API z czysta lista.
+    /// </summary>
+    [Fact]
+    public async Task Runda_po_powrocie_wysyla_tylko_nowe_uwagi()
+    {
+        var (api, id) = await DwieWersje();      // v2 powstala z uwagi do `hero`
+        await api.RollbackAsync(id, 1);
+
+        // Stan po powrocie: wersja 1 niesie uwage ZASTOSOWANA (hero, z pierwszej rundy)
+        // i jedna nowa, jeszcze nie wykonana (kontakt).
+        api.SeedComment(id, 1, "hero", "nazwa za mało wyróżniona", "applied");
+        api.SeedComment(id, 1, "kontakt", "telefon za mało widoczny", "open");
+
+        var cut = Render<Editor>(ps => ps.Add(p => p.ProjectId, id));
+        cut.WaitForAssertion(() => Assert.False(
+            cut.Find("[data-test='popraw']").HasAttribute("disabled")));
+
+        await cut.Find("[data-test='popraw']").ClickAsync(new());
+
+        cut.WaitForAssertion(() => Assert.Contains(
+            $"/preview/{id}/3", cut.Find("iframe").GetAttribute("src")!));
+
+        var v3 = (await api.GetAsync(id)).Versions.Single(v => v.Number == 3);
+        Assert.Contains("kontakt", v3.ChangedAnchors!);
+        Assert.DoesNotContain("hero", v3.ChangedAnchors!);
+
+        // Nie wyslac czegos to jedno, a skasowac to drugie: raport o `hero` musi zostac
+        // w wersji 1, bo to on jest dowodem, ze prosba klienta zostala wykonana.
+        var uwagiV1 = await api.GetCommentsAsync(id, 1);
+        Assert.Contains(uwagiV1, c => c.Anchor == "hero" && c.Status == "applied");
+    }
+
     [Fact]
     public async Task Podglad_wersji_ze_zmianami_wlacza_podswietlenie_flaga()
     {

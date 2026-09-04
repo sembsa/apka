@@ -85,6 +85,46 @@ public class MockProjectApi : IProjectApi
             Note: null))];
     }
 
+    /// <summary>
+    /// Dopisuje JEDNA uwage o zadanym statusie, nie ruszajac pozostalych. Potrzebne, gdy
+    /// test musi odtworzyc wersje, w ktorej cos jest juz `applied`, a cos dopiero `open`.
+    /// </summary>
+    public void SeedComment(string id, int version, string anchor, string text, string status)
+    {
+        var lista = _comments.TryGetValue((id, version), out var istniejace)
+            ? new List<CommentDto>(istniejace)
+            : [];
+
+        lista.Add(new CommentDto(
+            Id: $"seed-{anchor}-{lista.Count}",
+            Anchor: anchor,
+            Text: text,
+            Viewport: "desktop",
+            CreatedAt: DateTimeOffset.UnixEpoch,
+            Status: status,
+            Note: status == "applied" ? $"Zrobione: {text}" : null));
+
+        _comments[(id, version)] = lista;
+    }
+
+    /// <summary>
+    /// Wpisuje uwagi do wersji, ZOSTAWIAJAC te, ktore juz sa rozliczone. Runda przynosi
+    /// tylko `open`, a `applied`/`rejected` naleza do historii tej wersji — nadpisanie
+    /// skasowaloby klientowi raport „co zrobilismy" z wczesniejszej rundy.
+    /// </summary>
+    private void Scal(string id, int version, IReadOnlyList<CommentDto> nowe)
+    {
+        var byly = _comments.TryGetValue((id, version), out var lista)
+            ? lista
+            : [];
+
+        _comments[(id, version)] =
+        [
+            .. byly.Where(c => nowe.All(n => n.Id != c.Id) && c.Status != "open"),
+            .. nowe,
+        ];
+    }
+
     public async Task<string> RequestProposalsAsync(string id)
     {
         await Task.Delay(SimulatedDelay);
@@ -157,7 +197,7 @@ public class MockProjectApi : IProjectApi
         if (_projects[id].Status == "frozen")
             throw new InvalidOperationException("projekt zamrozony (409)");   // kontrakt 4.5
 
-        _comments[(id, version)] = [.. comments];
+        Scal(id, version, comments);
 
         var jobId = Guid.NewGuid().ToString();
         _jobs[jobId] = new JobView(jobId, "running", null);
@@ -200,14 +240,11 @@ public class MockProjectApi : IProjectApi
     /// </summary>
     private async Task Udalo(string jobId, string id, int version, IReadOnlyList<CommentDto> comments)
     {
-        _comments[(id, version)] =
-        [
-            .. comments.Select(c => c with
-            {
-                Status = "applied",
-                Note = $"Zrobione: {c.Text}",
-            }),
-        ];
+        Scal(id, version, [.. comments.Select(c => c with
+        {
+            Status = "applied",
+            Note = $"Zrobione: {c.Text}",
+        })]);
 
         var project = _projects[id];
 

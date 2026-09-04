@@ -171,7 +171,14 @@ else
     private async Task Apply()
     {
         var wersja = _project!.NumerAktualnej();
-        var jobId = await Api.ApplyCommentsAsync(ProjectId, wersja, _comments);
+
+        // TYLKO `open`. Po powrocie do wersji, z ktorej juz raz zglaszano uwagi, na
+        // liscie sa rowniez te ZASTOSOWANE — wyslane ponownie kazalyby modelowi poprawiac
+        // to, co jest juz zrobione. Klient placilby runde za prace wykonana.
+        var doWyslania = _comments.Where(c => c.Status == "open").ToList();
+        if (doWyslania.Count == 0) return;
+
+        var jobId = await Api.ApplyCommentsAsync(ProjectId, wersja, doWyslania);
         _job = await Api.GetJobAsync(jobId);
 
         // Kontrakt 4.4: przy nieudanej rundzie komentarze zostaja open i nic nie przepada.
