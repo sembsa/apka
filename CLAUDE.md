@@ -28,7 +28,10 @@ grep -rn '^<<<<<<<\|^>>>>>>>' --include='*.md' .   # musi nic nie zwrócić
 ```
 
 Dopiero potem `git add`. Jeśli markery są — scal ręcznie i sprawdź ponownie.
-Stasha nie usuwaj, dopóki nie potwierdzisz, że jego treść jest już w plikach.
+
+Po scaleniu **usuń nieodtworzony autostash** (`git stash drop`), ale dopiero gdy
+potwierdzisz, że jego treść jest już w plikach — inaczej zostaje na liście na zawsze
+i każdy następny `git stash list` daje fałszywy alarm.
 
 ## Pamięć współdzielona przez git
 
