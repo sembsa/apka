@@ -69,6 +69,13 @@ to skopiowanie snapshotu 3 na wierzch. Katalog projektu może być repozytorium 
 Odpowiedź na komentarz jest też **tekstowa**: „powiększyłem telefon i wrzuciłem go do nagłówka".
 Klient musi wiedzieć, że został zrozumiany.
 
+### Stabilność `data-cmt-id` — nic jej nie pilnuje samo z siebie
+
+Model przepisujący stronę w piątej rundzie może zmienić `oferta-1` na `oferta-glowna`
+albo scalić dwie sekcje. Wtedy komentarze przypięte do zniknionego id są osierocone,
+a klient klika w podgląd, w którym jego uwagi wskazują w pustkę — i model nie zgłosi
+tego jako błędu, bo po jego stronie wszystko się udało. Bramka walidacyjna jest w 5.2.
+
 ## 5. Silnik generowania — warstwa wymienna
 
 Jeden interfejs, jedna implementacja na start:
@@ -92,6 +99,19 @@ generate({
 | `--resume <uuid>` | **każdy kolejny** przebieg (runda komentarzy) w kontekście poprzednich; nie łączyć z `--session-id` w jednym wywołaniu |
 | `--restricted` | usuwa Bash/PowerShell/REPL i WebFetch, zamyka narzędzia plikowe w katalogach roboczych, ignoruje ustawienia użytkownika/projektu/lokalne, odmawia `bypassPermissions`; `--strict-mcp-config` dorzucamy, żeby pominąć też serwery MCP |
 | `--tools "Read,Write,Edit,Glob,Grep"` | zawęża zestaw wbudowanych narzędzi do pracy na plikach (to ta flaga zawęża/przywraca narzędzia w trybie `--restricted`, nie `--allowed-tools`) |
+| `--permission-mode acceptEdits` | **bez tego `Write` jest cicho odrzucany, a zadanie kończy się „sukcesem"** — sprawdzone, patrz 5.1. Pod `--restricted` przepuszcza `Write`/`Edit` |
+| `--permission-prompts none` | w produkcji nikt nie odpowiada na prompty — twarda odmowa zamiast czekania na hosta (domyślnie `host`) |
+| `--bare` (produkcja) | pomija auto-wykrywanie `CLAUDE.md`, hooki i auto-memory; autoryzacja **wyłącznie** przez `ANTHROPIC_API_KEY` lub `apiKeyHelper`, OAuth i keychain nie są czytane |
+
+`--restricted` odmawia `bypassPermissions` — sprawdzone: `Error: bypassPermissions not
+supported in restricted mode`, exit 1, natychmiast, bez wywołania modelu.
+
+**Katalog projektu klienta nie może leżeć wewnątrz tego repo.** Podproces startuje z
+`cwd = workspaceDir` i auto-wykrywa `CLAUDE.md` — inaczej do sesji generującej stronę
+fryzjera wjadą nasze zasady pracy w parze i indeks pamięci (koszt, szum, wyciek naszego
+kontekstu do artefaktu klienta). `--restricted` tego nie zatrzymuje: ignoruje pliki
+*settings*, nie `CLAUDE.md`. Projekty trzymamy poza drzewem repo, a w produkcji dokładamy
+`--bare`.
 | `--append-system-prompt` | nasze zasady: „prosta strona, jeden plik HTML + jeden CSS, bez frameworków" |
 | `--model` | wybór modelu (prod: `claude-opus-5`) |
 
@@ -110,6 +130,44 @@ Gdy wrócimy do SDK, opcje mapują się 1:1 (`cwd`, `allowedTools`, `resume`, `s
 `settingSources`), więc podmiana dotyka **jednego modułu**. Dlatego interfejs powyżej
 istnieje od pierwszego dnia — nie dlatego, że planujemy migrację, a dlatego, że nie chcemy
 przepisywać połowy aplikacji, jeśli kiedyś będzie sens.
+
+### 5.1 Kiedy zadanie jest udane (bramka, nie exit code)
+
+`claude -p` sygnalizuje sukces zbyt chętnie. Zmierzone na `claude 2.1.260`, ten sam prompt,
+różnica tylko w trybie uprawnień:
+
+| | bez `--permission-mode` | z `--permission-mode acceptEdits` |
+|---|---|---|
+| exit code | 0 | 0 |
+| `is_error` / `subtype` | `false` / `success` | `false` / `success` |
+| `stop_reason` / `terminal_reason` | `end_turn` / `completed` | `end_turn` / `completed` |
+| `permission_denials` | `[{"tool_name":"Write",…}]` | `[]` |
+| plik na dysku | **brak** | jest |
+| koszt | **$0.0128 za nic** | $0.0186 |
+
+Zadanie uznajemy za udane tylko wtedy, gdy **wszystkie** warunki są spełnione:
+
+1. proces wypisał JSON na stdout — przy błędzie startu (np. odmowa `bypassPermissions`)
+   stdout jest **pusty**, komunikat idzie na stderr, exit 1; worker nie może parsować w ciemno
+2. exit 0, `is_error: false`, `subtype: "success"`
+3. `stop_reason: "end_turn"` i `terminal_reason: "completed"`
+4. **`permission_denials` jest puste** — niepuste traktujemy jak błąd zadania, niezależnie
+   od exit code i `is_error`
+5. artefakt przeszedł walidację z 5.2
+
+Błędna konfiguracja uprawnień pali pieniądze cicho: przebieg z tabeli wyżej kosztował
+$0.0128 i nie zostawił ani jednego pliku.
+
+### 5.2 Walidacja wersji przed pokazaniem klientowi
+
+Po każdej generacji, przed zapisaniem wersji i pokazaniem jej klientowi:
+
+1. wyciągnij zbiór `data-cmt-id` z nowej wersji
+2. porównaj ze zbiorem id, do których przypięte są **otwarte** komentarze
+3. brakujące id = **zadanie naprawcze**, nie nowa wersja: dopięcie do promptu
+   („zachowaj atrybuty `data-cmt-id`: …") i powtórka, z limitem prób
+4. sanity check w tym samym kroku: HTML się parsuje, pliki z `changedFiles` istnieją,
+   CSS jest podlinkowany. Wersja, która się nie renderuje, nie dochodzi do klienta
 
 ## 6. Model danych
 
@@ -171,9 +229,23 @@ Konta zespołowe. Własne szablony klienta.
 
 ## 11. Ryzyka
 
-**Koszt jednej iteracji.** Nie znamy go, dopóki nie zmierzymy — `--output-format json`
-zwraca `usage`, więc od pierwszego dnia logujemy koszt każdego zadania i pokazujemy sobie
-średnią na projekt. Limit iteracji na projekt chroni przed niespodzianką.
+**Koszt jednej iteracji — pierwsze pomiary są.** `claude-opus-5`, pusty katalog,
+trywialna strona:
+
+| Przebieg | Koszt | Czas |
+|---|---|---|
+| generacja v1 (`--session-id`) | $0.037 | ~7 s |
+| runda komentarza (`--resume`, jedna poprawka) | $0.026 | ~9 s |
+| przebieg odrzucony przez uprawnienia (bez efektu) | $0.0128 | ~8 s |
+
+To wartości **podłogowe**, nie szacunek dla prawdziwej strony (kilka sekcji, treść, analiza
+pobranego HTML-a — rząd wielkości więcej). Ale rząd „grosze za rundę, nie złotówki" jest
+już widoczny. `--resume` sprawdzone end-to-end: sesja podjęta, `session_id` ten sam,
+poprawka trafiła w istniejący plik.
+
+**Licznik kosztu sumuje `total_cost_usd`, nie tokeny jednego modelu** — `modelUsage`
+zawiera obok `claude-opus-5` także `claude-haiku-4-5` (wywołania pomocnicze harnessu).
+Limit iteracji na projekt zostaje jako zabezpieczenie.
 
 **Rozliczenie — to nie jest kwestia SDK.** Dokumentacja Claude Agent SDK stawia to wprost:
 zewnętrznym deweloperom **nie wolno** oferować w swoich produktach loginu claude.ai ani
