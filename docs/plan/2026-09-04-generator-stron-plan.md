@@ -88,11 +88,10 @@ generate({
 | `-p` / `--print` | tryb nieinteraktywny |
 | `--output-format json` | jeden JSON na wyjściu: wynik + `usage` (koszt do licznika) |
 | `--output-format stream-json` + `--include-partial-messages` | wariant do pokazywania postępu na żywo |
-| `--session-id <uuid>` | my nadajemy UUID sesji per projekt |
-| `--resume <uuid>` | kolejna runda komentarzy w kontekście poprzednich |
-| `--restricted` | usuwa Bash/PowerShell/REPL i WebFetch, zamyka narzędzia plikowe w katalogu roboczym, ignoruje ustawienia użytkownika i projektu, odmawia `bypassPermissions` |
-| `--allowed-tools "Read Write Edit Glob Grep"` | tylko praca na plikach |
-| `--strict-mcp-config` | żadnych serwerów MCP z maszyny |
+| `--session-id <uuid>` | **pierwszy** przebieg dla projektu — my nadajemy UUID |
+| `--resume <uuid>` | **każdy kolejny** przebieg (runda komentarzy) w kontekście poprzednich; nie łączyć z `--session-id` w jednym wywołaniu |
+| `--restricted` | usuwa Bash/PowerShell/REPL i WebFetch, zamyka narzędzia plikowe w katalogach roboczych, ignoruje ustawienia użytkownika/projektu/lokalne, odmawia `bypassPermissions`; `--strict-mcp-config` dorzucamy, żeby pominąć też serwery MCP |
+| `--tools "Read,Write,Edit,Glob,Grep"` | zawęża zestaw wbudowanych narzędzi do pracy na plikach (to ta flaga zawęża/przywraca narzędzia w trybie `--restricted`, nie `--allowed-tools`) |
 | `--append-system-prompt` | nasze zasady: „prosta strona, jeden plik HTML + jeden CSS, bez frameworków" |
 | `--model` | wybór modelu (prod: `claude-opus-5`) |
 
