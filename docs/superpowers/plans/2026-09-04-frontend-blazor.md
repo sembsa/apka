@@ -1291,8 +1291,10 @@ public class JobStatusTests : BunitContext
             .Add(p => p.Job, new JobView("j1", "running", null)));
 
         Assert.Contains("pracuj", cut.Markup, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("claude", cut.Markup, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("token", cut.Markup, StringComparison.OrdinalIgnoreCase);
+        // Bez DoesNotContain("claude"): sekcja 7 planu produktu WPROST przewiduje komunikat
+        // "Claude pracuje nad Twoja strona". Nazwa modelu nie jest wyciekiem technicznym.
+        foreach (var techniczne in new[] { "token", "exit", "stdout", "permission", "session" })
+            Assert.DoesNotContain(techniczne, cut.Markup, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
