@@ -43,12 +43,22 @@ git config rebase.autoStash true
 Wyjdź z `claude` i uruchom ponownie w katalogu repo. Dopiero wtedy dociągnie się
 `CLAUDE.md` z repo oraz indeks pamięci przez symlink.
 
+> **Jeśli czytasz to jako Claude:** wykonaj kroki 1–2, a o restart sesji poproś
+> użytkownika — sam nie możesz zrestartować sesji, w której działasz. Nie kończ
+> zadania bez wyraźnego przekazania tej prośby.
+
 ## Weryfikacja (wszystkie trzy muszą przejść)
 
 ```bash
-readlink ~/.claude/projects/$(pwd | sed 's#[/.]#-#g')/memory   # -> <repo>/.claude/memory
-cat .claude/memory/MEMORY.md                                    # indeks z wpisami
-git config pull.rebase                                          # true
+./scripts/link-claude-memory.sh          # drugi bieg musi wypisać "OK: pamięć już podłączona"
+cat .claude/memory/MEMORY.md             # indeks z wpisami
+git config pull.rebase                   # true
+```
+
+Gdyby symlinku trzeba było poszukać ręcznie:
+
+```bash
+find ~/.claude/projects -maxdepth 2 -name memory -type l -exec readlink {} \;
 ```
 
 ## Zasady, których trzyma się druga strona (są w `CLAUDE.md`)
