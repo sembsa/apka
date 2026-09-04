@@ -55,12 +55,19 @@ Dwa wyjścia, nie wykluczają się:
 - katalogi projektów poza drzewem repo (np. `%LOCALAPPDATA%/generator/projects/<id>`)
 - `--bare` — pomija auto-wykrywanie `CLAUDE.md`, hooki i auto-memory
 
-I to jest ciekawsze niż higiena: **`--bare` wymusza autoryzację przez
+Poza higieną kontekstu `--bare` ma drugą właściwość: **wymusza autoryzację przez
 `ANTHROPIC_API_KEY` albo `apiKeyHelper` i nigdy nie czyta OAuth ani keychaina.**
-Czyli `--bare` to prawdopodobnie i tak docelowy kształt produkcyjny, a to zdejmuje
-część ryzyka „rozliczenie i licencja" z sekcji 11 — dev na subskrypcji, prod na kluczu
-API, ta sama owijka, jedna flaga różnicy. Warto to przetestować wcześniej niż później,
-bo `--bare` wyłącza też rzeczy, na których moglibyśmy nieświadomie oprzeć silnik.
+Czyli jest prawdopodobnie i tak docelowym kształtem produkcyjnym — dev na subskrypcji,
+prod na kluczu API, ta sama owijka, jedna flaga różnicy.
+
+> **Korekta po `9d1c141`.** Napisałem tu pierwotnie, że to „zdejmuje część ryzyka
+> rozliczenia z sekcji 11". Za mocno — Sebastian ma rację: `--bare` daje *mechanizm*
+> (klucz API), ale nie odpowiada na pytanie o *warunki*, a te są niezależne od tego,
+> czy jedziemy na SDK czy na `claude -p`. Flaga załatwia „czym się uwierzytelniamy",
+> nie „czy nam wolno". Warunki i tak trzeba potwierdzić u Anthropic.
+
+Warto `--bare` przetestować wcześniej niż później, bo wyłącza też rzeczy, na których
+moglibyśmy nieświadomie oprzeć silnik (hooki, auto-memory, discovery `CLAUDE.md`).
 
 ## 3. Nic nie pilnuje stabilności `data-cmt-id` między wersjami
 
@@ -114,38 +121,38 @@ Trzy rzeczy, które z tego wynikają:
   czego chronić poza jedną stroną.
 - **4. Statyczne HTML+CSS, bez frameworka:** zgoda, i to jest też warunek punktu 3
   powyżej — im prostsze wyjście, tym łatwiej sprawdzić, że wersja jest poprawna.
-- **1. Stack: C#/.NET** (wariant B, nie rekomendowany A) — decyzja Przemka.
-- **5. Wersjonowanie: kopie katalogów** (snapshoty, nie git) — decyzja Przemka.
+- **1. Stack: TypeScript/Node** — zgoda, przyjmuję rekomendację i zapis z sekcji 9.
+- **5. Wersjonowanie — nie zgadzam się z git, proponuję snapshoty katalogów.**
+  Jedyny punkt sporny w całym planie, uzasadnienie niżej. Do rozstrzygnięcia z Sebastianem.
 
-### Co z tego wynika dla sekcji 5
+### Decyzja 5: snapshoty zamiast repo git per projekt
 
-Wybór B **usuwa ścieżkę „implementacja prod: Claude Agent SDK"** — nie ma oficjalnego
-Agent SDK dla .NET. Owijka na `claude -p` nie jest więc etapem przejściowym, tylko
-**docelowym kształtem silnika**. To przestawia priorytety:
+Snapshoty składają się z punktem 3 tej recenzji, a git nie:
 
-- interfejs `generate(...)` z sekcji 5 zostaje, ale jego rolą nie jest już „podmiana na
-  SDK w jednym module" — realną alternatywą na przyszłość jest zejście do Messages API
-  (i wtedy tracimy gotowy harness do pracy na plikach, czyli piszemy własną pętlę
-  narzędziową). Warto to zapisać w planie jako świadomy koszt, nie jako opcję na już
-- punkty 1 i 3 tej recenzji **rosną w wagę**, bo nie ma po nich sprzątać żadna
-  późniejsza migracja. Bramka akceptacji wersji jest trwałą częścią architektury
-- dochodzi konkret pod .NET, na który się nadziałem w testach: proces `claude -p`
-  **czeka 3 sekundy na stdin**, jeśli go nie dostanie (`Warning: no stdin data received
-  in 3s, proceeding without it`). W `ProcessStartInfo` trzeba ustawić
-  `RedirectStandardInput = true` i **od razu zamknąć** strumień, inaczej doklejamy
-  3 sekundy do każdego zadania. Prompt idzie argumentem, nie przez stdin
+- generacja idzie do katalogu roboczego, **przechodzi walidację (`data-cmt-id` + render),
+  i dopiero zaakceptowana wersja staje się snapshotem**. Odrzucona próba nie zostawia
+  po sobie śladu, bo historia to katalogi, które sami tworzymy
+- przy repo git nieudane generacje trzeba albo trzymać na branchu i sprzątać, albo
+  commitować dopiero po walidacji — czyli i tak potrzebujemy katalogu roboczego poza
+  historią. Git dokłada wtedy warstwę, nie zdejmuje jej
+- dochodzi drobiazg operacyjny: podproces `claude -p` pisze **do tego samego katalogu**,
+  w którym byłoby repo. Nie chcę zgadywać, co robi model, który znajdzie `.git`
+  w katalogu roboczym, kiedy ma zwykłe narzędzia plikowe i instrukcję „popraw stronę"
 
-### Co z tego wynika dla wersjonowania
+Koszt do przyjęcia świadomie: diff „przed/po" trzeba zrobić samemu. Przy decyzji 4
+(statyczne HTML+CSS, kilka plików) to porównanie plików tekstowych po nazwie, nie
+obsługa drzewa — a `Version.snapshotRef` z sekcji 6 działa jednakowo w obu wariantach.
 
-Kopie katalogów dobrze się składają z punktem 3 tej recenzji, lepiej niż git:
-generacja idzie do katalogu roboczego, **przechodzi walidację (`data-cmt-id` + render),
-i dopiero zaakceptowana wersja staje się snapshotem.** Odrzucona próba nie zostawia
-śmiecia w historii, bo historia to katalogi, które sami tworzymy. Przy repo git
-trzeba by generować na branchu i sprzątać nieudane commity.
+Jeśli Sebastian ma inne argumenty za gitem, ustępuję — to nie jest kwestia, na której
+warto blokować start. Ale bramka akceptacji wersji z punktu 3 musi zostać niezależnie
+od tego, który wariant wygra.
 
-Koszt do przyjęcia świadomie: diff „przed/po" dla klienta trzeba zrobić samemu
-(dla statycznego HTML+CSS wystarczy porównanie plików tekstowych po nazwie —
-przy decyzji 4 to kilka plików, nie drzewo).
+### Konkret pod Node, niezależny od decyzji
+
+Proces `claude -p` **czeka 3 sekundy na stdin**, jeśli go nie dostanie
+(`Warning: no stdin data received in 3s, proceeding without it` — złapane w testach).
+Przy `child_process.spawn` trzeba ustawić `stdio: ['ignore', 'pipe', 'pipe']`, inaczej
+doklejamy 3 sekundy do **każdego** zadania w kolejce. Prompt idzie argumentem, nie stdinem.
 
 Podział pracy z propozycji przyjmuję (frontend: kreator, wybór propozycji, podgląd
 i przypinanie komentarzy). Kontrakt API robimy wspólnie przed pierwszą linią kodu —
