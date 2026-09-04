@@ -1,0 +1,3 @@
+# Indeks pamięci edytują równolegle dwie osoby/dwie sesje Claude'a.
+# merge=union scala oba zestawy linii zamiast zgłaszać konflikt.
+.claude/memory/MEMORY.md merge=union
