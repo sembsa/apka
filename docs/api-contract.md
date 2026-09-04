@@ -10,7 +10,9 @@ Stack (decyzja 1): **C#/Blazor Server**, silnik `claude -p`, wersje jako snapsho
 | 1. Zasoby HTTP | Sebastian | szkic poniżej, do recenzji |
 | 2. Kontrakt silnika | Sebastian | wypełniony |
 | 3. Kontrakt komentarza | **Przemek** | wypełniony — dwa wymogi zwrotne do sekcji 2 i 4 planu |
-| 4. Model danych | wspólnie | za planem, sekcja 6 |
+| 4. Limit rund i UX przy `failed` | wspólnie | wypełniony — wymóg zwrotny do sekcji 1 (`Job.failure`) |
+
+Model danych jest wspólny, ale nie ma tu własnej sekcji — obowiązuje ten z planu (sekcja 6).
 
 ---
 
@@ -198,7 +200,115 @@ z sekcji 6 zostaje bez zmian.
 Dokładne brzmienie komunikatu zależy od otwartej kwestii z sekcji 4 („co pokazujemy
 klientowi przy `failed`") i tam ją zostawiam — to nie jest decyzja tej sekcji.
 
-## 4. Otwarte, poza podziałem
+## 4. Limit rund i UX przy `failed` (wspólnie)
 
-- limit rund na projekt (ochrona kosztu) — wartość do ustalenia po pierwszych pomiarach
-- co pokazujemy klientowi przy `failed`: powtórka automatyczna czy komunikat
+### 4.1 Dwa liczniki, bo mierzą różne rzeczy
+
+Jeden licznik nie wystarczy: runda z jednym komentarzem i runda z dziesięcioma kosztują
+różnie, a próba wyrażenia ochrony kosztu w rundach albo dusi klienta, albo nas nie chroni.
+
+| Licznik | Czego pilnuje | Kto go widzi |
+|---|---|---|
+| **rundy** (`roundsUsed` / `roundsLimit`) | zrozumiałości dla klienta („zostały 3 poprawki") | klient |
+| **budżet** (`spentUsd` / `budgetUsd`) | realnego kosztu projektu | tylko my |
+
+**Asymetria, która jest tu sensem, nie szczegółem:** powtórki po `failed` i ponowienia
+z 5.2 planu **zużywają budżet, ale nie zużywają rund klienta**. Pieniądze wydaliśmy naprawdę,
+więc muszą być widoczne w budżecie — ale awaria po naszej stronie nie może zabierać
+klientowi poprawek, na które umówiliśmy się z nim.
+
+Projekt zatrzymuje **pierwszy** wyczerpany licznik. Jeśli budżet pada przed rundami,
+to znak, że limit rund jest ustawiony za wysoko względem realnego kosztu — nie że klient
+zrobił coś źle.
+
+### 4.2 Wartości startowe — ekstrapolacja, nie pomiar
+
+Uczciwie: mamy dwa pomiary i oba z **jednolinijkowej** strony (`claude-opus-5`, sekcja 11
+planu) — generacja **$0,037**, runda komentarza **$0,026**. To wartości podłogowe.
+
+Arytmetyka, którą z nich robię, jest jawnie zgadywana: prawdziwa strona to kilka sekcji
+z treścią, przy każdej rundzie czytana od nowa — rzędu 6–8 tys. tokenów wejścia zamiast
+kilkudziesięciu. Przyjmuję mnożnik **×5–10**, co daje **~$0,15–0,25 za rundę** i drożej
+za wersję pierwszą (analiza pobranej strony): **~$0,50–1,00**.
+
+Stąd wartości na start, do przestawienia:
+
+```
+roundsLimit  = 15        // widoczne dla klienta
+budgetUsd    = 8.00      // twardy, z zapasem na powtórki i zły przypadek
+```
+
+**Trigger przestawienia (to on zastępuje zgadywanie):** po pierwszych **5 realnych
+projektach** porównać medianę `total_cost_usd` na projekt — plan loguje ją od pierwszego
+dnia. Jeśli mediana wychodzi poniżej ~$2, `roundsLimit` idzie w górę. Jeśli którykolwiek
+projekt trafia w budżet przed piętnastą rundą, to `budgetUsd` jest ustawiony źle,
+a nie klient zbyt gadatliwy.
+
+Tańszy model na rundy komentarzy to osobna dźwignia i należy do ryzyka kosztowego
+z sekcji 11 planu, nie do tego kontraktu.
+
+### 4.3 `failed` — nie „powtórka albo komunikat", tylko dwie gałęzie
+
+Pytanie było postawione jako alternatywa, ale rozstrzyga je przyczyna: **powtórka pomaga
+tylko przy awarii nieokreślonej.** Ponowienie błędu deterministycznego to spalenie
+pieniędzy na identyczny wynik.
+
+Frontend nie powinien tego diagnozować, więc `Job` nie oddaje mu diagnozy, tylko
+**gałąź, w którą ma pójść** — wymóg zwrotny do sekcji 1:
+
+```
+Job.failure {
+  handling   // "retrying" | "halted"   <- po tym rozgałęzia się UI
+  cause      // szczegół dla naszych logów, NIE do UI
+  attempts
+}
+```
+
+Podział `handling` po zachowaniu, nie po winie — bo brak klucza API pod `--bare`
+i niepuste `permission_denials` to dwie różne przyczyny o **identycznym** zachowaniu
+wobec klienta, a diagnozy grupowane po źródle wyprodukowałyby `switch`, który trzy
+warianty mapuje na dwa komunikaty:
+
+| Sytuacja (z pięciu warunków sekcji 2) | `handling` | Dlaczego |
+|---|---|---|
+| brak JSON na stdout, `exit != 0` | `retrying` | zwykle przejściowe (start procesu, zasoby) |
+| `stop_reason` inny niż `end_turn` (limit, odmowa) | `retrying` | wynik modelu bywa inny przy powtórce |
+| niepuste `permission_denials` | `halted` | nasza konfiguracja — powtórka da to samo |
+| brak klucza / autoryzacja pod `--bare` | `halted` | to samo: deterministyczne, do naprawy u nas |
+
+Powtórki są **niewidoczne dla klienta** (widzi jedno „pracuję nad tym"), ale widoczne
+w budżecie z 4.1 i w `attempts`. Limit: **jedna** automatyczna powtórka, potem `halted`.
+
+Wyczerpanie ponowień z **5.2 planu** to nie ten przypadek — tam wersja jest dostarczana
+z `orphanedAnchors[]` (sekcja 3.4), więc nie trafia tu w ogóle.
+
+Treść komunikatów pisze frontend — zgodnie z zasadą z sekcji 3 kontrakt oddaje gałąź,
+nie gotowe zdania. Sens obu: *nic nie przepadło*, a przy `halted` dodatkowo, że problem
+jest u nas i nie ma sensu klikać ponownie.
+
+### 4.4 Gwarancja: nieudana runda nie zabiera klientowi niczego
+
+Trzy mechanizmy dają to razem, więc zapisuję to jako **regułę kontraktu**, a nie jako
+przypadkową konsekwencję — żeby późniejsza zmiana musiała ją świadomie złamać, a nie
+rozmyć po cichu:
+
+1. **poprzednia wersja zostaje nietknięta i oglądalna** — wynika ze snapshotów (decyzja 5):
+   nowa wersja powstaje obok, nie na miejscu
+2. **komentarze zostają `open`** — status zmienia tylko silnik i tylko z `commentResults[]`
+   (sekcja 3.3), a nieudana runda nie produkuje tego raportu
+3. **licznik rund się nie rusza** — asymetria z 4.1
+
+Razem: nieudana runda jest z punktu widzenia klienta **brakiem zdarzenia**. Może kliknąć
+„Popraw to" ponownie z tymi samymi komentarzami i nic nie musi odtwarzać.
+
+### 4.5 Wyczerpanie limitu — zamrożenie, nie odcięcie
+
+Projekt przechodzi w `frozen`. Wtedy:
+
+- **podgląd i ZIP działają dalej** — klient nie traci dostępu do tego, co już ma
+- ostatnia dobra wersja zostaje wersją bieżącą
+- nowe rundy są odrzucane (`409`), komentarze można dodawać, ale nie stosować
+- **nic nie jest usuwane**
+
+Co dalej dzieje się z takim projektem, to pytanie o płatności, a te są poza zakresem v1
+(sekcja 10 planu) — nie projektuję tu ścieżki dosprzedaży.
