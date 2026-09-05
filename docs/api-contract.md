@@ -176,7 +176,7 @@ Frontend tworzy komentarz w statusie `open` i umie go **wycofać** (usunąć, do
 Kluczowe: nie z tekstu podsumowania. Parsowanie prozy modelu pod status działa do
 pierwszego przeformułowania i potem cicho gnije.
 
-**Wymagane uzupełnienie sekcji 2 (Sebastian):** prompt rundy musi żądać od modelu
+**Wymagane uzupełnienie sekcji 2 (Sebastian) — ZROBIONE (Plan A).** Prompt rundy żąda od modelu
 odpowiedzi **per komentarz, kluczowanej naszym `Comment.id`**, a `GenerateResult`
 potrzebuje pola, które to przeniesie — dziś ma tylko `summary`:
 
@@ -400,7 +400,7 @@ Odbiorcą tego ekranu jest fryzjer, nie programista, więc diff linii HTML jest
 bezużyteczny. Klient dostaje **swoją stronę z obramowanymi blokami**, które zmieniły się
 względem rodzica. Porównujemy per `data-cmt-id`.
 
-**Wymagane uzupełnienie sekcji 2 (Sebastian):** `changedAnchors[]` liczy ten, kto ma
+**Wymagane uzupełnienie sekcji 2 (Sebastian) — ZROBIONE (Plan B, zadanie 2).** `changedAnchors[]` liczy ten, kto ma
 snapshoty — czyli silnik, przy tworzeniu wersji. Frontend ma tylko to pokazać;
 gdyby liczył sam, musiałby ściągać dwie pełne wersje strony do przeglądarki.
 

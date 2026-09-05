@@ -728,6 +728,15 @@ Silnik ma katalogi, nie stringi. Dopisz do przeniesionego
             // wlasna strone nie moze dostac 500 dlatego, ze ktos posprzatal dysk.
             Assert.Empty(await ZmienioneBloki.PoliczZeSnapshotow(
                 Path.Combine(katalog, "nie-ma"), dziecko));
+
+            // Katalog WERSJI bez index.html — trzecia sciezka, ktora latwo pominac.
+            // Dzis nieosiagalna przez GenerationService (twarda bramka renderowalnosci
+            // wymaga index.html, zanim cokolwiek liczymy), ale to metoda publiczna,
+            // a Zadanie 6 doda jej wywolujacych spoza silnika. Bez tej asercji
+            // usuniecie straznika `File.Exists(plikWersji)` przechodzi cala suite.
+            var pusta = Path.Combine(katalog, "v3-bez-strony");
+            Directory.CreateDirectory(pusta);
+            Assert.Empty(await ZmienioneBloki.PoliczZeSnapshotow(rodzic, pusta));
         }
         finally
         {
