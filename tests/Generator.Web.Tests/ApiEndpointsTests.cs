@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using Generator.Web.Api;
 using Generator.Web.Contracts;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -15,10 +16,17 @@ public class ApiEndpointsTests : IClassFixture<WebApplicationFactory<Program>>, 
         Path.Combine(Path.GetTempPath(), "gen-http-" + Guid.NewGuid().ToString("N"));
     private readonly WebApplicationFactory<Program> _app;
 
+    /// Aplikacja BEZ naszych nadpisan — jedyny sposob, zeby zobaczyc konfiguracje
+    /// domyslna. Kazdy inny test podaje wlasny `Projects:Root`, wiec wartosc, ktora
+    /// dostaje klient uruchamiajacy „z pudelka", nie jest sprawdzana nigdzie indziej.
+    private readonly WebApplicationFactory<Program> _domyslny;
+
     /// PRAWDZIWY ProjectApi, atrapowany tylko silnik. Wariant z `Projects:UseMock`
     /// bylby latwiejszy, ale testowalby parytet mocka z kontraktem zamiast kodu,
     /// ktory pojdzie na produkcje — a to wlasnie mock ma prawo sie rozjechac.
-    public ApiEndpointsTests(WebApplicationFactory<Program> factory) =>
+    public ApiEndpointsTests(WebApplicationFactory<Program> factory)
+    {
+        _domyslny = factory;
         _app = factory.WithWebHostBuilder(b =>
         {
             b.UseSetting("Projects:Root", _root);
@@ -30,6 +38,23 @@ public class ApiEndpointsTests : IClassFixture<WebApplicationFactory<Program>>, 
                     new Generator.Engine.Versioning.VersionStore(Path.Combine(_root, id)))));
             });
         });
+    }
+
+    [Fact]
+    public void Domyslny_katalog_projektow_lezy_obok_aplikacji_a_nie_w_tymczasowym()
+    {
+        // Bez konfiguracji projekty klientow ladowaly w `Path.GetTempPath()`, a wpisu
+        // nie bylo w zadnym appsettings*.json — wiec nikt nie widzial, gdzie to lezy.
+        // Na Linuksie /tmp znika przy restarcie maszyny: uruchomienie „z pudelka"
+        // bylo uruchomieniem, ktore gubi oplacone strony klientow razem z historia
+        // wersji i uwagami.
+        var root = Path.GetFullPath(_domyslny.Services.GetRequiredService<ProjectPaths>().Root);
+        var aplikacja = Path.GetFullPath(
+            _domyslny.Services.GetRequiredService<IWebHostEnvironment>().ContentRootPath);
+
+        Assert.StartsWith(aplikacja, root);
+        Assert.DoesNotContain(Path.GetFullPath(Path.GetTempPath()), root);
+    }
 
     public void Dispose()
     {

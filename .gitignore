@@ -10,3 +10,7 @@ obj/
 # Katalogi IDE
 .idea/
 .vs/
+
+# Projekty klientow lezace obok aplikacji (Projects:Root z appsettings.json).
+# To dane, nie kod — `git add -A` nie ma prawa wciagnac cudzej strony do repo.
+src/Generator.Web/projekty/

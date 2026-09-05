@@ -9,8 +9,20 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Jeden katalog na snapshoty: mock go zapisuje, /preview z niego czyta. Gdyby te dwie
 // sciezki sie rozjechaly, iframe byłby pusty, a testy komponentow tego nie widza.
-var snapshotRoot = builder.Configuration["Projects:Root"]
-    ?? Path.Combine(Path.GetTempPath(), "generator-stron");
+//
+// Domyslnie OBOK APLIKACJI, nie w katalogu tymczasowym systemu. Tam lezy caly
+// dorobek klienta: snapshoty wersji, uwagi, project.json — a na Linuksie /tmp
+// znika przy restarcie maszyny. Uruchomienie „z pudelka" bylo wiec uruchomieniem,
+// ktore po cichu gubi oplacone strony, i nie bylo o tym slowa w zadnym
+// appsettings*.json. Teraz wpis tam JEST — zeby bylo widac, gdzie to lezy.
+//
+// Sciezka wzgledna liczy sie od ContentRoot, nie od katalogu roboczego procesu:
+// „projekty" ma znaczyc to samo niezaleznie od tego, skad ktos uruchomil aplikacje.
+// Sciezke bezwzgledna (tak podaja ja testy) `Path.GetFullPath` zostawia w spokoju.
+var skonfigurowanyRoot = builder.Configuration["Projects:Root"];
+var snapshotRoot = string.IsNullOrWhiteSpace(skonfigurowanyRoot)
+    ? Path.Combine(builder.Environment.ContentRootPath, "projekty")
+    : Path.GetFullPath(skonfigurowanyRoot, builder.Environment.ContentRootPath);
 
 var claudeCmd = builder.Configuration["Projects:ClaudeCmd"] ?? "claude";
 
