@@ -247,3 +247,21 @@ Trzy rzeczy, które warto znać, zanim to ruszysz:
   wraca. „Łącznie 0,00 USD" czytałoby się jak dobra wiadomość, będąc brakiem danych —
   panel pisze więc wprost „nie zmierzono". Po Twojej naprawie B te liczby zaczną być
   prawdziwe i ostrzeżenie samo zniknie.
+
+### Uściślenie: cała strona panelu jest „nośnikiem poświadczeń"
+
+Wyżej napisałem, że panel nie drukuje tokenów i że do podglądu wystarczy samo `id`.
+To prawda, ale niepełna, więc doprecyzowuję, żeby dokument nie obiecywał więcej,
+niż robi kod: **`/editor/{id}` nie sprawdza niczego** — tam GUID projektu *jest*
+kontrolą dostępu, a w edytorze pisze się uwagi i wydaje rundy klienta. Panel
+drukuje pełne `id` (w `href` i w `title`), więc jego zrzut ekranu daje dostęp do
+edytora każdego widocznego projektu — mniej niż token (`/api/*` nadal odmówi), ale
+więcej niż sam podgląd.
+
+Praktycznie: zrzutu ekranu panelu nie wklejamy nigdzie poza naszą dwójką.
+
+Świadoma decyzja przy okazji: zły klucz oddaje **401**, nie 404, więc sonda dowie
+się, że panel na tym wdrożeniu jest skonfigurowany. Nie ukrywamy tego, bo `GET
+/panel` i tak pokazuje formularz każdemu, kto zgadnie adres — ukrywanie samego
+POST-a nic by nie zamknęło. Granica, która liczy się naprawdę, jest wcześniej:
+bez `Admin:Token` trasy nie ma w ogóle.

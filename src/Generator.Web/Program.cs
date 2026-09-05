@@ -132,6 +132,11 @@ if (KluczPanelu.Ustawiony(builder.Configuration) is { } kluczPanelu)
     app.MapPost("/panel", async (HttpRequest zadanie, ProjectPaths sciezki) =>
     {
         var podany = (await zadanie.ReadFormAsync())["klucz"].ToString();
+        // 401, a nie 404 — swiadomie. 404 ukrywaloby sam fakt, ze panel tu jest, ale
+        // GET /panel i tak pokazuje formularz kazdemu, kto zgadnie adres, wiec ukrywanie
+        // POSTa niczego by nie zamknelo. Bez klucza (przypadek wyzej) trasy nie ma
+        // w ogole i wtedy ukryte jest wszystko — i to jest granica, ktora liczy sie
+        // naprawde.
         if (!KluczPanelu.Zgadza(kluczPanelu, podany))
             return new RazorComponentResult<Panel>(new { Odmowa = true }) { StatusCode = 401 };
 
