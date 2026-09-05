@@ -2058,6 +2058,10 @@ po zmianie i dostosuj mock, nie endpoint.
 - [ ] **Krok 2: Padające testy endpointów**
 
 `tests/Generator.Web.Tests/ApiEndpointsTests.cs` — przez `WebApplicationFactory`.
+`FakeRunner` to ta sama klasa co w `ProjectApiTests` (Zadanie 5) — `internal`,
+więc widoczna w tym samym assembly testowym. Wymaga `using Generator.Web.Api;`
+i `using Microsoft.Extensions.DependencyInjection.Extensions;` (dla `RemoveAll`).
+
 Jeśli `Generator.Web.Tests.csproj` nie ma `Microsoft.AspNetCore.Mvc.Testing`, dodaj:
 
 ```bash
@@ -2081,11 +2085,20 @@ public class ApiEndpointsTests : IClassFixture<WebApplicationFactory<Program>>, 
         Path.Combine(Path.GetTempPath(), "gen-http-" + Guid.NewGuid().ToString("N"));
     private readonly WebApplicationFactory<Program> _app;
 
+    /// PRAWDZIWY ProjectApi, atrapowany tylko silnik. Wariant z `Projects:UseMock`
+    /// bylby latwiejszy, ale testowalby parytet mocka z kontraktem zamiast kodu,
+    /// ktory pojdzie na produkcje — a to wlasnie mock ma prawo sie rozjechac.
     public ApiEndpointsTests(WebApplicationFactory<Program> factory) =>
         _app = factory.WithWebHostBuilder(b =>
         {
             b.UseSetting("Projects:Root", _root);
-            b.UseSetting("Projects:UseMock", "true");   // bez `claude` na maszynie CI
+            b.ConfigureServices(uslugi =>
+            {
+                uslugi.RemoveAll<ProjectPaths>();
+                uslugi.AddSingleton(new ProjectPaths(_root, id => new FakeRunner(
+                    new Generator.Engine.Storage.ProjectStore(Path.Combine(_root, id)),
+                    new Generator.Engine.Versioning.VersionStore(Path.Combine(_root, id)))));
+            });
         });
 
     public void Dispose()
