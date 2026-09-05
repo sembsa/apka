@@ -1,3 +1,4 @@
+@using System.Globalization
 @using Generator.Web.Contracts
 
 @* Kontrakt 5.1: powrot przestawia wskaznik, historia zostaje. Wersje nowsze od
@@ -15,6 +16,18 @@
 
                 <li data-test="wersja-@w.Number" class="@(aktualna ? "aktualna" : null)">
                     <span>Wersja @w.Number</span>
+
+                    @* Kontrakt 6.2: sam numer zmusza klienta do pamietania, co robil.
+                       Format numeryczny i InvariantCulture swiadomie — nazwa miesiaca
+                       zalezy od kultury procesu, a ta rozni sie miedzy maszynami zespolu
+                       i serwerem. Wersje sprzed wprowadzenia pola daty nie maja i wtedy
+                       nie pokazujemy niczego: „nie wiem" jest uczciwe, zmyslona data nie. *@
+                    @if (w.CreatedAt is { } powstala)
+                    {
+                        <time data-test="data-@w.Number" datetime="@powstala.ToString("o", CultureInfo.InvariantCulture)">
+                            @powstala.ToLocalTime().ToString("dd.MM.yyyy, HH:mm", CultureInfo.InvariantCulture)
+                        </time>
+                    }
 
                     @if (aktualna)
                     {

@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Generator.Engine.Model;
 using Generator.Engine.Storage;
 using Xunit;
@@ -8,6 +9,40 @@ public class ProjectStoreTests : IDisposable
 {
     private readonly string _dir = Directory.CreateTempSubdirectory("gen-proj-").FullName;
     public void Dispose() => Directory.Delete(_dir, recursive: true);
+
+    [Fact]
+    public void Data_wersji_przezywa_zapis_i_odczyt_a_stary_plik_wraca_bez_daty()
+    {
+        // Kontrakt 6.2, obie strony zgodnosci wstecznej naraz: nowa data ma wrocic
+        // co do sekundy, a `project.json` zapisany PRZED wprowadzeniem pola ma wrocic
+        // z `null`, a nie wywrocic wczytywanie projektu klienta.
+        var store = new ProjectStore(_dir);
+        var meta = store.Create(SourceKind.Idea);
+        var data = new DateTimeOffset(2026, 9, 5, 14, 30, 0, TimeSpan.FromHours(2));
+
+        store.Save(meta with
+        {
+            Versions = [new VersionMeta(1, "s-1", "/snap/001", 0.2m, [], null, [], data)],
+            CurrentVersion = 1,
+        });
+
+        Assert.Equal(data, store.Load().Versions[0].CreatedAt);
+
+        // Ten sam plik, tylko bez pola daty — dokladnie to, co lezy dzis na dysku
+        // u kazdego, kto uruchamial silnik przed ta zmiana. Usuwamy wlasciwosc przez
+        // JsonNode, nie ciecie tekstu: wyciety wiersz zostawilby wiszacy przecinek,
+        // a System.Text.Json odrzuca takie JSON-y — test padalby na blad wlasnej
+        // preparacji zamiast sprawdzac zgodnosc wsteczna.
+        var sciezka = Path.Combine(_dir, "project.json");
+        var wezel = JsonNode.Parse(File.ReadAllText(sciezka))!;
+        var wersja = wezel["Versions"]![0]!.AsObject();
+        Assert.True(wersja.Remove("CreatedAt"), "pole daty nie zapisalo sie do project.json");
+        File.WriteAllText(sciezka, wezel.ToJsonString());
+
+        var wczytany = store.Load();
+        Assert.Equal(1, wczytany.Versions[0].Number);      // reszta wersji cala
+        Assert.Null(wczytany.Versions[0].CreatedAt);
+    }
 
     [Fact]
     public void Create_zapisuje_projekt_z_wartosciami_startowymi()

@@ -155,6 +155,29 @@ public class ProjectApiTests : IDisposable
     }
 
     [Fact]
+    public async Task Data_powstania_wersji_dochodzi_do_DTO_a_koszt_nie()
+    {
+        // Kontrakt 6.2, obie polowy rozstrzygniecia naraz: data wchodzi, koszt wypada.
+        // Mapowanie ToView jest jedynym miejscem, w ktorym mozna oba pomylic —
+        // VersionMeta niesie i CostUsd, i CreatedAt.
+        var (api, _) = Zbuduj();
+        var przed = DateTimeOffset.UtcNow;
+        var p = await api.CreateAsync("idea", "kwiaciarnia");
+        await Poczekaj(api, await api.RequestProposalsAsync(p.Id));
+        await api.ChooseProposalAsync(p.Id, "b");
+        await Poczekaj(api, await api.CreateFirstVersionAsync(p.Id));
+
+        var v1 = Assert.Single((await api.GetAsync(p.Id)).Versions);
+
+        Assert.NotNull(v1.CreatedAt);
+        Assert.InRange(v1.CreatedAt!.Value, przed, DateTimeOffset.UtcNow);
+
+        // Kontrakt 4.1: koszt nie ma sie gdzie schowac w DTO wersji.
+        Assert.DoesNotContain("Usd", string.Join(",",
+            typeof(VersionView).GetProperties().Select(x => x.Name)));
+    }
+
+    [Fact]
     public async Task Uwagi_wracaja_ze_statusem_nadanym_przez_silnik()
     {
         var (api, _) = Zbuduj();

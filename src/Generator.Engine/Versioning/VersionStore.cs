@@ -18,8 +18,12 @@ public class VersionStore(string projectDir)
         if (Directory.Exists(target)) Directory.Delete(target, recursive: true);
         DirectoryOps.Copy(WorkDir, target);
 
+        // Data stemplowana TUTAJ, nie przekazywana parametrem: chwila powstania wersji
+        // to chwila, w ktorej snapshot trafil na dysk, i nikt z zewnatrz nie ma powodu
+        // jej podawac. Dzieki temu Commit zachowuje szesc parametrow, a wszystkie
+        // istniejace wywolania (z atrapami w testach Web wlacznie) zostaja bez zmian.
         return new VersionMeta(number, sessionId, target, costUsd, orphanedAnchors,
-            basedOn, changedAnchors);
+            basedOn, changedAnchors, DateTimeOffset.UtcNow);
     }
 
     /// Droga powrotna ze snapshotu (dotad VersionStore byl tylko-do-zapisu). Kopiuje

@@ -32,6 +32,24 @@ public class VersionStoreTests : IDisposable
     }
 
     [Fact]
+    public void Commit_stempluje_date_powstania_wersji()
+    {
+        // Kontrakt 6.2. Data jest stemplowana w Commit, a nie podawana z zewnatrz —
+        // chwila powstania wersji to chwila, w ktorej snapshot trafil na dysk.
+        var store = NewStore();
+        File.WriteAllText(Path.Combine(store.WorkDir, "index.html"), "x");
+
+        var przed = DateTimeOffset.UtcNow;
+        var meta = store.Commit(1, "s-1", 0.1m, [], null, []);
+        var po = DateTimeOffset.UtcNow;
+
+        // Przedzial, nie „not null": DateTimeOffset.MinValue tez nie jest nullem,
+        // a data z 0001 roku w historii wersji jest gorsza od jej braku.
+        Assert.NotNull(meta.CreatedAt);
+        Assert.InRange(meta.CreatedAt!.Value, przed, po);
+    }
+
+    [Fact]
     public void Snapshot_jest_niezalezny_od_dalszych_zmian_w_katalogu_roboczym()
     {
         // Decyzja 5: nowa wersja powstaje OBOK, poprzednia zostaje nietknieta.

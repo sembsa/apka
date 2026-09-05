@@ -1,4 +1,6 @@
+using System.Globalization;
 using Bunit;
+using Generator.Web.Components;
 using Generator.Web.Components.Pages;
 using Generator.Web.Contracts;
 using Generator.Web.Mock;
@@ -60,6 +62,38 @@ public class HistoriaWersjiTests : BunitContext, IDisposable
         Assert.NotNull(cut.Find("[data-test='wersja-1']"));
         Assert.NotNull(cut.Find("[data-test='wersja-2']"));
         Assert.Contains("oglądasz", cut.Find("[data-test='wersja-2']").TextContent);
+    }
+
+    [Fact]
+    public void Wersja_z_data_pokazuje_ja_a_wersja_bez_daty_nie_dostaje_zmyslonej()
+    {
+        // Kontrakt 6.2. Renderujemy sam komponent historii, bo chodzi o dwie wersje
+        // roznice sie JEDNYM polem — przez Editor trzeba by najpierw spreparowac
+        // projekt z wersja sprzed wprowadzenia daty, czyli obejsc mock.
+        //
+        // Wersja bez daty to nie przypadek teoretyczny: tak wyglada kazdy projekt
+        // zapisany przed ta zmiana. Wypisanie tam DateTime.Now byloby data wygladajaca
+        // na prawdziwa i zawsze falszywa — dlatego brak elementu jest asercja.
+        var powstala = new DateTimeOffset(2026, 9, 5, 14, 30, 0, TimeSpan.FromHours(2));
+        var project = new ProjectView("p1", "t", "active", 1, 15,
+            [
+                new VersionView(1, "/preview/p1/1/", [], null, [], CreatedAt: null),
+                new VersionView(2, "/preview/p1/2/", [], 1, [], CreatedAt: powstala),
+            ],
+            CurrentVersion: 2);
+
+        var cut = Render<HistoriaWersji>(ps => ps.Add(x => x.Project, project));
+
+        var czas = cut.Find("[data-test='data-2']");
+        Assert.Equal(powstala.ToString("o", CultureInfo.InvariantCulture),
+            czas.GetAttribute("datetime"));
+
+        var lokalnie = powstala.ToLocalTime();
+        Assert.Contains($"{lokalnie.Hour:00}:{lokalnie.Minute:00}", czas.TextContent);
+        Assert.Contains(lokalnie.Year.ToString(CultureInfo.InvariantCulture), czas.TextContent);
+
+        Assert.Empty(cut.FindAll("[data-test='data-1']"));
+        Assert.Contains("Wersja 1", cut.Find("[data-test='wersja-1']").TextContent);
     }
 
     [Fact]

@@ -253,7 +253,8 @@ public class MockProjectApi : IProjectApi
             await ZapiszSnapshot(id, 1, [], rodzic: null);
             _projects[id] = _projects[id] with
             {
-                Versions = [new VersionView(1, $"/preview/{id}/1/", [], BasedOn: null, ChangedAnchors: [])],
+                Versions = [new VersionView(1, $"/preview/{id}/1/", [], BasedOn: null, ChangedAnchors: [],
+                    CreatedAt: DateTimeOffset.UtcNow)],
                 CurrentVersion = 1,
             };
             _jobs[jobId] = new JobView(jobId, "succeeded", null);
@@ -424,7 +425,8 @@ public class MockProjectApi : IProjectApi
         {
             RoundsUsed = project.RoundsUsed + 1,
             Versions = [.. project.Versions,
-                new VersionView(numer, $"/preview/{id}/{numer}/", [], rodzic, zmienione)],
+                new VersionView(numer, $"/preview/{id}/{numer}/", [], rodzic, zmienione,
+                    DateTimeOffset.UtcNow)],
             CurrentVersion = numer,
         };
         _jobs[jobId] = new JobView(jobId, "succeeded", null);

@@ -10,6 +10,16 @@ public enum ProjectStatus { Draft, Active, Frozen }
 /// po powrocie do v1 kolejna runda tworzy v3, ktorej rodzicem jest v1, nie v2.
 /// Kontrakt 5.1.
 /// </param>
+/// <param name="CreatedAt">
+/// Kontrakt 6.2: „Wersja 2 — wczoraj 14:30" rozpoznaje sie bez wysilku, samo
+/// „Wersja 2" zmusza klienta do pamietania, co robil. Znaczy to przy powrocie do
+/// starszej wersji (5.1).
+///
+/// Nullowalne, bo `project.json` zapisany przed ta zmiana daty nie ma. Wtedy `null`
+/// — a nie data pliku snapshotu: mtime katalogu zmienia go kopiowanie, archiwizacja
+/// czy synchronizacja, wiec byla by to data wygladajaca na prawdziwa i czasem falszywa.
+/// „Nie wiem" widac w UI i da sie zignorowac; zmyslona data nie.
+/// </param>
 public record VersionMeta(
     int Number,
     string SessionId,
@@ -17,7 +27,8 @@ public record VersionMeta(
     decimal CostUsd,
     IReadOnlyList<string> OrphanedAnchors,
     int? BasedOn = null,
-    IReadOnlyList<string>? ChangedAnchors = null);
+    IReadOnlyList<string>? ChangedAnchors = null,
+    DateTimeOffset? CreatedAt = null);
 
 /// <param name="CurrentVersion">
 /// Wersja, ktora klient oglada i do ktorej trafiaja nowe uwagi. 0 = brak wersji.

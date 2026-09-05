@@ -369,6 +369,7 @@ public class ProjectApi(ProjectPaths paths, JobQueue queue, ILogger<ProjectApi> 
             $"/preview/{m.Id}/{v.Number}/",     // kontrakt 5.4: ukosnik na koncu
             v.OrphanedAnchors,
             v.BasedOn,
-            v.ChangedAnchors ?? []))],
+            v.ChangedAnchors ?? [],
+            v.CreatedAt))],
         m.CurrentVersion);
 }

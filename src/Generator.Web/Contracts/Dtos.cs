@@ -11,12 +11,18 @@ namespace Generator.Web.Contracts;
 /// Bloki rozne od rodzica (kontrakt 5.3). Liczy je ten, kto ma snapshoty — silnik,
 /// a u nas mock; frontend tylko pokazuje.
 /// </param>
+/// <param name="CreatedAt">
+/// Kontrakt 6.2. `null` dla wersji zapisanych, zanim silnik zaczal stemplowac date —
+/// UI ma wtedy pokazac sam numer, nie zmyslona date. Koszt rundy w te liste NIE
+/// wchodzi (4.1): zmienia rozmowe z „czy strona jest dobra" na „czy warto bylo wydac".
+/// </param>
 public record VersionView(
     int Number,
     string PreviewUrl,
     IReadOnlyList<string> OrphanedAnchors,
     int? BasedOn = null,
-    IReadOnlyList<string>? ChangedAnchors = null);
+    IReadOnlyList<string>? ChangedAnchors = null,
+    DateTimeOffset? CreatedAt = null);
 
 /// <param name="CurrentVersion">
 /// Wersja, ktora klient oglada. Po powrocie do starszej „aktualna" przestaje znaczyc
