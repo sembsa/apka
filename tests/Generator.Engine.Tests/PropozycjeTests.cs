@@ -19,9 +19,12 @@ public class PropozycjeTests : IDisposable
         GC.SuppressFinalize(this);
     }
 
+    /// JSON pisze sie ZAWSZE z kropka — patrz GenerationServiceTests.Kwota.
+    private static string Kwota(decimal x) => x.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
     private static string Json(string session, decimal cost) => $$"""
         {"type":"result","subtype":"success","is_error":false,"session_id":"{{session}}",
-         "total_cost_usd":{{cost}},"result":"gotowe","permission_denials":[],
+         "total_cost_usd":{{Kwota(cost)}},"result":"gotowe","permission_denials":[],
          "stop_reason":"end_turn","terminal_reason":"completed"}
         """;
 

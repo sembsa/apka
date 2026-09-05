@@ -79,9 +79,14 @@ public class GenerationServiceTests : IDisposable
     private readonly string _project = Directory.CreateTempSubdirectory("gen-svc-").FullName;
     public void Dispose() => Directory.Delete(_project, recursive: true);
 
+    /// JSON pisze sie ZAWSZE z kropka. Interpolacja `{{cost}}` uzywa kultury systemu,
+    /// wiec na polskim Windows dawala "total_cost_usd":0,05 — niepoprawny JSON i 32
+    /// czerwone testy u kazdego z przecinkiem dziesietnym. U autora bylo zielono.
+    private static string Kwota(decimal x) => x.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
     private static string Json(string sessionId, decimal cost, string result, string denials = "[]") => $$"""
         {"is_error":false,"subtype":"success","stop_reason":"end_turn","terminal_reason":"completed",
-        "session_id":"{{sessionId}}","total_cost_usd":{{cost}},"permission_denials":{{denials}},
+        "session_id":"{{sessionId}}","total_cost_usd":{{Kwota(cost)}},"permission_denials":{{denials}},
         "result":"{{result}}"}
         """;
 
@@ -90,7 +95,7 @@ public class GenerationServiceTests : IDisposable
     /// wiec to jedyny sposob wywolania Retry z tego runnera.
     private static string ErrorJson(string sessionId, decimal cost) => $$"""
         {"is_error":true,"subtype":"error_during_execution","stop_reason":"end_turn","terminal_reason":"completed",
-        "session_id":"{{sessionId}}","total_cost_usd":{{cost}},"permission_denials":[],
+        "session_id":"{{sessionId}}","total_cost_usd":{{Kwota(cost)}},"permission_denials":[],
         "result":""}
         """;
 
