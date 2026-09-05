@@ -50,11 +50,16 @@ internal class FakeRunner(ProjectStore store, VersionStore versions) : IRoundRun
 
     private GenerationOutcome Commit(ProjectMeta meta, IReadOnlyList<CommentResult> wyniki)
     {
+        var n = meta.NextVersionNumber;
+
+        // Numer wersji W TRESCI pliku. Bez tego kazda wersja ma identyczne
+        // work/index.html i nie da sie odroznic „work wrocil do v1" od „work
+        // zostal przy v2" — powrot testowaloby sie samym istnieniem pliku,
+        // czyli niczym.
         Directory.CreateDirectory(versions.WorkDir);
         File.WriteAllText(Path.Combine(versions.WorkDir, "index.html"),
-            """<html><body><h1 data-cmt-id="hero">x</h1></body></html>""");
+            $"""<html><body><h1 data-cmt-id="hero">v{n}</h1></body></html>""");
 
-        var n = meta.NextVersionNumber;
         var v = versions.Commit(n, "s-1", 0.10m, [], meta.Current?.Number, []);
         store.Save(meta with
         {
@@ -341,6 +346,154 @@ public class ProjectApiTests : IDisposable
 
         // Gwarancja 4.4 przy okazji: uwaga zostaje `open`, licznik rund stoi.
         Assert.Contains(await api.GetCommentsAsync(p.Id, 1), u => u.Id == "k1" && u.Status == "open");
+    }
+
+    [Fact]
+    public async Task Sprzatanie_po_zakonczonym_zadaniu_nie_zdejmuje_rezerwacji_nastepnego()
+    {
+        // Kolejka zwalnia rezerwacje projektu PRZED ogloszeniem stanu koncowego, a
+        // `finally` zostaje jako siatka. Gdyby ta siatka kasowala po samym KLUCZU,
+        // zdjelaby rezerwacje zadania, ktore zdazylo ja w miedzyczasie zalozyc —
+        // i dwie rundy pojechalyby rownolegle po tym samym work/, kazda liczac
+        // `version != CurrentVersion` na stanie sprzed zatwierdzenia drugiej.
+        // Klient traci dwie rundy z pietnastu i dwa razy placi.
+        var (api, runner) = Zbuduj();
+        var p = await Gotowy(api);
+
+        // Pierwsza runda przechodzi do konca — jej sprzatanie jest juz za nami.
+        await Poczekaj(api, await api.ApplyCommentsAsync(p.Id, 1, [Uwaga("k1")]));
+
+        // Druga staje na bramie i TRZYMA rezerwacje.
+        var brama = new TaskCompletionSource();
+        runner(p.Id).Wstrzymaj = brama;
+        var drugie = await api.ApplyCommentsAsync(p.Id, 2, [Uwaga("k2")]);
+        Assert.Equal("running", (await Trwa(api, drugie)).Status);
+
+        Assert.True(_queue.MaAktywne(p.Id));
+        await Assert.ThrowsAsync<JobRunningException>(() =>
+            api.ApplyCommentsAsync(p.Id, 2, [Uwaga("k3")]));
+
+        brama.SetResult();
+        await Poczekaj(api, drugie);
+    }
+
+    [Fact]
+    public void Zamknieta_kolejka_nie_oddaje_zadania_ktorego_nikt_nie_podniesie()
+    {
+        // Po Dispose kanal jest zamkniety i TryWrite zwraca `false`. Zignorowanie
+        // tego oddawalo klientowi `jobId` zadania, ktorego nikt nigdy nie podniesie:
+        // `queued` na zawsze i rezerwacja projektu zajeta na zawsze, wiec projekt
+        // do konca zycia procesu odmawia kazdej nastepnej rundy.
+        //
+        // Wlasna kolejka, nie `_queue` z fixture'a: ta jest zamykana w Dispose,
+        // a drugi Dispose wola Cancel na juz zwolnionym CancellationTokenSource.
+        var kolejka = new JobQueue();
+        kolejka.Dispose();
+
+        Assert.Throws<ObjectDisposedException>(
+            () => kolejka.Enqueue("p1", (_, _) => Task.CompletedTask));
+        Assert.False(kolejka.MaAktywne("p1"));
+    }
+
+    [Fact]
+    public async Task Wybor_propozycji_w_trakcie_zadania_jest_odrzucany()
+    {
+        // `ChooseProposalAsync` robi ten sam czytaj-zmodyfikuj-zapisz na project.json
+        // co koniec rundy. Bez tej strazy kto zapisze drugi, wygrywa calym plikiem —
+        // a `RollbackAsync` i `ApplyCommentsAsync` juz sie tak bronily. Asymetria
+        // byla przypadkiem, nie decyzja.
+        var (api, runner) = Zbuduj();
+        var p = await api.CreateAsync("idea", "kwiaciarnia");
+        await Poczekaj(api, await api.RequestProposalsAsync(p.Id));
+        await api.ChooseProposalAsync(p.Id, "b");
+
+        var brama = new TaskCompletionSource();
+        runner(p.Id).Wstrzymaj = brama;
+        var jobId = await api.CreateFirstVersionAsync(p.Id);
+        Assert.Equal("running", (await Trwa(api, jobId)).Status);
+
+        await Assert.ThrowsAsync<JobRunningException>(() => api.ChooseProposalAsync(p.Id, "a"));
+        Assert.Equal("b", new ProjectStore(Path.Combine(_root, p.Id)).Load().ChosenProposal);
+
+        brama.SetResult();
+        await Poczekaj(api, jobId);
+    }
+
+    [Fact]
+    public async Task Druga_wersja_pierwsza_jest_odmawiana_od_reki_a_nie_zadaniem_failed()
+    {
+        // Straz jest tez w silniku i pieniadze sa przez nia bezpieczne, ale silnik
+        // odrzuca dopiero W ZADANIU — klient dostawal `failed` zamiast odmowy od reki,
+        // jak przy kazdej innej strazy tej warstwy. Atrapa silnikowej strazy NIE ma,
+        // wiec bez tej w ProjectApi powstalaby pelnoprawna wersja 2 ZA DARMO:
+        // `first` nie zuzywa rundy klienta (ruling 7).
+        var (api, _) = Zbuduj();
+        var p = await Gotowy(api);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => api.CreateFirstVersionAsync(p.Id));
+
+        var stan = await api.GetAsync(p.Id);
+        Assert.Single(stan.Versions);
+        Assert.Equal(0, stan.RoundsUsed);
+    }
+
+    [Fact]
+    public async Task Nieznany_projekt_to_404_a_nie_500_o_uszkodzonym_pliku()
+    {
+        // `ProjectStore.Load` na nieistniejacym pliku rzuca InvalidDataException
+        // („project.json uszkodzony") — czyli 500 z komunikatem o zepsutych danych
+        // tam, gdzie danych po prostu nie ma. Obie te metody czytaly store wprost,
+        // z pominieciem `Wczytaj`.
+        var (api, _) = Zbuduj();
+        var nieistniejacy = Guid.NewGuid().ToString();
+
+        await Assert.ThrowsAsync<KeyNotFoundException>(
+            () => api.ChooseProposalAsync(nieistniejacy, "b"));
+        await Assert.ThrowsAsync<KeyNotFoundException>(
+            () => api.RollbackAsync(nieistniejacy, 1));
+    }
+
+    [Fact]
+    public async Task Powrot_do_wersji_bez_snapshotu_to_404_a_nie_500()
+    {
+        // Wersja jest na liscie, ale katalogu na dysku nie ma (reczne sprzatanie,
+        // przerwany zapis). `VersionStore.Restore` rzucal wtedy
+        // DirectoryNotFoundException — 500 „cos padlo" zamiast 404 „nie ma czego
+        // przywrocic". Dla klienta to ta sama sytuacja co zly numer wersji.
+        var (api, _) = Zbuduj();
+        var p = await Gotowy(api);
+        await Poczekaj(api, await api.ApplyCommentsAsync(p.Id, 1, [Uwaga("k1")]));
+
+        var versions = new VersionStore(Path.Combine(_root, p.Id));
+        Directory.Delete(versions.SnapshotPath(1), recursive: true);
+
+        await Assert.ThrowsAsync<KeyNotFoundException>(() => api.RollbackAsync(p.Id, 1));
+    }
+
+    [Fact]
+    public async Task Nieudany_zapis_przy_powrocie_cofa_work_zamiast_zostawic_rozjazd()
+    {
+        // Restore i Save musza sie udac albo obie, albo zadna. Rozjazd jest grozny
+        // CICHO: work/ z plikami v1 i project.json mowiacy `CurrentVersion = 2` nie
+        // psuje podgladu (ten serwuje snapshoty), ale NASTEPNA runda pojedzie po
+        // plikach v1, zapisze `BasedOn = 2` i policzy zmiany wzgledem v2 — klient
+        // zobaczy „zmienilo sie wszystko" i poprawki naniesione na tresc, ktorej
+        // nie ogladal. Obie kolejnosci zostawiaja niespojnosc, wiec rozstrzyga
+        // tylko cofniecie.
+        var (api, _) = Zbuduj();
+        var p = await Gotowy(api);
+        await Poczekaj(api, await api.ApplyCommentsAsync(p.Id, 1, [Uwaga("k1")]));
+
+        // `ProjectStore.Save` pisze najpierw project.json.tmp, potem Move. Katalog
+        // o tej nazwie sprawia, ze WriteAllText rzuca, a Move nigdy nie leci —
+        // czyli dokladnie „Restore przeszlo, Save padlo".
+        Directory.CreateDirectory(Path.Combine(_root, p.Id, "project.json.tmp"));
+
+        await Assert.ThrowsAnyAsync<Exception>(() => api.RollbackAsync(p.Id, 1));
+
+        var work = new VersionStore(Path.Combine(_root, p.Id)).WorkDir;
+        Assert.Contains("v2", File.ReadAllText(Path.Combine(work, "index.html")));
+        Assert.Equal(2, new ProjectStore(Path.Combine(_root, p.Id)).Load().CurrentVersion);
     }
 
     private static CommentDto Uwaga(string id) =>

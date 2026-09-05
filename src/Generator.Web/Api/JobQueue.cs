@@ -30,8 +30,24 @@ public class JobQueue : IDisposable
         var jobId = Guid.NewGuid().ToString();
         if (!_aktywne.TryAdd(projectId, jobId)) throw new JobRunningException(projectId);
 
+        // `_jobs` przed `TryWrite`, nigdy odwrotnie: konsument moze podniesc zadanie
+        // natychmiast, a wtedy odwrotna kolejnosc nadpisalaby jego `running` przez
+        // nasze `queued`.
         _jobs[jobId] = new JobView(jobId, "queued", null);
-        _kanal.Writer.TryWrite(new Zadanie(jobId, projectId, praca));
+
+        // Po `Dispose` kanal jest zamkniety i `TryWrite` zwraca `false`. Ignorowanie
+        // tego oddawalo klientowi `jobId` zadania, ktorego nikt nigdy nie podniesie:
+        // stan `queued` na zawsze, rezerwacja projektu zajeta na zawsze, wiec projekt
+        // do konca zycia procesu odmawia kazdej nastepnej rundy. Sprzatamy oba wpisy
+        // i mowimy glosno.
+        if (!_kanal.Writer.TryWrite(new Zadanie(jobId, projectId, praca)))
+        {
+            _aktywne.TryRemove(new KeyValuePair<string, string>(projectId, jobId));
+            _jobs.TryRemove(jobId, out _);
+            throw new ObjectDisposedException(nameof(JobQueue),
+                "kolejka jest zamknieta — zadanie nie zostalo przyjete");
+        }
+
         return jobId;
     }
 
@@ -75,7 +91,16 @@ public class JobQueue : IDisposable
             }
             finally
             {
-                _aktywne.TryRemove(z.ProjectId, out _);
+                // Kasujemy po PARZE (projekt, zadanie), nie po samym kluczu. Powyzej
+                // zwolnilismy rezerwacje przed ogloszeniem stanu koncowego, wiec zanim
+                // ten `finally` sie wykona, inne zadanie tego samego projektu moze juz
+                // miec swoja wlasna rezerwacje — a `TryRemove(klucz)` zdjalby CUDZA.
+                // Skutek byl realny: po takim zdjeciu `MaAktywne` klamie „wolne", trzeci
+                // `Enqueue` przechodzi i dwie rundy jada rownolegle po tym samym work/,
+                // kazda liczac `version != CurrentVersion` na stanie sprzed zatwierdzenia
+                // drugiej. Klient placi dwa razy i traci dwie rundy z pietnastu.
+                // Wariant z KeyValuePair kasuje tylko wtedy, gdy wartosc nadal jest nasza.
+                _aktywne.TryRemove(new KeyValuePair<string, string>(z.ProjectId, z.Id));
             }
         }
     }

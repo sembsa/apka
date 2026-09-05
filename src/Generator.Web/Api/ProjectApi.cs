@@ -62,8 +62,18 @@ public class ProjectApi(ProjectPaths paths, JobQueue queue) : IProjectApi
 
     public Task ChooseProposalAsync(string id, string proposalId)
     {
+        // Ta sama straz co w RollbackAsync i ApplyCommentsAsync. Wybor to
+        // czytaj-zmodyfikuj-zapisz na project.json, a trwajace zadanie zapisuje
+        // ten sam plik na koniec rundy — kto zapisze drugi, wygrywa calym plikiem.
+        // Brak tej strazy byl przypadkowa asymetria, nie decyzja.
+        if (queue.MaAktywne(id)) throw new JobRunningException(id);
+
+        // Przez `Wczytaj`, nie `paths.Store(id).Load()` wprost: dla nieistniejacego
+        // projektu `Load` czyta nieistniejacy plik i rzuca InvalidDataException
+        // („project.json uszkodzony"), czyli 500 z komunikatem o zepsutych danych
+        // tam, gdzie danych po prostu nie ma. Klientowi nalezy sie 404.
+        var meta = Wczytaj(id);
         var store = paths.Store(id);
-        var meta = store.Load();
 
         // Walidacja przy ZAPISIE, nie przy odczycie (watpliwosc 4 z Zadania 4).
         // Silnik traktuje wybor spoza listy jak brak wyboru — cicho, bo jest
@@ -88,6 +98,17 @@ public class ProjectApi(ProjectPaths paths, JobQueue queue) : IProjectApi
     {
         var meta = Wczytaj(id);
         if (meta.Status == ProjectStatus.Frozen) throw new ProjectFrozenException(id);
+
+        // Silnik ma te sama straz i pieniadze sa przez nia bezpieczne — ale odrzuca
+        // dopiero W ZADANIU, wiec klient dostaje zadanie w stanie `failed` zamiast
+        // odmowy od reki, jak przy kazdej innej strazy tej warstwy. Silnikowa
+        // ZOSTAJE jako ostatnia linia obrony (Generator.Cli tez przez nia chodzi);
+        // ta jest pierwsza i mowi klientowi prawde synchronicznie.
+        if (meta.Versions.Count > 0)
+            throw new InvalidOperationException(
+                $"projekt {id} ma juz {meta.Versions.Count} wersji — wersje pierwsza generuje sie " +
+                "tylko raz; kolejne zmiany ida przez runde uwag");
+
         if (meta.ChosenProposal is null)
             throw new InvalidOperationException($"projekt {id}: klient nie wybral propozycji");
 
@@ -169,13 +190,46 @@ public class ProjectApi(ProjectPaths paths, JobQueue queue) : IProjectApi
     {
         if (queue.MaAktywne(id)) throw new JobRunningException(id);
 
+        // `Wczytaj`, nie `Load()` wprost — nieistniejacy projekt ma dac 404, a nie
+        // 500 z komunikatem „project.json uszkodzony".
+        var meta = Wczytaj(id);
         var store = paths.Store(id);
-        var meta = store.Load();
+        var versions = paths.Versions(id);
+
         if (meta.Versions.All(v => v.Number != version))
             throw new KeyNotFoundException($"projekt {id} nie ma wersji {version}");
 
-        paths.Versions(id).Restore(version);
-        store.Save(meta with { CurrentVersion = version });
+        // Snapshot sprawdzamy PRZED czymkolwiek i wlasnym wyjatkiem. Wersja obecna
+        // na liscie, ale bez katalogu na dysku (reczne sprzatanie, przerwany zapis),
+        // dawala z `Restore` DirectoryNotFoundException — czyli 500 „cos padlo"
+        // zamiast 404 „nie ma czego przywrocic". Dla klienta to ta sama sytuacja co
+        // zly numer wersji, wiec ten sam typ wyjatku.
+        if (!Directory.Exists(versions.SnapshotPath(version)))
+            throw new KeyNotFoundException(
+                $"projekt {id}: wersja {version} jest na liscie, ale nie ma jej snapshotu na dysku");
+
+        // Kompensacja, nie zmiana kolejnosci. Obie kolejnosci (Restore→Save i
+        // Save→Restore) zostawiaja niespojnosc, gdy druga operacja padnie, wiec
+        // rozstrzyga tylko cofniecie. Rozjazd jest grozny cicho: work/ z plikami v1
+        // i project.json mowiacy `CurrentVersion = 2` nie psuje podgladu (ten serwuje
+        // snapshoty), ale NASTEPNA runda pojedzie po plikach v1, zapisze `BasedOn = 2`
+        // i policzy ChangedAnchors wzgledem v2 — klient zobaczy „zmienilo sie
+        // wszystko" i poprawki naniesione na tresc, ktorej nie ogladal.
+        var poprzednia = meta.CurrentVersion;
+        versions.Restore(version);
+        try
+        {
+            store.Save(meta with { CurrentVersion = version });
+        }
+        catch (Exception)
+        {
+            // Najlepszy wysilek: wracamy work/ tam, gdzie bylo, i przepuszczamy
+            // oryginalny wyjatek. Gdy i to padnie, nie mamy juz czym naprawiac —
+            // ale nie wolno zgubic pierwotnej przyczyny pod wtorna awaria.
+            try { if (poprzednia > 0) versions.Restore(poprzednia); } catch (Exception) { }
+            throw;
+        }
+
         return Task.CompletedTask;
     }
 
@@ -199,8 +253,11 @@ public class ProjectApi(ProjectPaths paths, JobQueue queue) : IProjectApi
         }
     }
 
+    /// `DozwoloneId`, nie druga kopia listy: komentarz nad ta stala uzasadnia
+    /// powtorzenie wzgledem SILNIKA (granica zaufania), a nie wzgledem samego siebie.
+    /// Dwie listy w jednym pliku rozjechalyby sie przy pierwszej zmianie liczby kierunkow.
     private static List<ProposalView> SzkiceZDysku(string katalog) =>
-        [.. new[] { "a", "b", "c" }
+        [.. DozwoloneId
             .Select(x => (Id: x, Plik: Path.Combine(katalog, $"{x}.html")))
             .Where(x => File.Exists(x.Plik))
             .Select(x =>

@@ -258,8 +258,16 @@ public class EditorPageTests : BunitContext
             .Add(p => p.PollInterval, TimeSpan.FromMilliseconds(20)));
         cut.WaitForAssertion(() => Assert.NotNull(cut.Find("[data-test='popraw']")));
         await cut.Find("[data-test='popraw']").ClickAsync(new());
+        // PELNA sciezka podgladu, nie sam `/{numer}`. Skrot `$"/{wersjaPrzed + 1}"`
+        // szukal ciagu „/2" w `/preview/{guid}/1/` — a GUID zaczynajacy sie od cyfry 2
+        // trafia sie raz na szesnascie razy, wiec asercja spelniala sie NATYCHMIAST,
+        // zanim runda w ogole doszla do skutku. Test czytal wtedy licznik zapytan za
+        // wczesnie i prawdziwe odpytania z nastepnych 300 ms lamaly rownosc.
+        // Zmierzone na niezmienionym commicie: 2 pady na 20 przebiegow bez tej zmiany,
+        // 0 na 20 z nia. Ta sama pelna sciezka jest juz w blizniaczym tescie wyzej.
         cut.WaitForAssertion(
-            () => Assert.Contains($"/{wersjaPrzed + 1}", cut.Find("iframe").GetAttribute("src")!),
+            () => Assert.Contains($"/preview/{id}/{wersjaPrzed + 1}/",
+                cut.Find("iframe").GetAttribute("src")!),
             TimeSpan.FromSeconds(5));
 
         var poZakonczeniu = liczacy.Zapytania;
