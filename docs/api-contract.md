@@ -31,8 +31,10 @@ a `GET /api/jobs/{id}` zostaje dla klientów poza naszym UI.
 | `POST` | `/api/projects/{id}/versions` | `202` + `jobId` — wersja 1 z wybranej propozycji |
 | `POST` | `/api/projects/{id}/versions/{n}/comments/apply` | `202` + `jobId` — runda komentarzy; `409`, gdy projekt `frozen` (4.5) |
 | `GET` | `/api/projects/{id}/versions` | lista wersji (numer, data, koszt) |
-| `GET` | `/api/projects/{id}/versions/{n}/preview` | statyczne pliki wersji do iframe |
+| `GET` | `/preview/{id}/{n}/` | statyczne pliki wersji do iframe (koncowy ukosnik obowiazkowy — 5.4) |
 | `GET` | `/api/projects/{id}/versions/{n}/zip` | ZIP (decyzja 2) |
+| `POST` | `/api/projects/{id}/rollback/{n}` | `200` — przestawia `currentVersion` (5.1); `409` w trakcie zadania |
+| `GET` | `/api/projects/{id}/versions/{n}/comments` | uwagi tej wersji ze statusem z raportu silnika (3.3) |
 | `GET` | `/api/jobs/{id}` | status zadania + `failure {handling, cause, attempts}` (4.3) |
 
 Status zadania: `queued` \| `running` \| `succeeded` \| `failed`. **`failed` obejmuje
@@ -41,6 +43,12 @@ nie idzie do UI; frontend rozgałęzia się po `handling` (4.3).
 
 `spentUsd`/`budgetUsd` (4.1) **nie wychodzą** przez żaden endpoint klienta — licznik rund
 jest dla klienta, budżet tylko dla nas.
+
+**Token (decyzja 3).** `/api/*` wymaga tokenu projektu: `?token=` na `GET`,
+nagłówek `X-Project-Token` na `POST`. `/preview/*` w v1 tokenu **nie** wymaga —
+podgląd ładuje przeglądarka w `iframe`, więc token wylądowałby w pasku adresu
+i w nagłówku `Referer`. Chroni go wyłącznie nieodgadywalny GUID projektu.
+To znane ograniczenie, do zamknięcia razem z kontami (poza v1).
 
 ## 2. Kontrakt silnika (Sebastian — wypełniony)
 

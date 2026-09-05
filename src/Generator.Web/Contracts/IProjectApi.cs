@@ -1,8 +1,10 @@
 namespace Generator.Web.Contracts;
 
 /// <summary>
-/// Kształt kontraktu §1. MockProjectApi teraz, klient HTTP po Planie B —
-/// strony nie zauważą podmiany.
+/// Kształt kontraktu §1. Blazor wola to W PROCESIE — postep idzie obwodem SignalR,
+/// nie pollingiem po HTTP (§1). Endpointy /api/* sa cienka warstwa nad ta sama
+/// usluga, dla klientow spoza naszego UI. MockProjectApi zostaje za
+/// `Projects:UseMock` do pracy nad UI bez zainstalowanego `claude`.
 /// </summary>
 public interface IProjectApi
 {
