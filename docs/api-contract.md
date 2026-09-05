@@ -62,6 +62,8 @@ GenerateResult {
     note             // zdanie PRZY komentarzu, nie w zbiorczym summary
   }
   orphanedAnchors[]  // id z previousAnchors nieobecne w tej wersji (3.4)
+  changedAnchors[]   // data-cmt-id rozne od RODZICA wersji (5.2) — liczy silnik,
+                     // po znormalizowanym outerHtml, nie po samym tekscie
   totalCostUsd       // suma total_cost_usd, NIE tokeny jednego modelu
   permissionDenials[]
 }

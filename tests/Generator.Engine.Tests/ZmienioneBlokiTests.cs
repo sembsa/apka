@@ -1,7 +1,7 @@
-using Generator.Web.Preview;
+using Generator.Engine.Versioning;
 using Xunit;
 
-namespace Generator.Web.Tests;
+namespace Generator.Engine.Tests;
 
 /// <summary>
 /// Kontrakt 5.3: porownujemy per `data-cmt-id`, po znormalizowanym outerHtml.
@@ -78,5 +78,36 @@ public class ZmienioneBlokiTests
         var dziecko = Strona("<div>calkiem inny tekst</div>");
 
         Assert.Empty(await ZmienioneBloki.Policz(rodzic, dziecko));
+    }
+
+    [Fact]
+    public async Task Porownanie_snapshotow_bierze_index_html_z_obu_katalogow()
+    {
+        var katalog = Path.Combine(Path.GetTempPath(), "gen-zb-" + Guid.NewGuid().ToString("N"));
+        var rodzic = Path.Combine(katalog, "v1");
+        var dziecko = Path.Combine(katalog, "v2");
+        Directory.CreateDirectory(rodzic);
+        Directory.CreateDirectory(dziecko);
+        File.WriteAllText(Path.Combine(rodzic, "index.html"),
+            """<html><body><h1 data-cmt-id="hero">A</h1></body></html>""");
+        File.WriteAllText(Path.Combine(dziecko, "index.html"),
+            """<html><body><h1 data-cmt-id="hero">B</h1></body></html>""");
+
+        try
+        {
+            Assert.Equal(["hero"], await ZmienioneBloki.PoliczZeSnapshotow(rodzic, dziecko));
+
+            // Brak rodzica (pierwsza wersja) to pusta lista, nie wyjatek.
+            Assert.Empty(await ZmienioneBloki.PoliczZeSnapshotow(null, dziecko));
+
+            // Katalog rodzica USUNIETY recznie: tez pusta lista. Klient ogladajacy
+            // wlasna strone nie moze dostac 500 dlatego, ze ktos posprzatal dysk.
+            Assert.Empty(await ZmienioneBloki.PoliczZeSnapshotow(
+                Path.Combine(katalog, "nie-ma"), dziecko));
+        }
+        finally
+        {
+            Directory.Delete(katalog, recursive: true);
+        }
     }
 }

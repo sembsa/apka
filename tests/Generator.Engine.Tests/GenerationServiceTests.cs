@@ -743,6 +743,30 @@ public class GenerationServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ChangedAnchors_porownuje_z_RODZICEM_a_nie_z_poprzednim_numerem()
+    {
+        var (meta, store, versions) = Setup();
+        var runner = new ScriptedRunner(
+            (Json("s-1", 0.10m, "ok"), WritePage("""<p data-cmt-id="hero">A</p>""")),
+            (Json("s-1", 0.10m, "ok"), WritePage("""<p data-cmt-id="hero">B</p>""")),
+            (Json("s-9", 0.10m, "ok"), WritePage("""<p data-cmt-id="hero">A</p>""")));
+
+        var svc = new GenerationService(runner, store, versions);
+        await svc.RunRoundAsync(meta, [C("c1", null, "raz")]);
+        await svc.RunRoundAsync(store.Load(), [C("c2", null, "dwa")]);
+        store.Save(store.Load() with { CurrentVersion = 1 });
+
+        var v3 = (await svc.RunRoundAsync(store.Load(), [C("c3", null, "trzy")])).Version!;
+
+        // v3 ma tresc IDENTYCZNA z v1 (swoim rodzicem) i rozna od v2. Porownanie
+        // z v2 daloby ["hero"] i podswietlilo klientowi blok, ktory sie nie zmienil.
+        Assert.Empty(v3.ChangedAnchors!);
+
+        var v2 = store.Load().Versions.First(v => v.Number == 2);
+        Assert.Equal(["hero"], v2.ChangedAnchors!);
+    }
+
+    [Fact]
     public async Task Nieudana_runda_po_powrocie_przywraca_WorkDir_do_v1_a_nie_do_v2()
     {
         // Kontrakt 4.4: nieudana runda to dla klienta BRAK ZDARZENIA. Po powrocie

@@ -23,7 +23,7 @@ public class VersionStoreTests : IDisposable
         Directory.CreateDirectory(Path.Combine(store.WorkDir, "img"));
         File.WriteAllText(Path.Combine(store.WorkDir, "img", "logo.png"), "x");
 
-        var meta = store.Commit(1, "s-1", 0.42m, [], null);
+        var meta = store.Commit(1, "s-1", 0.42m, [], null, []);
 
         Assert.Equal(1, meta.Number);
         Assert.True(File.Exists(Path.Combine(meta.SnapshotDir, "index.html")));
@@ -37,7 +37,7 @@ public class VersionStoreTests : IDisposable
         // Decyzja 5: nowa wersja powstaje OBOK, poprzednia zostaje nietknieta.
         var store = NewStore();
         File.WriteAllText(Path.Combine(store.WorkDir, "index.html"), "wersja 1");
-        var v1 = store.Commit(1, "s-1", 0.1m, [], null);
+        var v1 = store.Commit(1, "s-1", 0.1m, [], null, []);
 
         File.WriteAllText(Path.Combine(store.WorkDir, "index.html"), "wersja 2");
 
@@ -50,7 +50,7 @@ public class VersionStoreTests : IDisposable
         var store = NewStore();
         File.WriteAllText(Path.Combine(store.WorkDir, "index.html"), "<html></html>");
 
-        var meta = store.Commit(3, "s-3", 0.2m, ["cennik", "opinia-anna-k"], null);
+        var meta = store.Commit(3, "s-3", 0.2m, ["cennik", "opinia-anna-k"], null, []);
 
         Assert.Equal(["cennik", "opinia-anna-k"], meta.OrphanedAnchors);
     }
@@ -60,10 +60,10 @@ public class VersionStoreTests : IDisposable
     {
         var store = NewStore();
         File.WriteAllText(Path.Combine(store.WorkDir, "index.html"), "a");
-        store.Commit(1, "s-1", 0.1m, [], null);
+        store.Commit(1, "s-1", 0.1m, [], null, []);
         File.WriteAllText(Path.Combine(store.WorkDir, "index.html"), "b");
 
-        var again = store.Commit(1, "s-1", 0.1m, [], null);
+        var again = store.Commit(1, "s-1", 0.1m, [], null, []);
 
         Assert.Equal("b", File.ReadAllText(Path.Combine(again.SnapshotDir, "index.html")));
     }
@@ -74,7 +74,7 @@ public class VersionStoreTests : IDisposable
         var store = new VersionStore(_project);
         // Nie tworzymy WorkDir - testujemy nieistniejący katalog roboczy
 
-        var meta = store.Commit(1, "s-1", 0.1m, [], null);
+        var meta = store.Commit(1, "s-1", 0.1m, [], null, []);
 
         Assert.True(Directory.Exists(meta.SnapshotDir));
         Assert.Empty(Directory.EnumerateFiles(meta.SnapshotDir));
@@ -92,7 +92,7 @@ public class VersionStoreTests : IDisposable
         File.WriteAllText(Path.Combine(store.WorkDir, "style.css"), "body { }");
         Directory.CreateDirectory(Path.Combine(store.WorkDir, "assets"));
         File.WriteAllText(Path.Combine(store.WorkDir, "assets", "logo.png"), "data");
-        var v1 = store.Commit(1, "s-1", 0.1m, [], null);
+        var v1 = store.Commit(1, "s-1", 0.1m, [], null, []);
 
         // Czyszczenie i druga próba: inny zestaw plików
         File.Delete(Path.Combine(store.WorkDir, "index.html"));
@@ -100,7 +100,7 @@ public class VersionStoreTests : IDisposable
         Directory.Delete(Path.Combine(store.WorkDir, "assets"), recursive: true);
         File.WriteAllText(Path.Combine(store.WorkDir, "new.html"), "v2");
 
-        var v2 = store.Commit(1, "s-1", 0.2m, [], null);
+        var v2 = store.Commit(1, "s-1", 0.2m, [], null, []);
 
         // Snapshot powinien zawierać TYLKO pliki z drugiej próby
         Assert.True(File.Exists(Path.Combine(v2.SnapshotDir, "new.html")));
@@ -117,7 +117,7 @@ public class VersionStoreTests : IDisposable
         // wlacznie z odrzuceniem plikow, ktorych snapshot nie ma.
         var store = NewStore();
         File.WriteAllText(Path.Combine(store.WorkDir, "index.html"), "wersja 1");
-        var v1 = store.Commit(1, "s-1", 0.1m, [], null);
+        var v1 = store.Commit(1, "s-1", 0.1m, [], null, []);
 
         File.WriteAllText(Path.Combine(store.WorkDir, "index.html"), "wersja 2, zepsuta");
         File.WriteAllText(Path.Combine(store.WorkDir, "smiec.txt"), "nie powinno przetrwac przywrocenia");

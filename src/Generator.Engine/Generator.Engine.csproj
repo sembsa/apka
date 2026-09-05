@@ -5,4 +5,8 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="AngleSharp" Version="1.7.3" />
+  </ItemGroup>
+
 </Project>

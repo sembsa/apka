@@ -240,8 +240,15 @@ public partial class GenerationService(IClaudeRunner runner, ProjectStore projec
                 }
             }
 
+            // Liczymy PRZED Commit, na WorkDir kontra snapshot rodzica: po Commit
+            // snapshot dziecka i WorkDir sa identyczne, wiec kolejnosc nie zmienia
+            // wyniku — ale liczenie z WorkDir nie wymaga, zeby Commit sie powiodl.
+            var changed = await ZmienioneBloki.PoliczZeSnapshotow(
+                meta.Current?.SnapshotDir, versions.WorkDir);
+
             var number = meta.NextVersionNumber;
-            var version = versions.Commit(number, sessionId, spent, orphaned, basedOn: meta.Current?.Number);
+            var version = versions.Commit(number, sessionId, spent, orphaned,
+                basedOn: meta.Current?.Number, changedAnchors: changed);
 
             var updated = ProjectStore.WithRoundConsumed(ProjectStore.WithSpend(meta, spent)) with
             {

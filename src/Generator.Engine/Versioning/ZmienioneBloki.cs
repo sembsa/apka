@@ -1,8 +1,13 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Text;
+using System.Threading.Tasks;
 using AngleSharp;
 using AngleSharp.Dom;
 
-namespace Generator.Web.Preview;
+namespace Generator.Engine.Versioning;
 
 /// <summary>
 /// Liczy, ktore bloki (`data-cmt-id`) roznia sie miedzy wersja a jej RODZICEM.
@@ -29,6 +34,25 @@ public static class ZmienioneBloki
             .Where(b => !rodzic.TryGetValue(b.Key, out var przed) || przed != b.Value)
             .Select(b => b.Key)
             .Order(StringComparer.Ordinal)];
+    }
+
+    /// Wariant dla silnika: dwa KATALOGI snapshotow zamiast dwoch stringow.
+    /// Brak rodzica (pierwsza wersja) i brak jego katalogu na dysku daja to samo —
+    /// pusta liste. Nie ma z czym porownac, wiec nie ma czego podswietlic.
+    public static async Task<IReadOnlyList<string>> PoliczZeSnapshotow(
+        string? katalogRodzica, string katalogWersji)
+    {
+        var plikWersji = Path.Combine(katalogWersji, "index.html");
+        if (!File.Exists(plikWersji)) return [];
+
+        string? htmlRodzica = null;
+        if (katalogRodzica is not null)
+        {
+            var plikRodzica = Path.Combine(katalogRodzica, "index.html");
+            if (File.Exists(plikRodzica)) htmlRodzica = await File.ReadAllTextAsync(plikRodzica);
+        }
+
+        return await Policz(htmlRodzica, await File.ReadAllTextAsync(plikWersji));
     }
 
     private static async Task<Dictionary<string, string>> Bloki(string html)
