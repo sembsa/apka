@@ -62,6 +62,13 @@ else
 
     private async Task Choose(string proposalId)
     {
+        // Straz na dwuklik. Atrapa przyjmowala drugi wybor obojetnie, prawdziwe
+        // ProjectApi rzuca JobRunningException — a wyjatek z uchwytu zdarzenia
+        // Blazora konczy obwod i klient dostaje pasek „polaczenie zerwane".
+        // Ustawiane SYNCHRONICZNIE, przed pierwszym await: po nim jest juz za pozno.
+        if (_buduje) return;
+        _buduje = true;
+
         await Api.ChooseProposalAsync(ProjectId, proposalId);
 
         // Wersja 1 to OSOBNE zadanie, nie skutek uboczny wyboru (IProjectApi.
@@ -69,7 +76,6 @@ else
         // nie — bo generacja trwa minuty. Bez tego wywolania edytor otwieral sie
         // z pusta lista wersji: klient nie mial w co kliknac, czyli produkt nie istnial.
         // Testy komponentow tego nie widza, bo chodza po atrapie.
-        _buduje = true;
         var udalo = await Poczekaj(await Api.CreateFirstVersionAsync(ProjectId));
         _buduje = false;
         if (!udalo) return;
