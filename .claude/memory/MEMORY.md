@@ -7,3 +7,4 @@ Treść pamięci NIGDY nie trafia tutaj — tylko wskaźnik `- [Tytuł](plik.md)
 - [Pamięć współdzielona przez git](project-apka-pamiec-wspoldzielona-git.md) — pamięć leży w repo `.claude/memory`, symlink z ~/.claude
 - [Druga osoba pracuje na Windows](project-apka-druga-osoba-na-windows.md) — Git Bash, skrypty w repo muszą być cross-platform
 - [Sprzeczne decyzje w parze](feedback-sprzeczne-decyzje-rozstrzyga-sebastian.md) — oznacz spór w dokumencie, podaj bilans i zapytaj swojego użytkownika; nie wybieraj sam
+- [Serwer dev i pusty CSS](project-apka-serwer-dev-css.md) — bez ASPNETCORE_ENVIRONMENT=Development /app.css ma 0 bajtow dla przeglądarki
