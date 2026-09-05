@@ -3,6 +3,7 @@ using Generator.Web.Components.Pages;
 using Generator.Web.Api;
 using Generator.Web.Contracts;
 using Generator.Web.Mock;
+using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -171,6 +172,55 @@ public class ProposalsPageTests : BunitContext
     /// zadanie w chwili jego powstania, wiec kod czekajacy na wynik i kod, ktory
     /// wcale nie czeka, wygladaja na niej identycznie.
     /// </summary>
+    [Fact]
+    public async Task Klient_z_gotowa_strona_wraca_do_edytora_zamiast_w_slepy_zaulek()
+    {
+        // Powrot strzalka „wstecz" z edytora. Szkice nadal leza na dysku, wiec strona
+        // pokazywala wybor; klik po cichu nadpisywal wybrany kierunek, a
+        // CreateFirstVersionAsync odmawiala. Klient zostawal z czerwonym zdaniem
+        // i BEZ DROGI POWROTU — MainLayout nie ma nawigacji, a tu nie ma linku.
+        // Atrapa tego nie pokazywala, bo jej odpowiedniki nie maja strazy.
+        var atrapa = new MockProjectApi { SimulatedDelay = TimeSpan.Zero };
+        var szpieg = new Szpieg(atrapa);
+        Services.AddSingleton<IProjectApi>(szpieg);
+
+        var p = await atrapa.CreateAsync("idea", "Fryzjer");
+        await atrapa.ChooseProposalAsync(p.Id, "a");     // atrapa tworzy tu wersje 1
+
+        Render<Proposals>(ps => ps.Add(x => x.ProjectId, p.Id));
+
+        var nav = Services.GetRequiredService<NavigationManager>();
+        Assert.Contains($"/editor/{p.Id}", nav.Uri);
+
+        // I ani grosza: zadne zamowienie nie poszlo.
+        Assert.DoesNotContain(nameof(IProjectApi.RequestProposalsAsync), szpieg.Wywolania);
+    }
+
+    [Fact]
+    public async Task Niepelny_komplet_szkicow_strona_zamawia_ponownie()
+    {
+        // Silnik potrafi zwrocic zadanie nieudane, ktore zapisalo 2 z 3 szkicow.
+        // Gdyby strona uznala dwie karty za komplet, klient wybieralby z dwoch
+        // i nigdy nie dostal trzeciej — a straz po stronie API by tego nie uratowala,
+        // bo strona w ogole by jej nie zapytala.
+        var atrapa = new MockProjectApi { SimulatedDelay = TimeSpan.Zero };
+        var szpieg = new Szpieg(atrapa) { IleSzkicow = 2 };
+        Services.AddSingleton<IProjectApi>(szpieg);
+
+        var p = await atrapa.CreateAsync("idea", "Fryzjer");
+
+        // Szkice MUSZA juz istniec w atrapie, zanim strona zapyta — inaczej pierwszy
+        // odczyt oddaje zero, oba warunki (`== 3` i `> 0`) sa falszywe, strona zamawia
+        // i test przechodzi niezaleznie od tego, ktory z nich jest w kodzie.
+        // Tak wlasnie napisalem go za pierwszym razem i mutacja przezyla.
+        await atrapa.RequestProposalsAsync(p.Id);
+        szpieg.Wywolania.Clear();
+
+        Render<Proposals>(ps => ps.Add(x => x.ProjectId, p.Id));
+
+        Assert.Contains(nameof(IProjectApi.RequestProposalsAsync), szpieg.Wywolania);
+    }
+
     private sealed class Szpieg(MockProjectApi atrapa) : IProjectApi
     {
         public List<string> Wywolania { get; } = [];
@@ -193,10 +243,17 @@ public class ProposalsPageTests : BunitContext
             return atrapa.RequestProposalsAsync(id);
         }
 
-        public Task<IReadOnlyList<ProposalView>> GetProposalsAsync(string id)
+        /// Ile szkicow oddac zamiast tego, co ma atrapa. Atrapa umie tylko 0 albo 3,
+        /// wiec stanu „2 z 3" — czyli zadania, ktore zapisalo niepelny komplet —
+        /// nie da sie bez tego odtworzyc. A to wlasnie ten stan rozstrzyga, czy strona
+        /// liczy komplet, czy „cokolwiek".
+        public int? IleSzkicow { get; set; }
+
+        public async Task<IReadOnlyList<ProposalView>> GetProposalsAsync(string id)
         {
             Wywolania.Add(nameof(GetProposalsAsync));
-            return atrapa.GetProposalsAsync(id);
+            var wszystkie = await atrapa.GetProposalsAsync(id);
+            return IleSzkicow is int ile ? [.. wszystkie.Take(ile)] : wszystkie;
         }
 
         public Task ChooseProposalAsync(string id, string proposalId)

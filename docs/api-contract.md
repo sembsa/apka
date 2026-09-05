@@ -26,7 +26,7 @@ a `GET /api/jobs/{id}` zostaje dla klientów poza naszym UI.
 |---|---|---|
 | `POST` | `/api/projects` | `201` + `projectId`, `token` (dostęp bez konta — decyzja 3) |
 | `GET` | `/api/projects/{id}` | stan projektu (w tym `frozen`), `roundsUsed`/`roundsLimit`, lista wersji, aktualna wersja |
-| `POST` | `/api/projects/{id}/proposals` | `202` + `jobId` — generacja 3 propozycji |
+| `POST` | `/api/projects/{id}/proposals` | `202` + `jobId` — generacja 3 propozycji; `409`, gdy komplet szkiców już jest albo projekt ma wersję (patrz 6.4) |
 | `POST` | `/api/projects/{id}/proposals/{proposalId}/choose` | `200` — wybór klienta |
 | `POST` | `/api/projects/{id}/versions` | `202` + `jobId` — wersja 1 z wybranej propozycji |
 | `POST` | `/api/projects/{id}/versions/{n}/comments/apply` | `202` + `jobId` — runda komentarzy; `409`, gdy projekt `frozen` (4.5) |
@@ -495,3 +495,14 @@ faktycznie trafia do logu.
 Czyli kod jest zgodny z 4.3, a niezgodny z tabelą w 1. Do poprawienia jest **tabela**
 — zapisuję to jako rzecz do zrobienia, a nie zrobioną, żeby ktoś czytający sekcję 1
 nie budował na `cause`, którego nie dostanie.
+
+### 6.4 `POST .../proposals` odmawia teraz 409 — odnotowane, nie sporne
+
+Trasa oddaje `409` w dwóch nowych sytuacjach: projekt ma już komplet szkiców, albo ma
+już wersję. Powód jest kosztowy, nie porządkowy: bez tych straży każde wejście na
+`/proposals/{id}` — a klient wraca tam strzałką „wstecz" zupełnie normalnie —
+zamawiało nowy komplet za około pół dolara i zerowało `ChosenProposal`.
+
+Wpisuję to jako **odnotowane**, nie do rozstrzygnięcia: 409 przy `frozen` na tej trasie
+i tak wynikał z 4.5, a te dwie straże są tego samego rodzaju. Jeśli uważasz inaczej,
+to zdanie jest do zmiany jak każde inne.

@@ -70,12 +70,16 @@ else if (_kolizja is null)
     /// a nie awaria aplikacji. Szerzej niz cztery typy z `Editor`, bo tutaj docieraja
     /// takze straze rzucajace GOLYM `InvalidOperationException` (drugi komplet szkicow,
     /// druga wersja pierwsza) — a `ProjectFrozenException`, `StaleVersionException`
-    /// i `JobRunningException` i tak po nim dziedzicza. To ta sama granica, ktora
-    /// `ApiEndpoints.Zamien` mapuje na 409, a nie na 500.
+    /// i `JobRunningException` i tak po nim dziedzicza. Odpowiada to granicy, ktora
+    /// `ApiEndpoints.Zamien` mapuje na 409 — z jednym wyjatkiem, patrz nizej.
     ///
-    /// Cena: lapiemy tez `ObjectDisposedException` z zamykanej kolejki. Przy zamykaniu
-    /// procesu klient i tak nie doczeka sie odpowiedzi, a zerwany obwod nie powie mu
-    /// o tym nic madrzejszego niz to zdanie.
+    /// Cena: lapiemy tez `ObjectDisposedException` z zamykanej kolejki (dziedziczy po
+    /// `InvalidOperationException`), ktora `Zamien` mapuje osobno na 503, nie 409.
+    /// Przy zamykaniu procesu klient i tak nie doczeka sie odpowiedzi, a zerwany obwod
+    /// nie powie mu nic madrzejszego niz to zdanie. Szersza cena jest realniejsza:
+    /// KAZDY programistyczny `InvalidOperationException` pokaze sie tu klientowi jako
+    /// „Twoja strona jest juz gotowa" — do zawezenia, gdy straze zamawiania dostana
+    /// wlasne typy wyjatkow.
     /// </summary>
     private static bool Kolizja(Exception ex) => ex is InvalidOperationException or KeyNotFoundException;
 
@@ -120,6 +124,22 @@ else if (_kolizja is null)
     {
         try
         {
+            // NAJPIERW: czy klient ma juz gotowa strone? Jesli tak, ta strona nie ma mu
+            // nic do zaoferowania — wybor kierunku jest za nim. Bez tego powrot strzalka
+            // „wstecz" konczyl sie slepym zaulkiem: szkice nadal leza na dysku, wiec
+            // strona pokazywala wybor, klik po cichu nadpisywal `ChosenProposal`,
+            // `CreateFirstVersionAsync` odmawiala, a klient zostawal z czerwonym zdaniem
+            // i BEZ ZADNEJ DROGI POWROTU do wlasnej, oplaconej strony — `MainLayout`
+            // nie ma nawigacji, a na tej stronie nie ma ani jednego linku.
+            // Atrapa tego nie pokazywala: jej `ChooseProposalAsync` i
+            // `CreateFirstVersionAsync` nie maja strazy, wiec ten sam przeplyw
+            // konczyl sie w edytorze i test byl zielony.
+            if ((await Api.GetAsync(ProjectId)).Versions.Count > 0)
+            {
+                Nav.NavigateTo($"/editor/{ProjectId}");
+                return;
+            }
+
             var istniejace = await Api.GetProposalsAsync(ProjectId);
             if (istniejace.Count == Komplet)
             {
