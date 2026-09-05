@@ -29,6 +29,52 @@ public class ClaudeRunner(string executable, IReadOnlyList<string>? prefixArgs =
         "Generujesz TRZY szkice kierunku, kazdy jako jeden samodzielny plik HTML " +
         "ze stylami w <style>. Bez frameworkow. Nie dodawaj atrybutow data-cmt-id.";
 
+    /// <summary>
+    /// Rozwija nazwe polecenia do pelnej sciezki pliku wykonywalnego.
+    ///
+    /// POWOD, zmierzony: na Windows `claude` z npm to trzy pliki — `claude` (skrypt sh),
+    /// `claude.cmd` i `claude.ps1`. `Process.Start` z `UseShellExecute = false` NIE
+    /// stosuje PATHEXT, wiec szuka pliku dokladnie „claude", znajduje skrypt sh i nie
+    /// umie go uruchomic: „An error occurred trying to start process 'claude'".
+    /// Silnik byl wiec nieuruchamialny na Windows, a pracujemy na nim oboje — wyszlo
+    /// dopiero przy pierwszej probie przejscia sciezki na prawdziwym CLI.
+    ///
+    /// Na Linuksie i macOS PATHEXT nie istnieje, petla robi jeden obrot z pustym
+    /// rozszerzeniem i wynik jest taki jak dotad.
+    /// </summary>
+    public static string Znajdz(
+        string polecenie, string? path, string? pathext, Func<string, bool> istnieje)
+    {
+        // Sciezka podana wprost (albo atrapa „dotnet") — nie zgadujemy.
+        if (polecenie.Contains(Path.DirectorySeparatorChar) ||
+            polecenie.Contains(Path.AltDirectorySeparatorChar) ||
+            istnieje(polecenie))
+            return polecenie;
+
+        var rozszerzenia = string.IsNullOrEmpty(pathext)
+            ? [""]
+            : pathext.Split(';', StringSplitOptions.RemoveEmptyEntries);
+
+        foreach (var katalog in (path ?? "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+        {
+            foreach (var ext in rozszerzenia)
+            {
+                var kandydat = Path.Combine(katalog.Trim(), polecenie + ext);
+                if (istnieje(kandydat)) return kandydat;
+            }
+        }
+
+        // Nic nie znaleziono: oddajemy oryginal, zeby komunikat bledu zostal ten,
+        // ktory czlowiek rozumie („nie ma claude w PATH"), a nie nasz wymysl.
+        return polecenie;
+    }
+
+    private static string Znajdz(string polecenie) => Znajdz(
+        polecenie,
+        Environment.GetEnvironmentVariable("PATH"),
+        Environment.GetEnvironmentVariable("PATHEXT"),
+        File.Exists);
+
     public static IReadOnlyList<string> BuildArguments(ClaudeRunRequest r, bool useBare)
     {
         var args = new List<string>
@@ -60,7 +106,7 @@ public class ClaudeRunner(string executable, IReadOnlyList<string>? prefixArgs =
         // --bare tylko z kluczem: bez niego konczy sie exit 1 i pustym stdout.
         var useBare = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY"));
 
-        var psi = new ProcessStartInfo(executable)
+        var psi = new ProcessStartInfo(Znajdz(executable))
         {
             WorkingDirectory = request.WorkspaceDir,
             RedirectStandardOutput = true,

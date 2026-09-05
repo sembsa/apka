@@ -123,3 +123,75 @@ wywołania po `Choose` w moich plikach testowych.
 
 **Co z tego zostaje dla Ciebie:** tylko data wersji z 6.2 (`VersionMeta` + propagacja)
 i flaky `Nieudana_runda_przywraca_workdir…`.
+
+---
+
+# PILNE: silnik nie działa na Windows. Dwie przyczyny, jedna naprawiona
+
+Przemek kazał przejść ścieżkę klienta na **prawdziwym** `claude`. Nie doszło do rundy —
+padło na propozycjach. Wygląda na to, że **nikt nigdy nie uruchomił silnika z prawdziwym
+CLI**: 175 zielonych testów silnika chodzi po `FakeClaude`, a `Projects:UseMock` omija
+silnik w całości.
+
+## A. `Process.Start` nie znajduje `claude` — NAPRAWIONE
+
+`claude` z npm to na Windows trzy pliki: `claude` (skrypt sh), `claude.cmd`, `claude.ps1`.
+`Process.Start` z `UseShellExecute = false` **nie stosuje PATHEXT**, więc szukał pliku
+dokładnie „claude", trafiał w skrypt sh i kończył:
+
+```
+cause=proces nie wystartowal: An error occurred trying to start process 'claude'
+```
+
+Dodałem `ClaudeRunner.Znajdz(...)`: rozwija nazwę do pełnej ścieżki po PATH × PATHEXT,
+ścieżki podanej wprost nie tyka (atrapa `dotnet` działa jak dotąd), a gdy nic nie znajdzie
+oddaje oryginał, żeby komunikat został zrozumiały. Sześć testów, `Znajdz` publiczne —
+spójnie z `BuildArguments`. **Ruszyłem Twój plik**, bo bez tego nie ma jak niczego zmierzyć.
+
+## B. Wieloliniowy prompt ginie w `cmd.exe` — NIE naprawiam, to Twój rdzeń
+
+Po poprawce A `claude` **wystartował**, pracował 275 s i zapisał `a.html`, `b.html`,
+`c.html`. Zadanie i tak `failed`:
+
+```
+cause=brak JSON na stdout (exit 0):
+```
+
+Przyczyna, potwierdzona osobnym wywołaniem obok aplikacji: `.cmd` uruchamiany przez
+`CreateProcess` idzie przez `cmd.exe`, a `cmd.exe` **urywa polecenie na pierwszym znaku
+nowej linii**. `PromptBuilder` składa prompt przez `AppendLine`, więc:
+
+- na stdout wychodzi **proza, nie JSON** — `--output-format json` nigdy nie dociera
+- model dostaje **tylko pierwszą linię** instrukcji
+
+Dowód (ten sam zestaw flag, prompt trzyliniowy, `claude.cmd` wołany wprost):
+
+```
+stdout: "Utworzyłem ...wielolinia.txt z trzema liniami, bo nie podałeś treści."
+        198 bajtów prozy zamiast JSON-a
+```
+
+Jednolinijkowy prompt przez `claude.cmd` oddaje JSON poprawnie (`total_cost_usd`
+0.0344) — czyli flagi i `.cmd` są w porządku, psuje się **wieloliniowy argument**.
+
+Skutek jest gorszy niż brak raportu: na Windows model pracuje z **innym promptem niż
+napisaliśmy** — bez opisu klienta, bez wymogu `<title>`, bez zakazu `data-cmt-id`.
+Twoje straże w §2 tego nie wyłapią, bo one czytają JSON, którego nie ma.
+
+**Nie ruszam tego sam**, bo naprawa dotyka rdzenia Twojej warstwy i `FakeClaude`:
+prompt musiałby iść **przez stdin** (`claude` czyta stdin — jego własne ostrzeżenie
+„no stdin data received in 3s" to potwierdza) zamiast argumentem. To zmiana w
+`BuildArguments`, w zamykaniu stdin i w atrapie, która dziś czyta argumenty.
+Alternatywa: uruchamiać `node <cli.js>` bezpośrednio, co omija `cmd.exe`, ale zaszywa
+szczegół instalacji npm.
+
+## Zmierzone przy okazji — pierwsze realne liczby do §4.2
+
+- **propozycje: 275 s** (jedno wywołanie modelu, `claude-opus-5`)
+- koszt jednego krótkiego wywołania z pełnym zestawem flag: **$0,034**
+- `ANTHROPIC_API_KEY` nie jest u mnie ustawiony, więc idzie przez subskrypcję i `--bare`
+  nie leci; `total_cost_usd` nadal podaje wycenę
+
+Kosztu propozycji **nie mamy**, bo JSON nie wrócił — dostaniemy go dopiero po naprawie B.
+275 s to za to twarda liczba i jest istotna dla UI: `Proposals` czeka w pętli, a klient
+patrzy w „Przygotowuję trzy propozycje…" prawie pięć minut.
