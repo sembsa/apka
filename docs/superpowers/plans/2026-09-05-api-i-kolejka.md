@@ -2556,6 +2556,13 @@ public static class ApiEndpoints
     /// ktorej nasze wlasne UI nie przestrzega.
     public static void MapApi(this WebApplication app)
     {
+        // `{id:guid}` na KAZDEJ trasie z projektem. `ProjectPaths.Dir(id)` to
+        // `Path.Combine(root, id)` bez zadnej walidacji, a `ChooseProposalAsync`
+        // i `RollbackAsync` pod ta sciezka ZAPISUJA. Wykonawca Zadania 5 zamknal
+        // biala lista `proposalId`, bo „idzie prosto z URL-a" — o `id` jest to samo
+        // prawdziwe. Ograniczenie trasy jest tansze i pewniejsze niz walidacja
+        // w kazdej metodzie z osobna: trasa, ktora nie pasuje, daje 404 i nigdy
+        // nie dochodzi do sklejania sciezki.
         var grupa = app.MapGroup("/api");
 
         grupa.MapPost("/projects", async (NowyProjekt body, IProjectApi api) =>
@@ -2564,17 +2571,17 @@ public static class ApiEndpoints
             return Results.Created($"/api/projects/{p.Id}", p);
         });
 
-        grupa.MapGet("/projects/{id}", (string id, IProjectApi api, HttpContext ctx) =>
+        grupa.MapGet("/projects/{id:guid}", (string id, IProjectApi api, HttpContext ctx) =>
             Chroniony(id, api, ctx, async p => Results.Ok(p)));
 
-        grupa.MapPost("/projects/{id}/proposals", (string id, IProjectApi api, HttpContext ctx) =>
+        grupa.MapPost("/projects/{id:guid}/proposals", (string id, IProjectApi api, HttpContext ctx) =>
             Chroniony(id, api, ctx, async _ =>
                 Results.Accepted(value: new { jobId = await api.RequestProposalsAsync(id) })));
 
-        grupa.MapGet("/projects/{id}/proposals", (string id, IProjectApi api, HttpContext ctx) =>
+        grupa.MapGet("/projects/{id:guid}/proposals", (string id, IProjectApi api, HttpContext ctx) =>
             Chroniony(id, api, ctx, async _ => Results.Ok(await api.GetProposalsAsync(id))));
 
-        grupa.MapPost("/projects/{id}/proposals/{proposalId}/choose",
+        grupa.MapPost("/projects/{id:guid}/proposals/{proposalId}/choose",
             (string id, string proposalId, IProjectApi api, HttpContext ctx) =>
                 Chroniony(id, api, ctx, async _ =>
                 {
@@ -2582,23 +2589,23 @@ public static class ApiEndpoints
                     return Results.Ok();
                 }));
 
-        grupa.MapPost("/projects/{id}/versions", (string id, IProjectApi api, HttpContext ctx) =>
+        grupa.MapPost("/projects/{id:guid}/versions", (string id, IProjectApi api, HttpContext ctx) =>
             Chroniony(id, api, ctx, async _ =>
                 Results.Accepted(value: new { jobId = await api.CreateFirstVersionAsync(id) })));
 
-        grupa.MapGet("/projects/{id}/versions", (string id, IProjectApi api, HttpContext ctx) =>
+        grupa.MapGet("/projects/{id:guid}/versions", (string id, IProjectApi api, HttpContext ctx) =>
             Chroniony(id, api, ctx, async p => Results.Ok(p.Versions)));
 
-        grupa.MapPost("/projects/{id}/versions/{n:int}/comments/apply",
+        grupa.MapPost("/projects/{id:guid}/versions/{n:int}/comments/apply",
             (string id, int n, CommentDto[] uwagi, IProjectApi api, HttpContext ctx) =>
                 Chroniony(id, api, ctx, async _ =>
                     Results.Accepted(value: new { jobId = await api.ApplyCommentsAsync(id, n, uwagi) })));
 
-        grupa.MapGet("/projects/{id}/versions/{n:int}/comments",
+        grupa.MapGet("/projects/{id:guid}/versions/{n:int}/comments",
             (string id, int n, IProjectApi api, HttpContext ctx) =>
                 Chroniony(id, api, ctx, async _ => Results.Ok(await api.GetCommentsAsync(id, n))));
 
-        grupa.MapPost("/projects/{id}/rollback/{n:int}",
+        grupa.MapPost("/projects/{id:guid}/rollback/{n:int}",
             (string id, int n, IProjectApi api, HttpContext ctx) =>
                 Chroniony(id, api, ctx, async _ =>
                 {
@@ -2606,7 +2613,7 @@ public static class ApiEndpoints
                     return Results.Ok();
                 }));
 
-        grupa.MapGet("/projects/{id}/versions/{n:int}/zip",
+        grupa.MapGet("/projects/{id:guid}/versions/{n:int}/zip",
             (string id, int n, IProjectApi api, ProjectPaths paths, HttpContext ctx) =>
                 Chroniony(id, api, ctx, _ =>
                 {

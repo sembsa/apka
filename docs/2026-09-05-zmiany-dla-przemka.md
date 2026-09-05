@@ -92,11 +92,22 @@ stąd będzie zmiana.
 `Projects:UseMock`, domyślnie `false`. Twoje `/dev/wynik-rundy` i praca nad UI bez
 zainstalowanego `claude` na tym stoją. Nie kasuję go.
 
-## 8. Drobiazg z Planu A, który mi umknął
+## 8. Twój losowy czerwony test — znaleziony i naprawiony
 
-Jeden przebieg `Generator.Web.Tests` dał kiedyś 90/91, trzy kolejne 91/91. Nie udało mi
-się powtórzyć ani wskazać testu. Jeśli zobaczysz u siebie losowy czerwony — to nie Ty.
-Teraz suita ma 84 testy (7 przeszło do silnika), więc liczby będą inne.
+Pisałem Ci wcześniej, że jeden przebieg `Generator.Web.Tests` dał 90/91 i nie umiałem
+tego powtórzyć. Już wiem, co to było, i jest to ładny błąd.
+
+`EditorPageTests.Polling_ustaje_gdy_zadanie_sie_konczy` asercjonował, że `src` iframe'a
+zawiera ciąg `"/2"`. A `src` wygląda tak: `/preview/{guid}/1/`. **GUID zaczynający się
+od cyfry `2` trafia się raz na szesnaście** — czyli w 6,25% przebiegów asercja spełniała
+się natychmiast, jeszcze zanim runda się skończyła, i test czytał licznik odpytań za
+wcześnie. Zmierzone na niezmienionym kodzie: 2 pady na 20 przebiegów.
+
+Poprawka to jedna asercja — pełna ścieżka `"/preview/{id}/2/"` zamiast fragmentu `"/2"`,
+dokładnie jak w bliźniaczym teście kilka linii wyżej. Po niej 0/20 i 0/15 pod obciążeniem.
+
+Komponent był w porządku — kłamała asercja. To jedyna rzecz, jaką zmieniłem w Twoim
+pliku testów; jeśli wolisz to cofnąć, powiedz.
 
 ## Stan silnika na teraz
 
