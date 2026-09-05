@@ -36,6 +36,15 @@ main, .strona {
 }
 
 h1 { font-size: 1.6rem; margin: 0 0 1.25rem; letter-spacing: -0.01em; }
+
+/* `Routes.razor` ma <FocusOnNavigate Selector="h1">, wiec po KAZDEJ nawigacji Blazor
+   ustawia fokus na naglowku — po to, zeby czytnik ekranu przeczytal, gdzie klient
+   trafil. Skutek uboczny: przegladarka rysuje wokol naglowka ramke fokusa, ktora
+   przy zwyklym klikaniu wyglada jak blad. Naglowek nie jest interaktywny, wiec
+   ramka nic tu nie komunikuje — sam fokus (a z nim odczyt) zostaje.
+   Szablon Blazora mial ta regule; skasowalem ja jako „martwa" przy przepisywaniu
+   arkusza i wrocila jako brzydota widoczna na pierwszym zrzucie ekranu. */
+h1:focus { outline: none; }
 h2 { font-size: 1.15rem; margin: 2rem 0 0.75rem; }
 h3 { font-size: 1rem; margin: 1.5rem 0 0.5rem; }
 p { margin: 0 0 0.75rem; }
@@ -288,3 +297,122 @@ label { display: block; margin-bottom: 0.35rem; color: var(--tresc-cicha); }
 
 /* figure ma domyslny margines przegladarki - w gridzie rozjezdza karty */
 .propozycja { margin: 0; }
+
+/* --- czekanie na model ------------------------------------------------------
+   Powstalo ze zmierzonej liczby: generacja propozycji trwala 275 s. Klient patrzyl
+   przez ten czas w jedno nieruchome zdanie, co wyglada jak zawieszona aplikacja. */
+
+.czekanie {
+    max-width: 34rem;
+    margin: 1rem 0 2rem;
+    padding: 1.25rem 1.5rem;
+    border: 1px solid var(--linia);
+    border-radius: var(--promien);
+    background: var(--karta);
+    box-shadow: var(--cien);
+}
+
+.czekanie-co {
+    margin: 0 0 0.9rem;
+    font-size: 1.05rem;
+    font-weight: 600;
+}
+
+.czekanie-etapy {
+    list-style: none;
+    margin: 0 0 1rem;
+    padding: 0;
+    display: grid;
+    gap: 0.35rem;
+}
+
+.etap {
+    display: flex;
+    gap: 0.55rem;
+    align-items: baseline;
+    color: var(--tresc-cicha);
+}
+
+.etap-znak { width: 1rem; text-align: center; }
+
+.etap.zrobione { color: var(--ok); }
+
+.etap.trwa {
+    color: var(--tresc);
+    font-weight: 600;
+}
+
+.etap.przed { opacity: 0.55; }
+
+/* Wskaznik ZYCIA, nie postepu: procentu nie znamy, a zmyslony stanalby na 90%
+   i klient by to wychwycil. */
+.czekanie-pasek {
+    height: 4px;
+    border-radius: 999px;
+    background: var(--linia);
+    overflow: hidden;
+}
+
+.czekanie-pasek > span {
+    display: block;
+    width: 35%;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--uwaga);
+    animation: przesuw 2.2s ease-in-out infinite;
+}
+
+@keyframes przesuw {
+    0%   { transform: translateX(-100%); }
+    100% { transform: translateX(320%); }
+}
+
+.czekanie-czas {
+    margin: 0.75rem 0 0;
+    font-variant-numeric: tabular-nums;   /* cyfry nie skacza przy kazdej sekundzie */
+    color: var(--tresc-cicha);
+}
+
+.czekanie-spokoj {
+    margin: 0.35rem 0 0;
+    color: var(--tresc-cicha);
+    font-size: 0.92rem;
+}
+
+/* --- szkielety kart propozycji ---------------------------------------------
+   Klient widzi KSZTALT tego, na co czeka, zamiast pustej strony pod komunikatem. */
+
+.szkielet { pointer-events: none; }
+
+.szkielet-podglad {
+    height: 15rem;
+    border-radius: 6px;
+    background: var(--linia);
+}
+
+.szkielet-tekst {
+    display: block;
+    height: 0.9rem;
+    width: 60%;
+    border-radius: 999px;
+    background: var(--linia);
+}
+
+.szkielet-podglad, .szkielet-tekst { animation: puls 1.8s ease-in-out infinite; }
+
+@keyframes puls {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.45; }
+}
+
+/* Ruch potrafi szkodzic — przy „ogranicz ruch" zostaje sam uklad, bez animacji.
+   Pasek zostaje widoczny (pelna szerokosc), zeby nadal cos znaczyl. */
+@media (prefers-reduced-motion: reduce) {
+    .czekanie-pasek > span {
+        animation: none;
+        width: 100%;
+        opacity: 0.6;
+    }
+
+    .szkielet-podglad, .szkielet-tekst { animation: none; }
+}

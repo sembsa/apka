@@ -149,8 +149,11 @@ public class ProposalsPageTests : BunitContext
         cut.Find("[data-test='wybierz']").Click();
 
         cut.WaitForAssertion(() => Assert.NotNull(cut.Find("[data-test='kolizja']")));
-        // Strona nie moze zostac na „Buduję Twoją stronę…", skoro nic sie nie buduje.
-        Assert.Empty(cut.FindAll("[data-test='buduje']"));
+        // Strona nie moze zostac na ekranie czekania, skoro nic sie nie buduje.
+        // Miara zmieniona z `data-test='buduje'` na znacznik komponentu `Czekanie`:
+        // stary selektor po podmianie widoku nie istnialby NIGDZIE, wiec asercja
+        // przechodzilaby zawsze i przestala czegokolwiek bronic.
+        Assert.Empty(cut.FindAll("[data-test='czekanie']"));
         Assert.NotEmpty(cut.FindAll("[data-test='wybierz']"));
     }
 

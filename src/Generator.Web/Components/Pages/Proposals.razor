@@ -17,7 +17,9 @@
 }
 else if (_buduje)
 {
-    <p aria-live="polite" data-test="buduje">Buduję Twoją stronę…</p>
+    <Czekanie Naglowek="Buduję Twoją stronę z wybranego kierunku"
+              Szacunek="około 4 minut"
+              Etapy="@(new[] { "Czytam Twój opis i wybrany szkic", "Układam sekcje strony", "Dopisuję treści i styl" })" />
 }
 else if (_proposals is not null)
 {
@@ -36,8 +38,23 @@ else if (_proposals is not null)
 else if (_kolizja is null)
 {
     @* Tylko wtedy, gdy naprawde czekamy. Przy odmowie z API nie ma czego przygotowywac
-       i „Przygotowuję…" pod czerwonym komunikatem klamaloby klientowi w oczy. *@
-    <p aria-live="polite">Przygotowuję trzy propozycje…</p>
+       i „Przygotowuję…" pod czerwonym komunikatem klamaloby klientowi w oczy.
+
+       Zmierzone: 275 s. Stad szacunek slowami i trzy szkielety kart pod spodem —
+       klient widzi KSZTALT tego, na co czeka, zamiast pustej strony. *@
+    <Czekanie Naglowek="Przygotowuję trzy propozycje"
+              Szacunek="około 4–5 minut"
+              Etapy="@(new[] { "Czytam Twój opis", "Szkicuję trzy różne kierunki", "Składam podglądy" })" />
+
+    <div class="propozycje" aria-hidden="true">
+        @for (var i = 0; i < Komplet; i++)
+        {
+            <figure class="propozycja szkielet" data-test="szkielet">
+                <div class="szkielet-podglad"></div>
+                <figcaption><span class="szkielet-tekst"></span></figcaption>
+            </figure>
+        }
+    </div>
 }
 
 @* Ta sama konwencja co w Editor.razor: jedno miejsce na zdanie o odmowie, poza

@@ -40,6 +40,13 @@ if (builder.Configuration.GetValue("Projects:UseMock", false))
         // W devie powtorka po chwili sie udaje, zeby dalo sie zobaczyc, ze polling podnosi
         // wynik bez odswiezania strony. Bez tego `retrying` wisialoby w nieskonczonosc.
         RetryResolvesAfter = builder.Environment.IsDevelopment() ? TimeSpan.FromSeconds(4) : null,
+
+        // Atrapa konczy zadanie w 2 s, a prawdziwy model potrzebowal 275 s (zmierzone).
+        // Ekranu czekania nie dalo sie przez to ani obejrzec, ani pokazac drugiej
+        // osobie — a to on decyduje, czy klient wytrzyma te piec minut.
+        // `Projects:MockDelaySeconds=20` i widac wszystko: etapy, licznik, szkielety.
+        SimulatedDelay = TimeSpan.FromSeconds(
+            builder.Configuration.GetValue("Projects:MockDelaySeconds", 2.0)),
     });
 }
 else

@@ -1,0 +1,103 @@
+@implements IDisposable
+
+@* Ekran czekania na model. Powstal ze ZMIERZONEJ liczby: generacja trzech propozycji
+   zajela 275 s na prawdziwym `claude`. Wczesniej klient patrzyl przez te niemal piec
+   minut w jedno nieruchome zdanie — co wyglada jak zawieszona aplikacja, a nie jak
+   praca. To najgorsze mozliwe miejsce na taki widok: klient nie zainwestowal jeszcze
+   nic i najlatwiej zamyka karte.
+
+   Trzy rzeczy, ktore ten komponent robi, i kazda jest po to, zeby klient ZOSTAL:
+   1. mowi, ile to potrwa — zanim zacznie sie zastanawiac, czy cos padlo
+   2. pokazuje UPLYW czasu, bo ruch jest dowodem zycia
+   3. mowi wprost, ze mozna zamknac karte i wrocic — link jest zapisany *@
+
+<section class="czekanie" data-test="czekanie" aria-live="polite" aria-busy="true">
+    <p class="czekanie-co">@Naglowek</p>
+
+    <ol class="czekanie-etapy" data-test="etapy">
+        @for (var i = 0; i < Etapy.Count; i++)
+        {
+            var stan = i < _etap ? "zrobione" : i == _etap ? "trwa" : "przed";
+            <li class="etap @stan" data-test="etap-@i">
+                <span class="etap-znak" aria-hidden="true">@(i < _etap ? "✓" : "•")</span>
+                @Etapy[i]
+            </li>
+        }
+    </ol>
+
+    @* Pasek bez procentow: nie znamy postepu, a falszywy procent to klamstwo, ktore
+       klient wychwyci, gdy stanie na 90%. To jest wskaznik ZYCIA, nie postepu. *@
+    <div class="czekanie-pasek" role="presentation"><span></span></div>
+
+    <p class="czekanie-czas" data-test="czas">
+        Mija @Minuty(_sekundy) — zwykle zajmuje to @Szacunek.
+    </p>
+
+    <p class="czekanie-spokoj" data-test="mozesz-wyjsc">
+        Możesz zamknąć tę kartę i wrócić później — Twój link zostaje ten sam.
+    </p>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string Naglowek { get; set; } = default!;
+
+    /// Nazwy etapow. Nie musza odpowiadac krokom silnika co do jednego — maja opisywac
+    /// to, co klient ROZUMIE. Nie udajemy, ze wiemy, w ktorym silnik jest naprawde.
+    [Parameter, EditorRequired] public IReadOnlyList<string> Etapy { get; set; } = default!;
+
+    /// Zmierzony czas typowy, slowami klienta („około 4 minut"), nie liczba sekund.
+    [Parameter] public string Szacunek { get; set; } = "kilka minut";
+
+    /// Co ile przesuwamy podswietlony etap. Zmierzone 275 s / 3 etapy ≈ 90 s.
+    [Parameter] public TimeSpan KrokEtapu { get; set; } = TimeSpan.FromSeconds(90);
+
+    /// Parametr, bo test nie moze czekac sekundy na tik.
+    [Parameter] public TimeSpan Tik { get; set; } = TimeSpan.FromSeconds(1);
+
+    private int _sekundy;
+    private int _etap;
+    private CancellationTokenSource? _zycie;
+
+    protected override void OnInitialized()
+    {
+        _zycie = new CancellationTokenSource();
+        _ = Tykaj(_zycie.Token);
+    }
+
+    private async Task Tykaj(CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(Tik);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct))
+            {
+                _sekundy++;
+
+                // Ostatni etap zostaje podswietlony do konca: przeskok na „gotowe"
+                // nalezy do strony, ktora wie, ze zadanie sie skonczylo — nie do zegara.
+                var docelowy = (int)(_sekundy / KrokEtapu.TotalSeconds);
+                _etap = Math.Min(docelowy, Etapy.Count - 1);
+
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Klient wyszedl albo zadanie sie skonczylo. Nie jest to blad.
+        }
+        catch (ObjectDisposedException)
+        {
+            // Obwod zdjety dokladnie w trakcie renderu.
+        }
+    }
+
+    /// „3 min 5 s" zamiast „185 s" — klient nie liczy w sekundach.
+    private static string Minuty(int s) =>
+        s < 60 ? $"{s} s" : $"{s / 60} min {s % 60} s";
+
+    public void Dispose()
+    {
+        _zycie?.Cancel();
+        _zycie?.Dispose();
+    }
+}
