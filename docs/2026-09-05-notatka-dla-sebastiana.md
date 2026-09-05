@@ -214,3 +214,36 @@ doszła). Zwykły plik w repo, więc widać go w `git log` jak każdą zmianę.
 
 Kasuje adresat: `rm .claude/wiadomosc.txt`. Przy okazji `emit()` escapuje sama, więc
 wywołania nie powtarzają już `| esc`.
+
+## Panel wewnętrzny `/panel` (nowe)
+
+Lista projektów klientów: status, rundy, koszt, podgląd, edytor. Dla nas dwojga.
+
+**Domyślnie panelu nie ma.** Bez `Admin:Token` trasa nie jest w ogóle montowana —
+404, tak samo jak literówka w adresie. Nie jest to przesada: panel pokazuje naraz
+opisy wszystkich klientów (a te zawierają adresy i telefony) oraz koszty, których
+kontrakt 4.1 zabrania wypuszczać do klienta. Uruchomienie „z pudełka" nie ma prawa
+tego wystawić dlatego, że ktoś nie doczytał README.
+
+Włączenie u siebie (nie commituj klucza):
+
+```bash
+Admin__Token=cokolwiek dotnet run --project src/Generator.Web
+```
+
+Trzy rzeczy, które warto znać, zanim to ruszysz:
+
+- **Panel nie drukuje tokenów klientów** i nie powinien zacząć. Token jest jedynym
+  uwierzytelnieniem `/api/*` (decyzja 3: bez kont, token w linku) i nie rotuje się,
+  więc lista wszystkich tokenów to pęk kluczy do wszystkich kont. Podgląd go nie
+  potrzebuje — kontrakt 1 mówi wprost, że `/preview/*` w v1 tokenu nie wymaga.
+  Pilnuje tego test `Panel_nie_drukuje_tokenow_klientow`.
+- **Strona celowo nie ma `@page`.** Router Blazora bierze każdy komponent z tą
+  dyrektywą z całego assembly, więc trasa istniałaby zawsze, niezależnie od
+  konfiguracji, a strażnik w środku komponentu tylko udaje ochronę. Trasę montuje
+  `Program.cs` pod `if`-em.
+- **Kolumna kosztów odróżnia „0 zmierzone" od „nic nie zmierzono".** Dziś każdy
+  projekt zrobiony na Windowsie ma `SpentUsd: 0`, bo przez awarię B JSON nigdy nie
+  wraca. „Łącznie 0,00 USD" czytałoby się jak dobra wiadomość, będąc brakiem danych —
+  panel pisze więc wprost „nie zmierzono". Po Twojej naprawie B te liczby zaczną być
+  prawdziwe i ostrzeżenie samo zniknie.

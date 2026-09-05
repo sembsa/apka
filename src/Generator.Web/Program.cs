@@ -3,7 +3,10 @@ using Generator.Web.Api;
 using Generator.Web.Components;
 using Generator.Web.Contracts;
 using Generator.Web.Mock;
+using Generator.Web.Components.Pages;
+using Generator.Web.Panel;
 using Generator.Web.Preview;
+using Microsoft.AspNetCore.Http.HttpResults;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -108,6 +111,36 @@ if (app.Environment.IsDevelopment())
         mock.NextJobOutcome = outcome;
         return Results.Ok($"kolejna runda: {outcome}");
     });
+}
+
+// Panel wewnetrzny — dla nas dwojga, nie dla klientow. Montowany TYLKO gdy klucz
+// jest ustawiony: bez niego trasy nie ma i adres oddaje 404. To nie jest przesada.
+// Panel pokazuje naraz opisy wszystkich klientow (a te zawieraja adresy i telefony)
+// oraz koszty, ktorych kontrakt 4.1 zabrania wypuszczac do klienta. Domyslne
+// uruchomienie „z pudelka" nie moze tego wystawic dlatego, ze ktos nie doczytal.
+//
+// Poza routerem Blazora (MapRazorComponents) swiadomie: router bierze KAZDY komponent
+// z „@page" w assembly, wiec strona z dyrektywa istnialaby zawsze, niezaleznie od
+// konfiguracji. Tu o istnieniu trasy decyduje „if".
+if (KluczPanelu.Ustawiony(builder.Configuration) is { } kluczPanelu)
+{
+    app.MapGet("/panel", () => new RazorComponentResult<Panel>(new { Odmowa = false }));
+
+    // Klucz idzie POSTem w ciele, nie w adresie: adres laduje w historii przegladarki,
+    // w naglowku Referer i w logu dostepowym serwera, a to sekret otwierajacy
+    // wszystkie projekty naraz.
+    app.MapPost("/panel", async (HttpRequest zadanie, ProjectPaths sciezki) =>
+    {
+        var podany = (await zadanie.ReadFormAsync())["klucz"].ToString();
+        if (!KluczPanelu.Zgadza(kluczPanelu, podany))
+            return new RazorComponentResult<Panel>(new { Odmowa = true }) { StatusCode = 401 };
+
+        return new RazorComponentResult<Panel>(
+            new { Dane = new PanelDane(sciezki).Wczytaj() });
+    })
+    // Formularz jest bezsesyjny: nie ma ciasteczka logowania, ktore CSRF moglby
+    // wykorzystac, a bez znajomosci klucza cudze zadanie i tak nic nie pokaze.
+    .DisableAntiforgery();
 }
 
 app.Run();

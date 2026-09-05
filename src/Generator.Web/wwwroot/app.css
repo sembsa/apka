@@ -416,3 +416,91 @@ label { display: block; margin-bottom: 0.35rem; color: var(--tresc-cicha); }
 
     .szkielet-podglad, .szkielet-tekst { animation: none; }
 }
+
+/* ── Panel wewnetrzny ────────────────────────────────────────────────────────
+   Jedyny ekran w aplikacji, ktorego klient nigdy nie zobaczy. Gestszy od reszty
+   (mniejszy tekst, tabela zamiast kart), bo tu chodzi o przeglad kilkudziesieciu
+   projektow naraz, a nie o prowadzenie kogos za reke. */
+
+.panel { max-width: 76rem; margin: 0 auto; padding: 1.5rem 1.25rem 4rem; }
+
+.panel-wejscie {
+    display: grid;
+    gap: 0.5rem;
+    max-width: 22rem;
+    padding: 1.25rem;
+    background: var(--karta);
+    border: 1px solid var(--linia);
+    border-radius: var(--promien);
+    box-shadow: var(--cien);
+}
+
+.panel-wejscie input {
+    padding: 0.55rem 0.7rem;
+    font: inherit;
+    border: 1px solid var(--linia);
+    border-radius: 6px;
+}
+
+.panel-suma {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 2rem;
+    align-items: baseline;
+    margin: 0 0 1.25rem;
+    padding: 0.9rem 1.1rem;
+    background: var(--karta);
+    border: 1px solid var(--linia);
+    border-radius: var(--promien);
+}
+
+.panel-suma p { margin: 0; color: var(--tresc-cicha); }
+.panel-suma .ostrzezenie { flex-basis: 100%; color: var(--uwaga); }
+
+.panel-lista {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+    background: var(--karta);
+    border: 1px solid var(--linia);
+    border-radius: var(--promien);
+    overflow: hidden;
+}
+
+.panel-lista th {
+    text-align: left;
+    font-weight: 600;
+    color: var(--tresc-cicha);
+    background: var(--tlo);
+}
+
+.panel-lista th, .panel-lista td {
+    padding: 0.6rem 0.75rem;
+    border-bottom: 1px solid var(--linia);
+    vertical-align: top;
+}
+
+.panel-lista tr:last-child td { border-bottom: 0; }
+
+/* Wiersz, na ktory trzeba spojrzec: zamrozony, po limicie albo nieczytelny.
+   Pasek z boku, nie czerwone tlo — czerwien na calym wierszu przy kilkunastu
+   projektach przestaje cokolwiek znaczyc. */
+.panel-lista tr.uwaga td:first-child { box-shadow: inset 3px 0 0 var(--uwaga); }
+
+.panel-id {
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-size: 0.85em;
+    color: var(--tresc-cicha);
+}
+
+.panel-opis { display: block; max-width: 26rem; }
+.panel-brak { color: var(--tresc-cicha); font-size: 0.85em; }
+.panel-lista a { color: var(--akcent); }
+.panel-lista a + a { margin-left: 0.6rem; }
+
+/* Panel bywa otwierany na telefonie („co ten klient ma?" w drodze). Tabela
+   szersza niz ekran ma sie przewijac w SWOIM pudelku, a nie rozpychac strony. */
+@media (max-width: 48rem) {
+    .panel-lista { display: block; overflow-x: auto; white-space: nowrap; }
+    .panel-opis { white-space: normal; }
+}

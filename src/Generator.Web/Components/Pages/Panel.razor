@@ -1,0 +1,143 @@
+@using Generator.Web.Panel
+@using System.Globalization
+
+@* CELOWO BEZ @page. Router Blazora mapuje kazdy komponent z `@page` z calego
+   assembly, wiec strona z dyrektywa istnialaby zawsze — a straz w srodku
+   komponentu tylko UDAJE ochrone: trasa odpowiada, adres jest wykrywalny, i
+   wystarczy jedno nieuwazne `@attribute` albo prerender, zeby wyciekla lista
+   klientow. Trase montuje `Program.cs`, i to TYLKO gdy `Admin:Token` jest
+   ustawiony. Bez klucza panelu nie ma jak adresu — 404, tak samo jak literowka. *@
+
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    @* Panel jest wewnetrzny. Gdyby ktos wkleil adres w komunikator, podglad
+       linku nie ma zaciagac listy klientow do cudzego cache. *@
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Panel — @(Dane is null ? "wejście" : $"{Dane.Count} projektów")</title>
+    <link rel="stylesheet" href="@Assets["app.css"]" />
+</head>
+<body class="panel-body">
+<main class="panel">
+    <h1>Panel</h1>
+
+    @if (Dane is null)
+    {
+        <form method="post" class="panel-wejscie">
+            @* POST, nie GET z parametrem: klucz w adresie zostaje w historii
+               przegladarki, w naglowku Referer i w logach serwera. *@
+            <label for="klucz">Klucz panelu</label>
+            <input id="klucz" name="klucz" type="password" autocomplete="off" autofocus />
+            <button type="submit">Wejdź</button>
+            @if (Odmowa)
+            {
+                <p role="alert" data-test="odmowa">Nie ten klucz.</p>
+            }
+        </form>
+    }
+    else if (Dane.Count == 0)
+    {
+        <p data-test="pusto">Nie ma jeszcze ani jednego projektu.</p>
+    }
+    else
+    {
+        var suma = PanelDane.Podsumuj(Dane);
+
+        <section class="panel-suma" data-test="podsumowanie">
+            <p><strong>@suma.Projektow</strong> projektów</p>
+            <p><strong>@Kwota(suma.Wydano)</strong> wydane z @Kwota(suma.Budzet) budżetu</p>
+            @if (suma.BezPomiaru > 0)
+            {
+                @* Rozroznienie, ktore decyduje, czy ta liczba to informacja, czy klamstwo. *@
+                <p class="ostrzezenie" data-test="bez-pomiaru">
+                    @suma.BezPomiaru @(suma.BezPomiaru == 1 ? "projekt ma" : "projekty mają")
+                    wersje, ale zerowy koszt — to <strong>brak pomiaru</strong>, nie darmowa strona.
+                </p>
+            }
+        </section>
+
+        <table class="panel-lista">
+            <thead>
+            <tr>
+                <th>Projekt</th><th>Status</th><th>Rundy</th><th>Koszt</th>
+                <th>Wersje</th><th>Ostatni zapis</th>
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (var w in Dane)
+            {
+                <tr data-test="projekt" class="@(w.WymagaUwagi ? "uwaga" : null)">
+                    <td>
+                        <span class="panel-id" title="@w.Id">@Skrot(w.Id)</span>
+                        @if (w.Opis.Length > 0)
+                        {
+                            <span class="panel-opis">@Skrot(w.Opis, 80)</span>
+                        }
+                    </td>
+                    <td>@w.Status</td>
+                    <td>
+                        @if (w.Blad is null)
+                        {
+                            @w.RundyZuzyte<text>/</text>@w.RundyLimit
+                        }
+                    </td>
+                    <td>
+                        @if (w.Blad is not null)
+                        {
+                            <span class="panel-brak">—</span>
+                        }
+                        else if (w.KosztZmierzony)
+                        {
+                            @Kwota(w.Wydano)<text> / </text>@Kwota(w.Budzet)
+                        }
+                        else
+                        {
+                            <span class="panel-brak" data-test="niezmierzony">nie zmierzono</span>
+                        }
+                    </td>
+                    <td>
+                        @if (w.Blad is not null)
+                        {
+                            <span role="alert" data-test="blad">nie dało się odczytać</span>
+                        }
+                        else if (w.Wersji == 0)
+                        {
+                            <span class="panel-brak">brak</span>
+                        }
+                        else
+                        {
+                            @* Ukosnik na koncu jest OBOWIAZKOWY (kontrakt 5.4): bez niego
+                               przegladarka rozwiazuje `styl.css` wzgledem katalogu wyzej
+                               i strona klienta pokazuje sie bez wlasnego stylu. *@
+                            <a href="/preview/@w.Id/@w.WersjaBiezaca/" data-test="podglad">
+                                podgląd v@w.WersjaBiezaca
+                            </a>
+                            <span class="panel-brak">z @w.Wersji</span>
+                            <a href="/editor/@w.Id" data-test="edytor">edytor</a>
+                        }
+                    </td>
+                    <td>@w.OstatniZapis.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+</main>
+</body>
+</html>
+
+@code {
+    /// `null` = jeszcze nie wpuszczeni. Dane skladamy PRZED renderem, w trasie —
+    /// komponent nie ma dostepu do konfiguracji i nie moze sam siebie wpuscic.
+    [Parameter] public IReadOnlyList<WierszPanelu>? Dane { get; set; }
+
+    [Parameter] public bool Odmowa { get; set; }
+
+    private static string Kwota(decimal usd) => usd.ToString("0.00", CultureInfo.InvariantCulture) + " USD";
+
+    private static string Skrot(string tekst, int ile = 8) =>
+        tekst.Length <= ile ? tekst : tekst[..ile] + "…";
+}
