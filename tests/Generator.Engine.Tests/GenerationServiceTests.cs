@@ -704,12 +704,22 @@ public class GenerationServiceTests : IDisposable
         var (meta, store, versions) = Setup();
         var runner = new ScriptedRunner(
             (Json("s-1", 0.10m, "ok"), WritePage("""<h1 data-cmt-id="hero">v1</h1>""")),
-            (Json("s-1", 0.10m, "ok"), WritePage("""<h1 data-cmt-id="stopka">v2</h1>""")),
+            (Json("s-1", 0.10m, "ok"),
+             WritePage("""<h1 data-cmt-id="hero">v2</h1><p data-cmt-id="stopka">x</p>""")),
             (Json("s-9", 0.10m, "ok"), WritePage("""<h1 data-cmt-id="hero">v3</h1>""")));
 
         var svc = new GenerationService(runner, store, versions);
         await svc.RunRoundAsync(meta, [C("c1", null, "raz")]);
         await svc.RunRoundAsync(store.Load(), [C("c2", null, "dwa")]);
+
+        // v2 MUSI zachowac "hero" i dolozyc "stopka". Gdyby v2 porzucila "hero",
+        // odpalilaby sie petla naprawy kotwic, ScriptedRunner odtworzylby ostatni
+        // wpis skryptu i nadpisal v2 trescia v3 — a wtedy slowo "stopka" nie
+        // istnialoby w zadnym snapshocie i obie asercje o kotwicach na koncu tego
+        // testu bylyby prawdziwe ZAWSZE (zmierzone w recenzji). Dodatkowo dwa
+        // identyczne zapisy pod rzad czynilyby DirectorySignature zaleznym od
+        // rozdzielczosci mtime — na NTFS test padalby losowo.
+        Assert.Equal(2, runner.Calls);   // jeden przebieg na runde, zero napraw
 
         // Powrot do v1 — to samo, co zrobi ProjectApi.RollbackAsync w Zadaniu 5.
         store.Save(store.Load() with { CurrentVersion = 1 });
@@ -730,5 +740,60 @@ public class GenerationServiceTests : IDisposable
         // model dostalby polecenie zachowania bloku, ktorego nie ma w plikach.
         Assert.Contains("hero", runner.Instructions[^1]);
         Assert.DoesNotContain("stopka", runner.Instructions[^1]);
+    }
+
+    [Fact]
+    public async Task Nieudana_runda_po_powrocie_przywraca_WorkDir_do_v1_a_nie_do_v2()
+    {
+        // Kontrakt 4.4: nieudana runda to dla klienta BRAK ZDARZENIA. Po powrocie
+        // do v1 „brak zdarzenia" znaczy v1 — przywrocenie v2 oddaje klientowi
+        // tresc, ktora swiadomie odrzucil, a nastepna udana runda powstaje na niej,
+        // deklarujac w BasedOn wersje 1. Po cichu i bez sladu.
+        var (meta, store, versions) = Setup();
+        var runner = new ScriptedRunner(
+            (Json("s-1", 0.10m, "ok"), WritePage("""<h1 data-cmt-id="hero">TRESC-V1</h1>""")),
+            (Json("s-1", 0.10m, "ok"), WritePage("""<h1 data-cmt-id="hero">TRESC-V2</h1>""")),
+            (Json("s-9", 0.10m, "ok"), WriteBrokenPage()));   // bramka twarda odrzuci
+
+        var svc = new GenerationService(runner, store, versions);
+        await svc.RunRoundAsync(meta, [C("c1", null, "raz")]);
+        await svc.RunRoundAsync(store.Load(), [C("c2", null, "dwa")]);
+        store.Save(store.Load() with { CurrentVersion = 1 });
+
+        var outcome = await svc.RunRoundAsync(store.Load(), [C("c3", null, "trzy")]);
+
+        Assert.False(outcome.Succeeded);
+        var work = await File.ReadAllTextAsync(Path.Combine(versions.WorkDir, "index.html"));
+        Assert.Contains("TRESC-V1", work);
+        Assert.DoesNotContain("TRESC-V2", work);
+
+        // I nic klientowi nie zabrala: wersje, licznik rund i wersja biezaca stoja.
+        var persisted = store.Load();
+        Assert.Equal(2, persisted.Versions.Count);
+        Assert.Equal(1, persisted.CurrentVersion);
+        Assert.Equal(2, persisted.RoundsUsed);
+    }
+
+    [Fact]
+    public async Task Numeracja_nie_nadpisuje_snapshotu_gdy_w_historii_jest_dziura()
+    {
+        // `Commit` kasuje SnapshotPath(number) PRZED kopiowaniem, wiec kolizja
+        // numeru nadpisuje starszy snapshot klienta bez sladu. Przy ciaglej
+        // historii Count+1 i max+1 daja to samo — dziura je rozdziela.
+        var (meta, store, versions) = Setup();
+        var runner = new ScriptedRunner(
+            (Json("s-1", 0.10m, "ok"), WritePage("""<h1 data-cmt-id="hero">v9</h1>""")));
+
+        store.Save(store.Load() with
+        {
+            Versions = [new VersionMeta(9, "s-1", versions.SnapshotPath(9), 0.1m, [], null)],
+            CurrentVersion = 9,
+        });
+
+        var outcome = await new GenerationService(runner, store, versions)
+            .RunRoundAsync(store.Load(), [C("c1", null, "x")]);
+
+        // Count+1 dalby 2. max+1 daje 10.
+        Assert.Equal(10, outcome.Version!.Number);
     }
 }

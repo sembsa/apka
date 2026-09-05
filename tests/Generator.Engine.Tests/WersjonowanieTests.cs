@@ -53,6 +53,9 @@ public class WersjonowanieTests : IDisposable
         // project.json sprzed tej zmiany nie ma pola currentVersion. Bez migracji
         // deserializuje sie na 0 i podglad pokazywalby "brak wersji" na projekcie,
         // ktory ma ich dwie. Smoke-projekt z Planu A jest takim plikiem.
+        // Numery 1 i 3 (nie 1 i 2): przy ciaglej historii Max(v => v.Number) i
+        // Versions.Count daja to samo, wiec test nie odroznialby poprawnej
+        // migracji od Count.
         Directory.CreateDirectory(_project);
         var stary = """
             {
@@ -63,7 +66,7 @@ public class WersjonowanieTests : IDisposable
               "Versions": [
                 { "Number": 1, "SessionId": "s-1", "SnapshotDir": "/tmp/v1",
                   "CostUsd": 0.2, "OrphanedAnchors": [] },
-                { "Number": 2, "SessionId": "s-1", "SnapshotDir": "/tmp/v2",
+                { "Number": 3, "SessionId": "s-1", "SnapshotDir": "/tmp/v3",
                   "CostUsd": 0.2, "OrphanedAnchors": [] }
               ]
             }
@@ -72,7 +75,7 @@ public class WersjonowanieTests : IDisposable
 
         var wczytany = new ProjectStore(_project).Load();
 
-        Assert.Equal(2, wczytany.CurrentVersion);
+        Assert.Equal(3, wczytany.CurrentVersion);
         Assert.Null(wczytany.Versions[0].BasedOn);
     }
 
@@ -100,6 +103,21 @@ public class WersjonowanieTests : IDisposable
         store.Save(meta);
 
         Assert.Equal(1, store.Load().CurrentVersion);
+    }
+
+    [Fact]
+    public void Load_naprawia_CurrentVersion_wskazujacy_na_nieistniejaca_wersje()
+    {
+        // Bez tej naprawy `Current is null` znaczy dwie rozne rzeczy, a
+        // RestoreWorkDirAfterFailure wybiera galaz „brak wersji" i KASUJE WorkDir
+        // na projekcie, ktory ma wersje i wydany budzet klienta.
+        var store = new ProjectStore(_project);
+        store.Create(SourceKind.Idea);
+        store.Save(store.Load() with { Versions = [V(1), V(2)], CurrentVersion = 7 });
+
+        var wczytany = store.Load();
+        Assert.Equal(2, wczytany.CurrentVersion);
+        Assert.NotNull(wczytany.Current);
     }
 
     [Fact]

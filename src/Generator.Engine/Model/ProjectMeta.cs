@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Generator.Engine.Model;
 
 public enum SourceKind { Url, Idea }
@@ -39,11 +41,19 @@ public record ProjectMeta(
     string? ChosenProposal = null)
 {
     /// Jedyna droga do „wersji biezacej". Uzywaj tego zamiast Versions[^1].
+    ///
+    /// [JsonIgnore] jest OBOWIAZKOWE: bez niego JsonSerializer zapisuje ta
+    /// wlasciwosc do project.json (jest publiczna i bezargumentowa), wiec plik
+    /// puchnie o pelna kopie rekordu wersji przy kazdym zapisie, a diagnozujacy
+    /// zly rollback czyta blok "Current" pochodzacy z innego momentu niz
+    /// "CurrentVersion" i wyciaga bledny wniosek. Zmierzone, nie teoretyczne.
+    [JsonIgnore]
     public VersionMeta? Current =>
         Versions.FirstOrDefault(v => v.Number == CurrentVersion);
 
     /// Kontrakt 5.1: `max(number) + 1`, nie `liczba wersji + 1` — po powrocie
     /// te dwie liczby sie rozjezdzaja i doszloby do kolizji numerow.
+    [JsonIgnore]
     public int NextVersionNumber =>
         Versions.Count == 0 ? 1 : Versions.Max(v => v.Number) + 1;
 }

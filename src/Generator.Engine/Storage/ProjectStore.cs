@@ -61,10 +61,23 @@ public class ProjectStore(string projectDir)
     /// deserializuje sie na 0 — czyli „brak wersji" na projekcie, ktory je ma.
     /// Podnosimy do najnowszej TYLKO gdy pole jest zerowe, a wersje sa: swiadomy
     /// powrot zapisuje liczbe >= 1 i nie wolno go nadpisac.
-    private static ProjectMeta Migruj(ProjectMeta meta) =>
-        meta.CurrentVersion == 0 && meta.Versions.Count > 0
-            ? meta with { CurrentVersion = meta.Versions.Max(v => v.Number) }
-            : meta;
+    private static ProjectMeta Migruj(ProjectMeta meta)
+    {
+        if (meta.Versions.Count == 0) return meta;
+
+        // Dwa przypadki, jedna naprawa. Drugi jest nowy i grozny: po tej zmianie
+        // `Current is null` znaczy ALBO „nie ma zadnej wersji", ALBO „CurrentVersion
+        // wskazuje numer spoza listy" (reczna edycja, uszkodzony zapis). Gdyby ten
+        // drugi przypadek dozyl do RestoreWorkDirAfterFailure, nieudana runda
+        // weszlaby w galaz „brak wersji" i SKASOWALA WorkDir do pusta na projekcie,
+        // ktory ma trzy wersje i wydany budzet klienta. Naprawiamy tutaj, przy
+        // wejsciu, zeby niezmiennik „sa wersje => Current != null" znowu byl prawda
+        // w calym silniku.
+        var poprawny = meta.Versions.Any(v => v.Number == meta.CurrentVersion);
+        return poprawny
+            ? meta
+            : meta with { CurrentVersion = meta.Versions.Max(v => v.Number) };
+    }
 
     public void Save(ProjectMeta meta)
     {
