@@ -270,7 +270,7 @@ else
         _draftText = string.Empty;
     }
 
-    private void AddDraft()
+    private async Task AddDraft()
     {
         if (_draft is null || string.IsNullOrWhiteSpace(_draftText)) return;
 
@@ -278,6 +278,29 @@ else
         _comments.Add(_draft with { Text = _draftText.Trim() });
         _draft = null;
         _draftText = string.Empty;
+
+        await Zapisz();
+    }
+
+    /// <summary>
+    /// Kontrakt 6.1: uwagi ida na serwer OD RAZU, nie dopiero z runda. Bez tego zyly
+    /// wylacznie w obwodzie i klient, ktory zamknal karte przed „Popraw to", tracil
+    /// wszystko, co napisal. Zapis nie uruchamia modelu, wiec nic nie kosztuje.
+    ///
+    /// Wysylamy `DoWyslania()`, czyli same `open` — to JEST pelna lista uwag klienta
+    /// dla tej wersji (3.3), a `applied`/`rejected` naleza do silnika i zapis ich nie
+    /// dotyka.
+    /// </summary>
+    private async Task Zapisz()
+    {
+        try
+        {
+            await Api.SaveCommentsAsync(ProjectId, _project!.NumerAktualnej(), DoWyslania());
+        }
+        catch (Exception ex) when (Kolizja(ex))
+        {
+            await Odswiez(ex);
+        }
     }
 
     /// <summary>
@@ -305,8 +328,15 @@ else
     }
 
     /// Kontrakt 3.3: frontend umie wycofac, dopoki open. Statusu nie zmienia.
-    private void Withdraw(string commentId) =>
-        _comments.RemoveAll(c => c.Id == commentId && c.Status == "open");
+    private async Task Withdraw(string commentId)
+    {
+        // Wycofanie tez idzie na serwer (6.1): przychodzaca lista jest pelna lista uwag
+        // `open`, wiec brak tej uwagi W NIEJ jest jej skasowaniem. Wczesniej wycofanie
+        // zylo w pamieci i uwaga wracala przy kazdym wejsciu w link.
+        if (_comments.RemoveAll(c => c.Id == commentId && c.Status == "open") == 0) return;
+
+        await Zapisz();
+    }
 
     private async Task Apply()
     {

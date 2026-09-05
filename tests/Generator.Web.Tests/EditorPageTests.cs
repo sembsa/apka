@@ -28,6 +28,50 @@ public class EditorPageTests : BunitContext
     }
 
 
+
+    /// <summary>
+    /// Rozstrzygniecie 6.1. Uwagi zyly wylacznie w pamieci obwodu do chwili „Popraw to":
+    /// klient, ktory dodal uwage i zamknal karte, tracil ja bezpowrotnie. Przy modelu
+    /// „bez kont, link z tokenem" wrocenie do pracy pozniej jest normalne, nie brzegowe.
+    /// Test renderuje edytor OD ZERA — jak po ponownym wejsciu w link.
+    /// </summary>
+    [Fact]
+    public async Task Dodana_uwaga_przezywa_zamkniecie_karty()
+    {
+        var (api, id) = await Setup();
+        var cut = Render<Editor>(ps => ps.Add(p => p.ProjectId, id));
+        cut.WaitForAssertion(() => Assert.NotNull(cut.Find("iframe")));
+
+        var mostek = cut.FindComponent<Generator.Web.Components.CommentBridge>();
+        await cut.InvokeAsync(() => mostek.Instance.OnBlockClicked(
+            new Generator.Web.Components.CommentBridge.ClickPayload("kontakt")));
+        cut.Find("#tresc").Change("telefon za mało widoczny");
+        await cut.Find("[data-test='dodaj']").ClickAsync(new());
+
+        // Zadnej rundy: klient tylko dodal uwage i wyszedl.
+        var biezaca = (await api.GetAsync(id)).NumerAktualnej();
+        var zapisane = await api.GetCommentsAsync(id, biezaca);
+        Assert.Contains(zapisane, k => k.Text == "telefon za mało widoczny" && k.Status == "open");
+    }
+
+    [Fact]
+    public async Task Wycofana_uwaga_znika_takze_z_serwera()
+    {
+        // Druga polowa 6.1: wycofanie zylo w pamieci tak samo jak dodanie, wiec uwaga
+        // odwolana przez klienta wracala przy kazdym wejsciu w link.
+        var (api, id) = await Setup();
+        var biezaca = (await api.GetAsync(id)).NumerAktualnej();
+        api.SeedComments(id, biezaca, "cennik nad opiniami");
+
+        var cut = Render<Editor>(ps => ps.Add(p => p.ProjectId, id));
+        cut.WaitForAssertion(() => Assert.NotEmpty(cut.FindAll("[data-test^='wycofaj']")));
+
+        await cut.FindAll("[data-test^='wycofaj']")[0].ClickAsync(new());
+
+        // Bez `await` na asercji: `WaitForAssertion(async () => ...)` przyjmuje lambde
+        // zwracajaca Task i NIE czeka na nia — asercja nie jest wtedy sprawdzana wcale.
+        Assert.Empty(await api.GetCommentsAsync(id, biezaca));
+    }
     [Theory]
     [InlineData("frozen")]
     [InlineData("stale")]
@@ -322,6 +366,10 @@ public class EditorPageTests : BunitContext
         public Task<string> ApplyCommentsAsync(string id, int version, IReadOnlyList<CommentDto> comments) =>
             throw czym;
 
+        /// Zapis uwag (6.1) odmawia tak samo jak runda — to ta sama straz.
+        public Task SaveCommentsAsync(string id, int version, IReadOnlyList<CommentDto> comments) =>
+            throw czym;
+
         public Task RollbackAsync(string id, int version) => throw czym;
 
         public Task<ProjectView> CreateAsync(string source, string description) =>
@@ -361,6 +409,8 @@ public class EditorPageTests : BunitContext
             wewnetrzny.ApplyCommentsAsync(id, version, comments);
         public Task<IReadOnlyList<CommentDto>> GetCommentsAsync(string id, int version) =>
             wewnetrzny.GetCommentsAsync(id, version);
+        public Task SaveCommentsAsync(string id, int version, IReadOnlyList<CommentDto> comments) =>
+            wewnetrzny.SaveCommentsAsync(id, version, comments);
         public Task RollbackAsync(string id, int version) =>
             wewnetrzny.RollbackAsync(id, version);
     }

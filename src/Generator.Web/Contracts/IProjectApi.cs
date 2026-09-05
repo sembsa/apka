@@ -21,6 +21,18 @@ public interface IProjectApi
     /// </summary>
     Task<string> CreateFirstVersionAsync(string id);
 
+    /// <summary>
+    /// Kontrakt 6.1: zapisuje uwagi klienta BEZ uruchamiania modelu — nie kosztuje
+    /// i nie zuzywa rundy. Cialo jest PELNA lista uwag `open` tej wersji: uwagi `open`
+    /// spoza niej znikaja (tak dziala wycofanie z 3.3), a statusow nadanych przez silnik
+    /// zapis nie dotyka.
+    ///
+    /// Istnieje osobno od `ApplyCommentsAsync`, bo uwagi zyly wylacznie w pamieci obwodu:
+    /// klient, ktory dodal kilka uwag i zamknal karte, tracil wszystkie. Przy modelu
+    /// „bez kont, link z tokenem" przerwanie pracy w polowie jest normalne.
+    /// </summary>
+    Task SaveCommentsAsync(string id, int version, IReadOnlyList<CommentDto> comments);
+
     Task<string> ApplyCommentsAsync(string id, int version, IReadOnlyList<CommentDto> comments);
     Task<JobView> GetJobAsync(string jobId);
 

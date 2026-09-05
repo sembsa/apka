@@ -58,6 +58,16 @@ public static class ApiEndpoints
                 Chroniony(id, api, ctx, async _ =>
                     Results.Accepted(value: new { jobId = await api.ApplyCommentsAsync(id, n, uwagi) })));
 
+        // PUT, nie POST: zapis jest idempotentny i NIE jest zadaniem — model sie nie
+        // uruchamia, wiec nie ma czego zwracac poza `200` (kontrakt 6.1).
+        grupa.MapPut("/projects/{id:guid}/versions/{n:int}/comments",
+            (string id, int n, CommentDto[] uwagi, IProjectApi api, HttpContext ctx) =>
+                Chroniony(id, api, ctx, async _ =>
+                {
+                    await api.SaveCommentsAsync(id, n, uwagi);
+                    return Results.Ok();
+                }));
+
         grupa.MapGet("/projects/{id:guid}/versions/{n:int}/comments",
             (string id, int n, IProjectApi api, HttpContext ctx) =>
                 Chroniony(id, api, ctx, async _ => Results.Ok(await api.GetCommentsAsync(id, n))));

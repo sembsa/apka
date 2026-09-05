@@ -144,6 +144,25 @@ public class ProjectApi(ProjectPaths paths, JobQueue queue, ILogger<ProjectApi> 
         }));
     }
 
+    /// <summary>
+    /// Kontrakt 6.1. Te same straze co przy rundzie, poza jedna roznica: NIE uruchamia
+    /// modelu, wiec nic nie kosztuje i nie zuzywa rundy. `frozen` blokuje zapis tak samo
+    /// jak runde — projekt zamrozony nie przyjmuje nowych uwag (4.5) — a trwajace zadanie
+    /// blokuje, bo `Uzgodnij` i `ApplyResults` to dwie sekwencje czytaj-zmodyfikuj-zapisz
+    /// na tym samym pliku i zapis z UI potrafil scierac raport konczacej sie rundy.
+    /// </summary>
+    public Task SaveCommentsAsync(string id, int version, IReadOnlyList<CommentDto> comments)
+    {
+        var meta = Wczytaj(id);
+        if (meta.Status == ProjectStatus.Frozen) throw new ProjectFrozenException(id);
+        if (meta.CurrentVersion == 0) throw new StaleVersionException(version, 0);
+        if (version != meta.CurrentVersion) throw new StaleVersionException(version, meta.CurrentVersion);
+        if (queue.MaAktywne(id)) throw new JobRunningException(id);
+
+        paths.Comments(id).Uzgodnij(version, [.. comments.Select(ToComment)]);
+        return Task.CompletedTask;
+    }
+
     public Task<string> ApplyCommentsAsync(string id, int version, IReadOnlyList<CommentDto> comments)
     {
         var meta = Wczytaj(id);

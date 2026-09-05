@@ -280,5 +280,7 @@ public class ProposalsPageTests : BunitContext
 
         public Task<IReadOnlyList<CommentDto>> GetCommentsAsync(string id, int version) =>
             atrapa.GetCommentsAsync(id, version);
+        public Task SaveCommentsAsync(string id, int version, IReadOnlyList<CommentDto> comments) =>
+            atrapa.SaveCommentsAsync(id, version, comments);
     }
 }

@@ -281,6 +281,22 @@ public class MockProjectApi : IProjectApi
             await File.ReadAllTextAsync(plikWersji));
     }
 
+    /// <summary>
+    /// Kontrakt 6.1. Te same odmowy co runda, ale bez „zadania" — atrapa musi je rzucac
+    /// tymi samymi typami, inaczej galezie kolizji sa nieosiagalne pod atrapa.
+    /// </summary>
+    public Task SaveCommentsAsync(string id, int version, IReadOnlyList<CommentDto> comments)
+    {
+        var stan = _projects[id];
+        if (stan.Status == "frozen") throw new ProjectFrozenException(id);
+        if (stan.CurrentVersion == 0) throw new StaleVersionException(version, 0);
+        if (version != stan.CurrentVersion) throw new StaleVersionException(version, stan.CurrentVersion);
+        Wolne(id);
+
+        Scal(id, version, comments);
+        return Task.CompletedTask;
+    }
+
     public async Task<string> ApplyCommentsAsync(string id, int version, IReadOnlyList<CommentDto> comments)
     {
         var stan = _projects[id];
