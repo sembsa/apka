@@ -392,7 +392,7 @@ public class ProjectApiTests : IDisposable
         // Dwie rzeczy naraz, obie o kolejnosci zapisu wzgledem kolejki:
         //
         // (a) k1 JEST juz na dysku, mimo ze zadanie dopiero stoi na bramie. To
-        //     dowodzi, ze Upsert dzieje sie PRZED wrzuceniem do kolejki — gdyby
+        //     dowodzi, ze zapis uwag dzieje sie PRZED wrzuceniem do kolejki — gdyby
         //     siedzial w lambdzie, brama trzymalaby go i lista bylaby pusta.
         //     Na tym stoi gwarancja 4.4: awaria rundy nie zabiera uwag.
         //

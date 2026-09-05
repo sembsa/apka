@@ -26,7 +26,7 @@ public class CommentStore(string projectDir)
 
     private string Path_ => Path.Combine(projectDir, "comments.json");
 
-    /// Upsert i ApplyResults to obie sekwencje czytaj-zmodyfikuj-zapisz na tym samym
+    /// Uzgodnij i ApplyResults to obie sekwencje czytaj-zmodyfikuj-zapisz na tym samym
     /// pliku, a CommentStore powstaje na kazde wywolanie (paths.Comments(id) => new),
     /// wiec blokada per egzemplarz nie chronilaby niczego. Klucz to sciezka pliku:
     /// dwa projekty nie blokuja sie nawzajem, a dwa watki tego samego projektu — tak.
@@ -39,17 +39,40 @@ public class CommentStore(string projectDir)
     public IReadOnlyList<StoredComment> ForVersion(int version) =>
         Read().TryGetValue(version, out var lista) ? lista : [];
 
-    /// Kontrakt 3.2: Id powstaje raz i nie zmienia sie przy ponowieniu, wiec
-    /// ponowne wyslanie tej samej uwagi ma byc bez skutku — a nie ma prawa
-    /// skasowac statusu, ktory silnik nadal jej w poprzedniej rundzie.
-    public void Upsert(int version, IReadOnlyList<Comment> comments)
+    /// <summary>
+    /// UZGADNIA liste uwag `open` danej wersji z lista przychodzaca: to, co przyszlo,
+    /// zostaje (albo powstaje), a uwagi `open`, ktorych w niej NIE MA, znikaja z dysku.
+    /// Nazwa mowi „uzgodnij", a nie „dopisz", bo kasowanie jest tu czescia kontraktu,
+    /// a nie skutkiem ubocznym.
+    ///
+    /// Dlaczego kasowanie jest bezpieczne — i konieczne. Frontend umie WYCOFAC uwage,
+    /// dopoki jest `open` (kontrakt 3.3), ale robil to wylacznie w pamieci obwodu.
+    /// Metoda, ktora umiala tylko dopisywac, zostawiala wycofana uwage w comments.json
+    /// na zawsze: wracala przy kazdym `Reload`, odblokowywala przycisk „Popraw to"
+    /// i wchodzila do nastepnej rundy — czyli klient placil runde za uwage, ktora
+    /// sam odwolal. Przychodzaca lista JEST pelna lista uwag `open` tej wersji;
+    /// to jedyna rzecz, ktora frontend o nich wie.
+    ///
+    /// Nietkniete zostaja uwagi `applied` i `rejected`. Te sa wlasnoscia SILNIKA
+    /// (kontrakt 4.4.2: status zmienia wylacznie `ApplyResults`, wylacznie z raportu),
+    /// stanowia raport „co zrobilismy z Twoimi uwagami" i nie ma ich w liscie
+    /// przychodzacej z definicji — frontend wysyla tylko `open`.
+    ///
+    /// Kontrakt 3.2 zostaje w mocy: Id powstaje raz, wiec ponowne wyslanie tej samej
+    /// uwagi jest bez skutku i nie kasuje statusu nadanego przez silnik.
+    /// </summary>
+    public void Uzgodnij(int version, IReadOnlyList<Comment> comments)
     {
         lock (Zamek)
         {
         var wszystkie = Read();
-        var lista = wszystkie.TryGetValue(version, out var istniejace)
-            ? new List<StoredComment>(istniejace)
-            : [];
+        var istniejace = wszystkie.TryGetValue(version, out var byly) ? byly : [];
+        var przychodzace = comments.Select(c => c.Id).ToHashSet(StringComparer.Ordinal);
+
+        // Kolejnosc zostaje: kontrakt 3.2 mowi, ze przy sprzecznych uwagach wygrywa
+        // OSTATNIA, wiec przestawienie listy zmienialoby wynik rundy.
+        var lista = new List<StoredComment>(
+            istniejace.Where(x => x.Status != CommentStatus.Open || przychodzace.Contains(x.Id)));
 
         foreach (var c in comments)
         {

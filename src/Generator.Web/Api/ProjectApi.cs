@@ -179,9 +179,13 @@ public class ProjectApi(ProjectPaths paths, JobQueue queue, ILogger<ProjectApi> 
         // nieudanej rundzie uwagi zostaja `open` i klient nie musi ich pisac
         // od nowa. Gdyby zapis siedzial w zadaniu, awaria zabralaby mu je razem
         // z runda.
+        // `Uzgodnij`, nie „dopisz": przychodzaca lista JEST pelna lista uwag `open`
+        // tej wersji. Uwaga wycofana przez klienta (kontrakt 3.3) nie ma innej drogi
+        // na dysk — bez tego zostawala `open` w comments.json na zawsze, wracala przy
+        // kazdym odswiezeniu i zabierala klientowi runde za rzecz, ktora sam odwolal.
         var store = paths.Comments(id);
         var silnikowe = comments.Select(ToComment).ToList();
-        store.Upsert(version, silnikowe);
+        store.Uzgodnij(version, silnikowe);
 
         return Task.FromResult(queue.Enqueue(id, async (jobId, ct) =>
         {
