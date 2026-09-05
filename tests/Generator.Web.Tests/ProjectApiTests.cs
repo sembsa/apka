@@ -1,3 +1,4 @@
+using Generator.Engine.Gates;
 using Generator.Engine.Jobs;
 using Generator.Engine.Model;
 using Generator.Engine.Storage;
@@ -16,11 +17,16 @@ internal class FakeRunner(ProjectStore store, VersionStore versions) : IRoundRun
     public List<string> Wywolania { get; } = [];
     public TaskCompletionSource? Wstrzymaj { get; set; }
 
+    /// Awaria zwracana zamiast wersji. Kontrakt 4.3 wystawia klientowi `attempts`,
+    /// wiec test musi umiec sprawdzic, ze idzie tam liczba z SILNIKA, a nie stala.
+    public JobFailure? Awaria { get; set; }
+
     public async Task<GenerationOutcome> RunRoundAsync(
         ProjectMeta meta, IReadOnlyList<Comment> comments, CancellationToken ct = default)
     {
         Wywolania.Add("round");
         if (Wstrzymaj is not null) await Wstrzymaj.Task;
+        if (Awaria is not null) return new GenerationOutcome(false, null, Awaria, [], 0.10m);
         return Commit(store.Load(), [.. comments.Select(c =>
             new CommentResult(c.Id, CommentStatus.Applied, "zrobione"))]);
     }
@@ -292,19 +298,49 @@ public class ProjectApiTests : IDisposable
         await Assert.ThrowsAsync<JobRunningException>(() =>
             api.ApplyCommentsAsync(p.Id, 1, [Uwaga("k2")]));
 
-        // Kontrakt 4.4: uwagi zapisuje sie PRZED kolejka, wiec odrzucone zadanie
-        // nie zabiera klientowi tekstu — k2 lezy na dysku jako `open`, mimo ze
-        // zadna runda go nie widziala. Ta asercja nie zalezy od tego, GDZIE
-        // w zadaniu ktos przeniesie zapis: przy zapisie w zadaniu k2 nie
-        // powstanie w ogole, bo zadanie nie ruszylo.
+        // Dwie rzeczy naraz, obie o kolejnosci zapisu wzgledem kolejki:
+        //
+        // (a) k1 JEST juz na dysku, mimo ze zadanie dopiero stoi na bramie. To
+        //     dowodzi, ze Upsert dzieje sie PRZED wrzuceniem do kolejki — gdyby
+        //     siedzial w lambdzie, brama trzymalaby go i lista bylaby pusta.
+        //     Na tym stoi gwarancja 4.4: awaria rundy nie zabiera uwag.
+        //
+        // (b) k2 NIE zostalo zapisane. Odrzucone zadanie to nie jest nieudana
+        //     runda: klient dostal 409, tekst ma dalej w obwodzie Blazora, a runda
+        //     z tymi uwagami nigdy nie ruszyla. Zapis w tym miejscu nic nie dawal,
+        //     a scieral sie z ApplyResults konczacej sie rundy — obie metody to
+        //     czytaj-zmodyfikuj-zapisz na tym samym pliku.
         var poOdrzuceniu = await api.GetCommentsAsync(p.Id, 1);
-        Assert.Contains(poOdrzuceniu, u => u.Id == "k2" && u.Status == "open");
+        Assert.Contains(poOdrzuceniu, u => u.Id == "k1" && u.Status == "open");
+        Assert.DoesNotContain(poOdrzuceniu, u => u.Id == "k2");
 
         // Rollback w trakcie zadania tez odpada: podmienialby work/ pod modelem.
         await Assert.ThrowsAsync<JobRunningException>(() => api.RollbackAsync(p.Id, 1));
 
         brama.SetResult();
         await Poczekaj(api, pierwsze);
+    }
+
+    [Fact]
+    public async Task Nieudana_runda_oddaje_liczbe_prob_z_silnika_a_nie_stala()
+    {
+        // Kontrakt 4.3: UI rozgalezia sie po `handling`, ale `attempts` tez wychodzi
+        // do klienta w Job.failure. Wczesniej awaria wracala wyjatkiem i kolejka
+        // wpisywala 1 na sztywno — API klamalo w polu, ktore samo wystawia.
+        var (api, runner) = Zbuduj();
+        var p = await Gotowy(api);
+        runner(p.Id).Awaria = new JobFailure(FailureHandling.Halted, "model padl dwa razy", Attempts: 2);
+
+        var jobId = await api.ApplyCommentsAsync(p.Id, 1, [Uwaga("k1")]);
+        await Poczekaj(api, jobId);
+
+        var job = await api.GetJobAsync(jobId);
+        Assert.Equal("failed", job.Status);
+        Assert.Equal("halted", job.Failure!.Handling);
+        Assert.Equal(2, job.Failure.Attempts);
+
+        // Gwarancja 4.4 przy okazji: uwaga zostaje `open`, licznik rund stoi.
+        Assert.Contains(await api.GetCommentsAsync(p.Id, 1), u => u.Id == "k1" && u.Status == "open");
     }
 
     private static CommentDto Uwaga(string id) =>

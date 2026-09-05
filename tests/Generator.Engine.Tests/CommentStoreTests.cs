@@ -107,6 +107,21 @@ public class CommentStoreTests : IDisposable
     }
 
     [Fact]
+    public void Rownolegle_zapisy_nie_gubia_uwag()
+    {
+        // Upsert i ApplyResults to obie sekwencje czytaj-zmodyfikuj-zapisz na tym
+        // samym pliku, a CommentStore powstaje na kazde wywolanie — bez blokady
+        // per SCIEZKA (nie per egzemplarz) zapisy sie zjadaja. Zaobserwowane
+        // w Zadaniu 5: uwaga zapisana i po chwili nadpisana przez raport
+        // konczacej sie rundy.
+        var store = new CommentStore(_project);
+
+        Parallel.For(0, 40, i => store.Upsert(1, [C($"k{i}", $"uwaga {i}")]));
+
+        Assert.Equal(40, new CommentStore(_project).ForVersion(1).Count);
+    }
+
+    [Fact]
     public void Raport_o_nieznanym_id_jest_ignorowany()
     {
         // Ochrona przed wstrzyknieciem: raport przychodzi z tekstu modelu, ktory

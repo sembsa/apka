@@ -1,4 +1,5 @@
 using Generator.Engine.Jobs;
+using Generator.Engine.Gates;
 using Generator.Engine.Model;
 using Generator.Engine.Storage;
 using Generator.Web.Contracts;
@@ -36,10 +37,10 @@ public class ProjectApi(ProjectPaths paths, JobQueue queue) : IProjectApi
         var meta = Wczytaj(id);
         if (meta.Status == ProjectStatus.Frozen) throw new ProjectFrozenException(id);
 
-        return Task.FromResult(queue.Enqueue(id, async ct =>
+        return Task.FromResult(queue.Enqueue(id, async (jobId, ct) =>
         {
             var wynik = await paths.Engine(id).RunProposalsAsync(paths.Store(id).Load(), ct);
-            if (!wynik.Succeeded) throw new InvalidOperationException(wynik.Failure!.Cause);
+            if (!wynik.Succeeded) { queue.Fail(jobId, Handling(wynik.Failure!), wynik.Failure.Attempts); return; }
             ZapiszSzkice(id, wynik.Proposals);
         }));
     }
@@ -90,10 +91,10 @@ public class ProjectApi(ProjectPaths paths, JobQueue queue) : IProjectApi
         if (meta.ChosenProposal is null)
             throw new InvalidOperationException($"projekt {id}: klient nie wybral propozycji");
 
-        return Task.FromResult(queue.Enqueue(id, async ct =>
+        return Task.FromResult(queue.Enqueue(id, async (jobId, ct) =>
         {
             var wynik = await paths.Engine(id).RunFirstVersionAsync(paths.Store(id).Load(), ct);
-            if (!wynik.Succeeded) throw new InvalidOperationException(wynik.Failure!.Cause);
+            if (!wynik.Succeeded) { queue.Fail(jobId, Handling(wynik.Failure!), wynik.Failure.Attempts); return; }
         }));
     }
 
@@ -118,6 +119,16 @@ public class ProjectApi(ProjectPaths paths, JobQueue queue) : IProjectApi
 
         if (version != meta.CurrentVersion) throw new StaleVersionException(version, meta.CurrentVersion);
 
+        // Odmowa PRZED zapisem. Kontrakt 4.4 chroni NIEUDANA RUNDE, a nie odrzucone
+        // zadanie: klient dostaje 409, jego tekst siedzi dalej w obwodzie Blazora,
+        // a runda z tymi uwagami nigdy nie ruszyla. Zapis w tym miejscu nie dawal
+        // wiec nic, a szkodzil realnie — to wlasnie ten zapis scieral sie z
+        // `ApplyResults` konczacej sie rundy (obie metody to czytaj-zmodyfikuj-zapisz
+        // na tym samym pliku) i zaobserwowano, ze uwaga po zapisie znikala.
+        // `Enqueue` i tak sprawdza to atomowo przez TryAdd — ta straz jest po to,
+        // zeby nie dotknac dysku, zanim tam dojdziemy.
+        if (queue.MaAktywne(id)) throw new JobRunningException(id);
+
         // Zapis PRZED kolejka, nie w zadaniu: kontrakt 4.4 gwarantuje, ze po
         // nieudanej rundzie uwagi zostaja `open` i klient nie musi ich pisac
         // od nowa. Gdyby zapis siedzial w zadaniu, awaria zabralaby mu je razem
@@ -126,10 +137,10 @@ public class ProjectApi(ProjectPaths paths, JobQueue queue) : IProjectApi
         var silnikowe = comments.Select(ToComment).ToList();
         store.Upsert(version, silnikowe);
 
-        return Task.FromResult(queue.Enqueue(id, async ct =>
+        return Task.FromResult(queue.Enqueue(id, async (jobId, ct) =>
         {
             var wynik = await paths.Engine(id).RunRoundAsync(paths.Store(id).Load(), silnikowe, ct);
-            if (!wynik.Succeeded) throw new InvalidOperationException(wynik.Failure!.Cause);
+            if (!wynik.Succeeded) { queue.Fail(jobId, Handling(wynik.Failure!), wynik.Failure.Attempts); return; }
 
             // Kontrakt 4.4.2: status zmienia sie WYLACZNIE z raportu i WYLACZNIE
             // po udanej rundzie. Uwagi ida do wersji, ktora byla biezaca, gdy je
@@ -202,6 +213,13 @@ public class ProjectApi(ProjectPaths paths, JobQueue queue) : IProjectApi
                 return new ProposalView(x.Id,
                     m.Success ? m.Groups[1].Value.Trim() : $"Kierunek {x.Id.ToUpperInvariant()}", html);
             })];
+
+    /// Kontrakt 4.3: UI rozgalezia sie po `handling`, a `attempts` idzie do niego
+    /// w `Job.failure`. Wczesniej awaria wracala wyjatkiem i kolejka wpisywala
+    /// `attempts: 1` na sztywno — czyli API klamalo w polu, ktore samo wystawia.
+    /// Silnik zna prawdziwa liczbe prob, wiec ja przekazujemy.
+    private static string Handling(JobFailure f) =>
+        f.Handling == FailureHandling.Retrying ? "retrying" : "halted";
 
     private static Comment ToComment(CommentDto d) =>
         new(d.Id, d.Anchor, d.Text, d.Viewport, d.CreatedAt);

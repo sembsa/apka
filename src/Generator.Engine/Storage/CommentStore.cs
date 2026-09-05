@@ -26,6 +26,16 @@ public class CommentStore(string projectDir)
 
     private string Path_ => Path.Combine(projectDir, "comments.json");
 
+    /// Upsert i ApplyResults to obie sekwencje czytaj-zmodyfikuj-zapisz na tym samym
+    /// pliku, a CommentStore powstaje na kazde wywolanie (paths.Comments(id) => new),
+    /// wiec blokada per egzemplarz nie chronilaby niczego. Klucz to sciezka pliku:
+    /// dwa projekty nie blokuja sie nawzajem, a dwa watki tego samego projektu — tak.
+    /// Zaobserwowane bez tego: uwaga zapisana i po chwili nadpisana przez raport
+    /// konczacej sie rundy. Zdanie „uwagi nie gina" przestawalo byc prawdziwe.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, object> Zamki = new();
+
+    private object Zamek => Zamki.GetOrAdd(Path.GetFullPath(Path_), _ => new object());
+
     public IReadOnlyList<StoredComment> ForVersion(int version) =>
         Read().TryGetValue(version, out var lista) ? lista : [];
 
@@ -34,6 +44,8 @@ public class CommentStore(string projectDir)
     /// skasowac statusu, ktory silnik nadal jej w poprzedniej rundzie.
     public void Upsert(int version, IReadOnlyList<Comment> comments)
     {
+        lock (Zamek)
+        {
         var wszystkie = Read();
         var lista = wszystkie.TryGetValue(version, out var istniejace)
             ? new List<StoredComment>(istniejace)
@@ -48,6 +60,7 @@ public class CommentStore(string projectDir)
 
         wszystkie[version] = lista;
         Write(wszystkie);
+        }
     }
 
     /// Kontrakt 4.4.2: status zmienia WYLACZNIE ta metoda, wylacznie z raportu
@@ -55,6 +68,8 @@ public class CommentStore(string projectDir)
     /// z tekstu modelu, ktory czytal tresc pisana przez klienta.
     public void ApplyResults(int version, IReadOnlyList<CommentResult> results)
     {
+        lock (Zamek)
+        {
         var wszystkie = Read();
         if (!wszystkie.TryGetValue(version, out var lista)) return;
 
@@ -64,6 +79,7 @@ public class CommentStore(string projectDir)
             return r is null ? k : k with { Status = r.Status, Note = r.Note };
         })];
         Write(wszystkie);
+        }
     }
 
     private Dictionary<int, List<StoredComment>> Read()

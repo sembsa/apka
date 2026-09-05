@@ -1995,7 +1995,10 @@ namespace Generator.Web.Api;
 /// retry — to jest wlasnie „widzi jedno »pracuje nad tym«" z kontraktu 4.3.
 public class JobQueue : IDisposable
 {
-    private record Zadanie(string Id, string ProjectId, Func<CancellationToken, Task> Praca);
+    /// Praca dostaje SWOJ jobId: inaczej awaria musi wracac wyjatkiem, a kolejka
+    /// wpisuje `attempts` na sztywno — czyli API klamie w polu, ktore samo wystawia
+    /// (kontrakt 4.3 oddaje klientowi `Job.failure {handling, attempts}`).
+    private record Zadanie(string Id, string ProjectId, Func<string, CancellationToken, Task> Praca);
 
     private readonly ConcurrentDictionary<string, JobView> _jobs = new();
     private readonly ConcurrentDictionary<string, string> _aktywne = new();  // projectId -> jobId
@@ -2008,7 +2011,7 @@ public class JobQueue : IDisposable
     public bool MaAktywne(string projectId) => _aktywne.ContainsKey(projectId);
 
     /// <exception cref="JobRunningException">projekt ma juz zadanie w kolejce</exception>
-    public string Enqueue(string projectId, Func<CancellationToken, Task> praca)
+    public string Enqueue(string projectId, Func<string, CancellationToken, Task> praca)
     {
         var jobId = Guid.NewGuid().ToString();
         if (!_aktywne.TryAdd(projectId, jobId)) throw new JobRunningException(projectId);
@@ -2032,7 +2035,7 @@ public class JobQueue : IDisposable
             _jobs[z.Id] = new JobView(z.Id, "running", null);
             try
             {
-                await z.Praca(_stop.Token);
+                await z.Praca(z.Id, _stop.Token);
                 // Praca mogla juz oznaczyc zadanie jako failed (kontrakt 4.3).
                 if (_jobs[z.Id].Status == "running")
                     _jobs[z.Id] = new JobView(z.Id, "succeeded", null);
@@ -2188,10 +2191,18 @@ public class ProjectApi(ProjectPaths paths, JobQueue queue) : IProjectApi
 
         if (version != meta.CurrentVersion) throw new StaleVersionException(version, meta.CurrentVersion);
 
+        // Odmowa PRZED zapisem. Kontrakt 4.4 chroni NIEUDANA RUNDE, a nie odrzucone
+        // zadanie: klient dostaje 409, jego tekst siedzi dalej w obwodzie Blazora,
+        // a runda z tymi uwagami nigdy nie ruszyla. Zapis w tym miejscu nie dawal
+        // nic, a szkodzil realnie — scieral sie z `ApplyResults` konczacej sie rundy
+        // (obie metody to czytaj-zmodyfikuj-zapisz na tym samym pliku; zaobserwowano
+        // uwage zapisana i zaraz nadpisana). `Enqueue` sprawdza to jeszcze raz,
+        // atomowo przez TryAdd — ta straz jest po to, zeby nie dotknac dysku wczesniej.
+        if (queue.MaAktywne(id)) throw new JobRunningException(id);
+
         // Zapis PRZED kolejka, nie w zadaniu: kontrakt 4.4 gwarantuje, ze po
         // nieudanej rundzie uwagi zostaja `open` i klient nie musi ich pisac
-        // od nowa. Gdyby zapis siedzial w zadaniu, awaria zabralaby mu je razem
-        // z runda.
+        // od nowa. Gdyby zapis siedzial za rundą, awaria zabralaby mu je razem z nia.
         var store = paths.Comments(id);
         var silnikowe = comments.Select(ToComment).ToList();
         store.Upsert(version, silnikowe);

@@ -12,7 +12,7 @@ namespace Generator.Web.Api;
 /// retry — to jest wlasnie „widzi jedno »pracuje nad tym«" z kontraktu 4.3.
 public class JobQueue : IDisposable
 {
-    private record Zadanie(string Id, string ProjectId, Func<CancellationToken, Task> Praca);
+    private record Zadanie(string Id, string ProjectId, Func<string, CancellationToken, Task> Praca);
 
     private readonly ConcurrentDictionary<string, JobView> _jobs = new();
     private readonly ConcurrentDictionary<string, string> _aktywne = new();  // projectId -> jobId
@@ -25,7 +25,7 @@ public class JobQueue : IDisposable
     public bool MaAktywne(string projectId) => _aktywne.ContainsKey(projectId);
 
     /// <exception cref="JobRunningException">projekt ma juz zadanie w kolejce</exception>
-    public string Enqueue(string projectId, Func<CancellationToken, Task> praca)
+    public string Enqueue(string projectId, Func<string, CancellationToken, Task> praca)
     {
         var jobId = Guid.NewGuid().ToString();
         if (!_aktywne.TryAdd(projectId, jobId)) throw new JobRunningException(projectId);
@@ -49,7 +49,7 @@ public class JobQueue : IDisposable
             _jobs[z.Id] = new JobView(z.Id, "running", null);
             try
             {
-                await z.Praca(_stop.Token);
+                await z.Praca(z.Id, _stop.Token);
 
                 // Zwolnienie projektu PRZED ogloszeniem stanu koncowego, nie w
                 // `finally` po nim. Klient (i test) pyta o zadanie w petli i rusza
