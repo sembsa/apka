@@ -312,6 +312,24 @@ a nie klient zbyt gadatliwy.
 Tańszy model na rundy komentarzy to osobna dźwignia i należy do ryzyka kosztowego
 z sekcji 11 planu, nie do tego kontraktu.
 
+**Pierwsze realne przejścia (2026-09-05, macOS, `claude-opus-5`).** Pełna ścieżka klienta,
+dwa przebiegi: propozycje **$0,497**, wersja pierwsza **$0,244**, rundy **$0,173** i **$0,120**
+— razem **$1,034** na projekt. Ekstrapolacja ×5–10 wyżej okazała się w tym przypadku
+trafna, nie zawyżona. Osobne przejście `Generator.Cli` po naprawie stdin: **$0,127** za
+wersję pierwszą z opisu.
+
+Nie mamy jeszcze **czasu** jednego wywołania z wiarygodnego pomiaru: liczba 275 s
+zmierzona na Windows powstała, gdy do modelu docierała jedna linia promptu (patrz niżej),
+więc mierzyła rozmowę o niczym, nie generowanie. Czas jest istotny dla UI — klient patrzy
+w „Przygotowuję trzy propozycje…" — więc do przemierzenia po stronie Windows.
+
+**Kanał promptu (2026-09-05).** Instrukcja idzie do `claude` przez **stdin**, nie
+argumentem. Na Windows `claude` z npm to `claude.cmd`, który startuje przez cmd.exe, a ten
+urywa polecenie na pierwszym znaku nowej linii: do modelu docierała tylko pierwsza linia,
+`--output-format json` nie docierał wcale. Poza tym kanał argumentu ma limit ~8191 znaków
+(brief z wklejonym szkicem HTML potrafi go przekroczyć) i interpretuje `% ^ & | < >`
+z tekstu klienta. Jedyne, co dziś jedzie argumentem, to `--append-system-prompt`.
+
 ### 4.3 `failed` — nie „powtórka albo komunikat", tylko dwie gałęzie
 
 Pytanie było postawione jako alternatywa, ale rozstrzyga je przyczyna: **powtórka pomaga
@@ -501,6 +519,13 @@ powrocie do starszej wersji (5.1) to różnica między świadomym wyborem a zgad
 
 **Do zrobienia po stronie silnika:** `VersionMeta` nie zna dziś czasu powstania. Pole
 plus propagacja do `VersionView`. To dołożenie, nie zmiana znaczenia niczego.
+
+> **ZROBIONE 2026-09-05** (Sebastian). `VersionMeta.CreatedAt` → `VersionView.CreatedAt`
+> → `HistoriaWersji`. Datę stempluje `VersionStore.Commit`. Pole jest **nullowalne**:
+> `project.json` zapisany przed tą zmianą wraca z `null` i UI pokazuje wtedy sam numer.
+> Świadomie nie podstawiamy mtime katalogu snapshotu — kopiowanie i synchronizacja go
+> zmieniają, więc byłaby to data wyglądająca na prawdziwą i czasem fałszywa.
+> Format numeryczny i `InvariantCulture`, bo nazwa miesiąca zależy od kultury procesu.
 
 ### 6.3 `Job.failure` bez `cause` — ROZSTRZYGNIĘTE
 
