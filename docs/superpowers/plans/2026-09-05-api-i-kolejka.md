@@ -2802,22 +2802,46 @@ była ~4× za wysoka — jeśli znów jest, to trigger przestawienia z §4.2.
 - §5.2/5.3 `changedAnchors` — Zadanie 2
 - §5.4 ukośnik w `previewUrl` — Zadanie 5 (`ToView`) + asercja w teście
 
-**Znane luki, świadomie poza zakresem:**
-- `Job.failure.attempts` z kolejki zawsze wynosi 1 — silnik nie wystawia liczby
-  wewnętrznych prób w `GenerationOutcome`. Do dołożenia, gdy `attempts` zacznie
-  być komuś potrzebne w UI (dziś nie jest: §4.3 mówi, że UI rozgałęzia się po
-  `handling`).
-- Kolejka żyje w pamięci procesu. Restart gubi zadania w locie — projekt na dysku
-  zostaje nietknięty (§4.4), więc klient klika ponownie. Trwała kolejka to
-  osobna decyzja, nie v1.
-- Gałąź `retrying` w UI jest osiągalna tylko z mocka (ruling 3) — do przekazania
-  Przemkowi, żeby nie szukał w kodzie ścieżki, której nie ma.
+**Znane luki, świadomie poza zakresem — stan po recenzji końcowej (2026-09-05).**
+Wszystkie są zmierzone albo wskazane przez recenzję, żadna nie jest domysłem.
+Kolejność mniej więcej według tego, co pęknie pierwsze.
 
-**Trzy zaległości z recenzji Planu A** (nie blokują, do zrobienia przy okazji
-dotykania tych plików):
-1. `DirectoryOps.cs:65` — `Directory.Move(to, previous)` bez `try`, zostawia
-   osierocone `work.staging-<guid>`; realne na Windowsie, czyli u Przemka.
-2. `GenerationServiceTests.cs:620` — jedyny test pętli bez asercji na `runner.Calls`.
-3. Decyzja produktowa: czy przywracać `work/` na ścieżce anulowania (rozstrzygać
-   po wyścigu o uchwyty plików z `Kill`, nie po nieprawdziwym argumencie
-   „`finally` nie zdąży").
+1. **Uwagi napisane, a niewysłane, żyją tylko w obwodzie Blazora.** F5, timeout obwodu
+   (~3 min bez połączenia), zamknięty laptop — dziesięć przypiętych uwag znika. Gorzej:
+   po kolizji `Reload` podmienia listę na uwagi nowej wersji, więc komunikat mówi
+   „odświeżyliśmy podgląd", a to, co klient napisał, właśnie przepadło. §4.5 obiecuje
+   przy tym, że przy `frozen` „komentarze można dodawać" — nie ma ścieżki, która by je
+   zapisała bez uruchamiania płatnej rundy. **Wymaga endpointu zapisującego samą listę.**
+2. **Wycofanie WSZYSTKICH uwag nie dociera na dysk** — `Editor.Apply` wraca wcześnie przy
+   pustej liście, więc uzgodnienie nie jest wołane. Ta sama decyzja co punkt 1: usunięcie
+   wczesnego wyjścia nie jest naprawą, bo zakolejkowałoby płatną rundę bez uwag.
+3. **„Co zrobiliśmy z Twoimi uwagami" po powrocie pokazuje raport z porzuconej gałęzi.**
+   Po rollbacku do v1 i nowej rundzie (v3, rodzic v1) lista uwag v1 zawiera także wyniki
+   rundy, która stworzyła porzucone v2. Klient czyta „zrobiliśmy X" o zmianie, której na
+   oglądanej stronie nie ma. **Wymaga zmiany modelu:** uwaga musi wiedzieć, która runda
+   ją rozliczyła.
+4. **Kolejka żyje w pamięci procesu i ma jednego konsumenta na wszystkie projekty.**
+   Restart gubi zadania w locie (projekt na dysku zostaje), a N-ty klient czeka
+   N × minuty na „pracuję nad tym". `_jobs` rośnie bez ograniczeń przez czas życia procesu.
+5. **TOCTOU między `MaAktywne` a `Restore`/`Save`** w powrocie i wyborze propozycji.
+   Sprawdzenie nie jest zamkiem; między nim a zapisem inna karta może wejść do kolejki.
+6. **Tryb „istniejąca strona" niczego nie pobiera.** `ProjectMeta.SourceUrl` jest zapisywane
+   i nigdy nie czytane — prompt powstaje z samego opisu. To luka w §1 planu produktu,
+   czyli w połowie obiecanego wejścia.
+7. **`VersionMeta.SnapshotDir` trzyma ścieżkę bezwzględną**, więc zmiana `Projects:Root`
+   osieroca istniejące projekty.
+8. **`/preview/*` nie wymaga tokenu** — chroni go nieodgadywalny GUID. Świadome, opisane
+   w §1 kontraktu; do zamknięcia razem z kontami.
+9. **Osierocony `work.staging-<guid>`** przy nieudanym `Directory.Move` w `DirectoryOps`
+   (realne na Windows, czyli na maszynie drugiej osoby).
+10. **`Kolizja` w `Proposals.razor` łapie każdy `InvalidOperationException`**, bo strażnicy
+    zamawiania rzucają gołym typem. Każdy programistyczny błąd tej klasy pokaże się
+    klientowi jako „Twoja strona jest już gotowa". Do zawężenia, gdy strażnicy dostaną
+    własne typy.
+
+**Trzy rzeczy do rozstrzygnięcia z Przemkiem** są w `docs/api-contract.md` §6 — nie
+w tym pliku, bo kontrakt jest dokumentem wspólnym, a plan moim.
+
+**Zmierzony koszt pełnego projektu: $1,03** (propozycje $0,50, wersja 1 $0,24, dwie rundy
+$0,17 i $0,12). Mieści się w widełkach §4.2 — ekstrapolacja nie była tym razem 4× za
+wysoka jak w Planie A, więc §4.2 nie wymaga przestawienia.
