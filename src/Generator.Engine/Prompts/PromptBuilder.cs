@@ -11,9 +11,15 @@ public static class PromptBuilder
         dobrze "oferta-strzyzenie", zle "oferta-1". Format: [a-z][a-z0-9-]{0,39}.
         """;
 
-    /// Normalizuje tekst uwagi: zamienia \r\n, \r, \n na pojedyncze spacje,
+    /// Normalizuje tekst jednolinijkowy: zamienia \r\n, \r, \n na pojedyncze spacje,
     /// następnie łączy wielokrotne spacje w jedną.
-    private static string NormalizeCommentText(string text)
+    ///
+    /// Publiczna i bez „Comment" w nazwie, bo ma DWA zastosowania: tekst uwagi w
+    /// `BuildRound` i nazwa kierunku z `<title>` szkicu (GenerationService.CzytajSzkice).
+    /// Wielolinijkowy `<title>` dawal nazwe z lamaniem linii, ktora szla do JSON-a i do
+    /// UI. Jedna regula, jedna implementacja — drugi wariant normalizacji rozjechalby
+    /// sie z tym po pierwszej poprawce.
+    public static string NormalizeWhitespace(string text)
     {
         var normalized = Regex.Replace(text, @"\r\n|\r|\n", " ");
         normalized = Regex.Replace(normalized, @" +", " ");
@@ -86,7 +92,7 @@ public static class PromptBuilder
             foreach (var c in comments)
             {
                 var where = c.Anchor is null ? "cala strona" : $"blok {c.Anchor}";
-                var normalizedText = NormalizeCommentText(c.Text);
+                var normalizedText = NormalizeWhitespace(c.Text);
                 sb.AppendLine($"- [{c.Id}] ({where}, widok {c.Viewport}): \"{normalizedText}\"");
             }
             sb.AppendLine();

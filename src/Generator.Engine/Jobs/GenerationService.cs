@@ -303,20 +303,69 @@ public partial class GenerationService(IClaudeRunner runner, ProjectStore projec
     /// piec warunkow z sekcji 2, bramka twarda, naprawa kotwic, snapshot, Freeze —
     /// jest ta sama sciezka co runda i celowo nie jest tu duplikowana.
     public Task<GenerationOutcome> RunFirstVersionAsync(
-        ProjectMeta meta, CancellationToken ct = default) =>
-        RunAsync(meta, [], m => PromptBuilder.BuildBrief(m.Description, ReadChosenSketch(m)),
-            consumesRound: false, ct);
+        ProjectMeta meta, CancellationToken ct = default)
+    {
+        // F1: `consumesRound: false` jest wlasnoscia TEJ metody, nie stanu projektu —
+        // wiec bez tej strazy drugie wywolanie tworzy pelnoprawna wersje ZA DARMO
+        // (licznik rund stoi). Gorzej: przy istniejacej wersji `isFirstRun` w rdzeniu
+        // wychodzi `false`, wiec prompt „zbuduj strone od zera" pojechalby z `--resume`
+        // na sesji poprzedniej wersji, do WorkDir, ktory juz zawiera jej pliki —
+        // klient dostaje strone zbudowana od nowa w miejsce swojej biezacej.
+        // Odrzucamy przed dotknieciem WorkDir i przed wywolaniem modelu, dokladnie
+        // jak straz `Frozen` w RunProposalsAsync. Stan bierzemy z dysku, nie
+        // z parametru — patrz komentarz nad rdzeniem.
+        var swieza = projects.Load();
+        if (swieza.Versions.Count > 0)
+        {
+            return Task.FromResult(new GenerationOutcome(false, null,
+                new JobFailure(
+                    FailureHandling.Halted,
+                    $"projekt ma juz {swieza.Versions.Count} wersji — wersje pierwsza generuje sie " +
+                    "tylko raz; kolejne zmiany ida przez runde uwag",
+                    Attempts: 0),
+                [], 0m));
+        }
 
+        return RunAsync(meta, [], m => PromptBuilder.BuildBrief(m.Description, ReadChosenSketch(m)),
+            consumesRound: false, ct);
+    }
+
+    /// F2 (bezpieczenstwo): `ChosenProposal` przychodzi z zadania HTTP, a tutaj
+    /// trafialoby jako niewalidowany segment sciezki. `Path.Combine` przepuszcza
+    /// „../", a dla sciezki BEZWZGLEDNEJ odrzuca baze w calosci — w obu razach
+    /// tresc dowolnego pliku z dysku wladowalaby sie w prompt. Biala lista trzech
+    /// literalow zamyka to szczelniej i prosciej niz GetFullPath + porownywanie
+    /// prefiksow: inne id niz `SketchIds` NIGDY nie powstaje po naszej stronie.
+    /// Wybor spoza listy = brak wyboru (wersja 1 powstanie z samego opisu).
+    ///
+    /// F3: id Z listy, ale bez pliku, to co innego — to zlamany niezmiennik
+    /// (RunProposalsAsync czysci wybor razem z katalogiem), wiec jest GLOSNE.
+    /// Cichy `null` dawalby tu wersje 1 zbudowana wbrew wyborowi klienta i nikt
+    /// by sie nie dowiedzial. InvalidDataException, bo to ta sama klasa bledu i ten
+    /// sam kanal co `ProjectStore.Load` na uszkodzonym project.json — a rdzen i tak
+    /// zaczyna od `projects.Load()`, wiec wywolujacy juz musi ja obslugiwac.
+    /// Rzucamy przed `try` w rdzeniu: nic nie jest do cofniecia, zero wydatku.
     private string? ReadChosenSketch(ProjectMeta meta)
     {
         if (meta.ChosenProposal is null) return null;
+        if (!SketchIds.Contains(meta.ChosenProposal)) return null;
+
         var plik = Path.Combine(ProposalsDir, $"{meta.ChosenProposal}.html");
-        return File.Exists(plik) ? File.ReadAllText(plik) : null;
+        if (!File.Exists(plik))
+            throw new InvalidDataException(
+                $"projekt wskazuje wybrany szkic '{meta.ChosenProposal}', ale pliku nie ma: {plik}");
+
+        return File.ReadAllText(plik);
     }
 
     /// Katalog szkicow, OBOK work/ — trzy konkurencyjne pliki HTML w katalogu
     /// roboczym zepsulyby wersje pierwsza.
     private string ProposalsDir => Path.Combine(projects.Dir, "proposals");
+
+    /// Jedyne dopuszczalne id szkicu — sluzy ZA RAZ za biala liste w ReadChosenSketch
+    /// i za liste do odczytu w CzytajSzkice. Jedno zrodlo prawdy: dwie osobne listy
+    /// rozjechalyby sie przy pierwszej zmianie liczby kierunkow.
+    private static readonly string[] SketchIds = ["a", "b", "c"];
 
     public async Task<ProposalsOutcome> RunProposalsAsync(ProjectMeta meta, CancellationToken ct = default)
     {
@@ -327,6 +376,19 @@ public partial class GenerationService(IClaudeRunner runner, ProjectStore projec
                 new JobFailure(FailureHandling.Halted,
                     "projekt jest zamrozony (Frozen) — propozycje odrzucone bez wywolania modelu", 0),
                 0m);
+        }
+
+        // F3: za chwile kasujemy proposals/, wiec dotychczasowy wybor klienta
+        // wskazuje na material, ktorego juz nie ma. Czyscimy go RAZEM z katalogiem —
+        // celem jest, zeby stan projektu byl spojny, a nie sprzeczny-ale-wykrywalny.
+        // Zapis PRZED skasowaniem katalogu: gdyby Delete padlo, zostajemy z „brak
+        // wyboru" (nieszkodliwe), a nie z „wybor wskazuje na nieistniejacy plik".
+        // Dziala na `meta` swiezo wczytanej wyzej — to wybor SPRZED regeneracji;
+        // przeladowanie na koncu (przy zapisie wydatku) juz nic nie czysci.
+        if (meta.ChosenProposal is not null)
+        {
+            meta = meta with { ChosenProposal = null };
+            projects.Save(meta);
         }
 
         if (Directory.Exists(ProposalsDir)) Directory.Delete(ProposalsDir, recursive: true);
@@ -349,7 +411,13 @@ public partial class GenerationService(IClaudeRunner runner, ProjectStore projec
         // runda kumuluje wydatek przez kilka przebiegow i przy anulowaniu ma co
         // uratowac, a propozycje to JEDNO wywolanie — anulowane, nie zwraca JSON-a,
         // wiec kosztu i tak nie znamy. Zapisanie zera nie byloby ratunkiem.
-        projects.Save(Freeze(ProjectStore.WithSpend(meta, spent)));
+        //
+        // F6: zapisujemy stan PRZELADOWANY z dysku, nie `meta` sprzed wywolania
+        // modelu. Miedzy jednym a drugim mijaja minuty, a wybor propozycji celowo
+        // NIE idzie przez kolejke (Zadanie 5) — zapis calej starej `meta` cofnalby
+        // `ChosenProposal` zapisane w miedzyczasie. Ta sama zasada, ktora rdzen rundy
+        // stosuje przez `meta = projects.Load()` w pierwszej linii.
+        projects.Save(Freeze(ProjectStore.WithSpend(projects.Load(), spent)));
 
         if (gate.Verdict != GateVerdict.Ok)
         {
@@ -375,14 +443,30 @@ public partial class GenerationService(IClaudeRunner runner, ProjectStore projec
     private async Task<IReadOnlyList<Proposal>> CzytajSzkice()
     {
         var wynik = new List<Proposal>();
-        foreach (var id in new[] { "a", "b", "c" })
+        foreach (var id in SketchIds)
         {
             var plik = Path.Combine(ProposalsDir, $"{id}.html");
             if (!File.Exists(plik)) continue;
 
             var html = await File.ReadAllTextAsync(plik);
+
+            // F4: samo File.Exists wystarczalo, zeby policzyc plik do trojki, wiec
+            // zerobajtowy c.html dawal Succeeded i trzecia karte z pustym podgladem
+            // zamiast czytelnego „model zapisal 2 z 3 szkicow". Warunek celowo bez
+            // progu dlugosci: arbitralna liczba jest gorsza niz jej brak. Ma byc
+            // jakakolwiek tresc i ma to byc HTML.
+            if (html.Trim().Length == 0 || !html.Contains('<')) continue;
+
             var m = TitleRegex().Match(html);
-            wynik.Add(new Proposal(id, m.Success ? m.Groups[1].Value.Trim() : $"Kierunek {id.ToUpperInvariant()}", html));
+
+            // F5: <title> rozbity na kilka linii (zwyczajne w sformatowanym HTML)
+            // dawal nazwe z lamaniem linii i wciecien — a ta idzie prosto do JSON-a
+            // i do UI. Ta sama regula co dla tekstu uwagi, nie drugi jej wariant.
+            var nazwa = m.Success
+                ? PromptBuilder.NormalizeWhitespace(m.Groups[1].Value)
+                : $"Kierunek {id.ToUpperInvariant()}";
+
+            wynik.Add(new Proposal(id, nazwa, html));
         }
         return wynik;
     }

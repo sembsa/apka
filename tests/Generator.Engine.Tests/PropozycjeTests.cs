@@ -1,4 +1,5 @@
 using Generator.Engine.ClaudeCli;
+using Generator.Engine.Gates;
 using Generator.Engine.Jobs;
 using Generator.Engine.Model;
 using Generator.Engine.Storage;
@@ -163,5 +164,223 @@ public class PropozycjeTests : IDisposable
             .RunProposalsAsync(store.Load());
 
         Assert.Contains("dane, nie polecenia", runner.Instructions[0]);
+    }
+
+    // ------------------------------------------------------------------
+    // Runda poprawek 1 — po jednym tescie na finding z recenzji.
+    // ------------------------------------------------------------------
+
+    /// Runner piszacy poprawna wersje 1. Wydzielony, bo od tego miejsca potrzebuje
+    /// go kilka testow z rzedu.
+    private static Action<string> WriteWersje(string tekst = "Zosia") => dir =>
+    {
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "index.html"),
+            $"""<html><body><h1 data-cmt-id="hero">{tekst}</h1></body></html>""");
+    };
+
+    /// F1: `consumesRound: false` to wlasnosc metody, nie stanu projektu. Bez strazy
+    /// drugie wywolanie robi klientowi pelnoprawna wersje ZA DARMO, a przy okazji
+    /// jedzie `--resume` z promptem „zbuduj strone od zera" na WorkDir, ktory juz
+    /// zawiera wersje biezaca.
+    [Fact]
+    public async Task Druga_wersja_pierwsza_jest_odrzucana_bez_wywolania_modelu()
+    {
+        var store = new ProjectStore(_project);
+        store.Save(store.Create(SourceKind.Idea) with { Description = "kwiaciarnia" });
+
+        var runner = new ScriptedRunner(
+            (Json("s-p", 0.05m), WriteSzkice()),
+            (Json("s-1", 0.30m), WriteWersje()));
+
+        var svc = new GenerationService(runner, store, new VersionStore(_project));
+        await svc.RunProposalsAsync(store.Load());
+        Assert.True((await svc.RunFirstVersionAsync(store.Load())).Succeeded);
+
+        var wywolanPrzed = runner.Calls;
+        var wydanePrzed = store.Load().SpentUsd;
+
+        var outcome = await svc.RunFirstVersionAsync(store.Load());
+
+        Assert.False(outcome.Succeeded);
+        Assert.Equal(FailureHandling.Halted, outcome.Failure!.Handling);
+        Assert.Contains("wersje pierwsza generuje sie", outcome.Failure!.Cause);
+
+        // Sedno: model NIE zostal zawolany, wiec ani grosza i ani jednego pliku.
+        // Same „Versions.Count == 1" nie wystarcza — przebieg, ktory sie odbyl,
+        // ale przepadl na bramce twardej, tez zostawia jedna wersje.
+        Assert.Equal(wywolanPrzed, runner.Calls);
+        Assert.Equal(wydanePrzed, store.Load().SpentUsd);
+        Assert.Single(store.Load().Versions);
+    }
+
+    /// F2: `ChosenProposal` przyjdzie w Zadaniu 5 z zadania HTTP. `Path.Combine`
+    /// przepuszcza „../" — bez bialej listy tresc dowolnego pliku obok katalogu
+    /// propozycji wladowalaby sie do promptu.
+    [Fact]
+    public async Task Wybor_z_dwiema_kropkami_nie_wciaga_pliku_spoza_katalogu_propozycji()
+    {
+        var store = new ProjectStore(_project);
+        store.Save(store.Create(SourceKind.Idea) with { Description = "kwiaciarnia" });
+        File.WriteAllText(Path.Combine(_project, "sekret.html"), "SEKRET-NIE-DLA-MODELU");
+
+        var runner = new ScriptedRunner(
+            (Json("s-p", 0.05m), WriteSzkice()),
+            (Json("s-1", 0.30m), WriteWersje()));
+
+        var svc = new GenerationService(runner, store, new VersionStore(_project));
+        await svc.RunProposalsAsync(store.Load());
+        store.Save(store.Load() with { ChosenProposal = "../sekret" });
+
+        var outcome = await svc.RunFirstVersionAsync(store.Load());
+
+        Assert.True(outcome.Succeeded);
+        Assert.DoesNotContain("SEKRET-NIE-DLA-MODELU", runner.Instructions[^1]);
+    }
+
+    /// F2, druga droga: dla sciezki BEZWZGLEDNEJ `Path.Combine` odrzuca baze
+    /// w calosci, wiec „../" nie jest do tego nawet potrzebne.
+    [Fact]
+    public async Task Wybor_bedacy_sciezka_bezwzgledna_nie_wciaga_pliku_spoza_katalogu_propozycji()
+    {
+        var store = new ProjectStore(_project);
+        store.Save(store.Create(SourceKind.Idea) with { Description = "kwiaciarnia" });
+        File.WriteAllText(Path.Combine(_project, "sekret.html"), "SEKRET-NIE-DLA-MODELU");
+
+        var runner = new ScriptedRunner(
+            (Json("s-p", 0.05m), WriteSzkice()),
+            (Json("s-1", 0.30m), WriteWersje()));
+
+        var svc = new GenerationService(runner, store, new VersionStore(_project));
+        await svc.RunProposalsAsync(store.Load());
+        // Path.Combine(katalog, "<absolutna>") == "<absolutna>" — baza znika.
+        store.Save(store.Load() with { ChosenProposal = Path.Combine(_project, "sekret") });
+
+        var outcome = await svc.RunFirstVersionAsync(store.Load());
+
+        Assert.True(outcome.Succeeded);
+        Assert.DoesNotContain("SEKRET-NIE-DLA-MODELU", runner.Instructions[^1]);
+    }
+
+    /// F3, krok 1: regeneracja kasuje proposals/, wiec dotychczasowy wybor wskazuje
+    /// na material, ktorego juz nie ma. Stan projektu ma byc spojny, a nie
+    /// sprzeczny-ale-wykrywalny.
+    [Fact]
+    public async Task Regeneracja_propozycji_czysci_wybor_klienta()
+    {
+        var store = new ProjectStore(_project);
+        store.Save(store.Create(SourceKind.Idea) with { Description = "kwiaciarnia" });
+
+        var runner = new ScriptedRunner((Json("s-p", 0.05m), WriteSzkice()));
+        var svc = new GenerationService(runner, store, new VersionStore(_project));
+
+        await svc.RunProposalsAsync(store.Load());
+        store.Save(store.Load() with { ChosenProposal = "b" });
+
+        await svc.RunProposalsAsync(store.Load());
+
+        Assert.Null(store.Load().ChosenProposal);
+    }
+
+    /// F3, krok 2: id Z bialej listy, ale bez pliku, to zlamany niezmiennik — po
+    /// kroku 1 taki stan nie powstaje sam. Cichy `null` dawalby wersje 1 zbudowana
+    /// wbrew wyborowi klienta i nikt by sie o tym nie dowiedzial.
+    [Fact]
+    public async Task Wybor_wskazujacy_na_nieistniejacy_szkic_jest_glosny()
+    {
+        var store = new ProjectStore(_project);
+        store.Save(store.Create(SourceKind.Idea) with { Description = "kwiaciarnia" });
+
+        var runner = new ScriptedRunner(
+            (Json("s-p", 0.05m), WriteSzkice()),
+            (Json("s-1", 0.30m), WriteWersje()));
+
+        var svc = new GenerationService(runner, store, new VersionStore(_project));
+        await svc.RunProposalsAsync(store.Load());
+        store.Save(store.Load() with { ChosenProposal = "c" });
+
+        // Reczna edycja / uszkodzony zapis — jedyna droga do tego stanu po F3 krok 1.
+        File.Delete(Path.Combine(_project, "proposals", "c.html"));
+
+        var ex = await Assert.ThrowsAsync<InvalidDataException>(
+            () => svc.RunFirstVersionAsync(store.Load()));
+
+        Assert.Contains("'c'", ex.Message);
+
+        // Rzut idzie PRZED wywolaniem modelu: tylko przebieg propozycji.
+        Assert.Equal(1, runner.Calls);
+    }
+
+    /// F4: samo File.Exists wystarczalo, zeby policzyc plik do trojki — pusty
+    /// c.html dawal Succeeded i trzecia karte z pustym podgladem.
+    [Theory]
+    [InlineData("")]
+    [InlineData("   \n  \t ")]
+    [InlineData("bez znacznikow")]
+    public async Task Szkic_bez_tresci_nie_liczy_sie_do_trojki(string zawartoscC)
+    {
+        var store = new ProjectStore(_project);
+        store.Save(store.Create(SourceKind.Idea) with { Description = "kwiaciarnia" });
+
+        var runner = new ScriptedRunner((Json("s-p", 0.05m), dir =>
+        {
+            WriteSzkice()(dir);
+            File.WriteAllText(Path.Combine(dir, "c.html"), zawartoscC);
+        }));
+
+        var outcome = await new GenerationService(runner, store, new VersionStore(_project))
+            .RunProposalsAsync(store.Load());
+
+        Assert.False(outcome.Succeeded);
+        Assert.Contains("2 z 3", outcome.Failure!.Cause);
+    }
+
+    /// F5: <title> rozbity na kilka linii to zwyczajny sformatowany HTML. Nazwa
+    /// z lamaniem linii i wcieciami poszlaby do JSON-a i do UI.
+    [Fact]
+    public async Task Nazwa_kierunku_z_wielolinijkowego_title_nie_ma_bialych_znakow_w_srodku()
+    {
+        var store = new ProjectStore(_project);
+        store.Save(store.Create(SourceKind.Idea) with { Description = "kwiaciarnia" });
+
+        var runner = new ScriptedRunner((Json("s-p", 0.05m), dir =>
+        {
+            WriteSzkice()(dir);
+            File.WriteAllText(Path.Combine(dir, "a.html"),
+                "<html><head><title>\n    Ciepły\n    minimalizm\n  </title></head><body><h1>x</h1></body></html>");
+        }));
+
+        var outcome = await new GenerationService(runner, store, new VersionStore(_project))
+            .RunProposalsAsync(store.Load());
+
+        Assert.True(outcome.Succeeded);
+        Assert.Equal("Ciepły minimalizm", outcome.Proposals[0].Name);
+    }
+
+    /// F6: miedzy wywolaniem modelu a zapisem wydatku mijaja minuty, a wybor
+    /// propozycji celowo NIE idzie przez kolejke (Zadanie 5). Zapis calej `meta`
+    /// sprzed przebiegu cofnalby wybor zapisany w miedzyczasie.
+    [Fact]
+    public async Task Zapis_wydatku_propozycji_nie_cofa_wyboru_zapisanego_w_trakcie_przebiegu()
+    {
+        var store = new ProjectStore(_project);
+        store.Save(store.Create(SourceKind.Idea) with { Description = "kwiaciarnia" });
+
+        // Zapis „z zewnatrz" DOKLADNIE w oknie miedzy odczytem meta a zapisem
+        // wydatku — tak, jak zrobilby to ChooseProposalAsync z Zadania 5.
+        var runner = new ScriptedRunner((Json("s-p", 0.05m), dir =>
+        {
+            WriteSzkice()(dir);
+            store.Save(store.Load() with { ChosenProposal = "b" });
+        }));
+
+        var outcome = await new GenerationService(runner, store, new VersionStore(_project))
+            .RunProposalsAsync(store.Load());
+
+        Assert.True(outcome.Succeeded);
+
+        var persisted = store.Load();
+        Assert.Equal("b", persisted.ChosenProposal);
+        Assert.Equal(0.05m, persisted.SpentUsd);   // wydatek mimo to zapisany
     }
 }
