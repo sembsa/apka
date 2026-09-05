@@ -287,6 +287,8 @@ public class EditorPageTests : BunitContext
             wewnetrzny.GetProposalsAsync(id);
         public Task ChooseProposalAsync(string id, string proposalId) =>
             wewnetrzny.ChooseProposalAsync(id, proposalId);
+        public Task<string> CreateFirstVersionAsync(string id) =>
+            wewnetrzny.CreateFirstVersionAsync(id);
         public Task<string> ApplyCommentsAsync(string id, int version, IReadOnlyList<CommentDto> comments) =>
             wewnetrzny.ApplyCommentsAsync(id, version, comments);
         public Task<IReadOnlyList<CommentDto>> GetCommentsAsync(string id, int version) =>

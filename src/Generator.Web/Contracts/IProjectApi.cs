@@ -11,6 +11,14 @@ public interface IProjectApi
     Task<string> RequestProposalsAsync(string id);
     Task<IReadOnlyList<ProposalView>> GetProposalsAsync(string id);
     Task ChooseProposalAsync(string id, string proposalId);
+
+    /// <summary>
+    /// Kontrakt 1: `POST /api/projects/{id}/versions` — wersja 1 z wybranej
+    /// propozycji. Osobne zadanie, nie skutek uboczny wyboru: prawdziwa generacja
+    /// trwa minuty, a wybor ma byc natychmiastowy.
+    /// </summary>
+    Task<string> CreateFirstVersionAsync(string id);
+
     Task<string> ApplyCommentsAsync(string id, int version, IReadOnlyList<CommentDto> comments);
     Task<JobView> GetJobAsync(string jobId);
 

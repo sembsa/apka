@@ -163,6 +163,18 @@ public class MockProjectApi : IProjectApi
     }
 
     /// <summary>
+    /// Atrapa tworzy wersje 1 juz przy wyborze i robi to synchronicznie, wiec nie ma
+    /// czego czekac: zadanie jest gotowe w chwili powstania. W Planie B ta metoda
+    /// odpala model na minuty, dlatego w kontrakcie jest zadaniem, a nie `void`.
+    /// </summary>
+    public Task<string> CreateFirstVersionAsync(string id)
+    {
+        var jobId = Guid.NewGuid().ToString();
+        _jobs[jobId] = new JobView(jobId, "succeeded", null);
+        return Task.FromResult(jobId);
+    }
+
+    /// <summary>
     /// Kontrakt 5.1. Zamrozenie NIE blokuje powrotu — 4.5 blokuje nowe rundy, a nie
     /// ogladanie tego, co klient juz ma. Runda sie nie zuzywa, bo model sie nie uruchamia.
     /// </summary>
