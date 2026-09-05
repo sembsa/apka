@@ -954,6 +954,34 @@ public class CommentStoreTests : IDisposable
     }
 
     [Fact]
+    public void ApplyResults_na_wersji_bez_zapisanych_uwag_nic_nie_robi()
+    {
+        // Runda moze pojsc na samych uwagach globalnych albo zostac uruchomiona
+        // ponownie po awarii — wtedy raport przychodzi do wersji, dla ktorej
+        // Upsert nigdy nie byl wolany. Ma to byc cichy no-op, nie wyjatek:
+        // bez straznika `lista` jest null i leci NullReferenceException w srodku
+        // zadania, juz PO tym jak model zostal oplacony.
+        var store = new CommentStore(_project);
+
+        store.ApplyResults(7, [new CommentResult("k1", CommentStatus.Applied, "x")]);
+
+        Assert.Empty(store.ForVersion(7));
+        Assert.False(File.Exists(Path.Combine(_project, "comments.json")));
+    }
+
+    [Fact]
+    public void ApplyResults_nie_rusza_innych_wersji()
+    {
+        var store = new CommentStore(_project);
+        store.Upsert(1, [C("k1", "raz")]);
+
+        store.ApplyResults(7, [new CommentResult("k1", CommentStatus.Applied, "x")]);
+
+        var k = Assert.Single(store.ForVersion(1));
+        Assert.Equal(CommentStatus.Open, k.Status);
+    }
+
+    [Fact]
     public void Raport_o_nieznanym_id_jest_ignorowany()
     {
         // Ochrona przed wstrzyknieciem: raport przychodzi z tekstu modelu, ktory
@@ -1058,6 +1086,13 @@ public class CommentStore(string projectDir)
         catch (JsonException ex)
         {
             throw new InvalidDataException($"comments.json jest uszkodzony w: {Path_}", ex);
+        }
+        catch (IOException ex)
+        {
+            // Symetria z ProjectStore.Load, ktory lapie oba. Bez tego IOException
+            // (zablokowany plik, przejsciowy brak dostepu) przelatuje nieopakowany
+            // i mija kod wywolujacy, ktory lapie InvalidDataException.
+            throw new InvalidDataException($"Nie mozna czytac comments.json w: {Path_}", ex);
         }
     }
 

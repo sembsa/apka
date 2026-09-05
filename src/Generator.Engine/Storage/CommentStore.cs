@@ -78,6 +78,14 @@ public class CommentStore(string projectDir)
         {
             throw new InvalidDataException($"comments.json jest uszkodzony w: {Path_}", ex);
         }
+        catch (IOException ex)
+        {
+            // Symetria z ProjectStore.Load, ktory lapie oba. Bez tego IOException
+            // (zablokowany plik, przejsciowy brak dostepu) przelatuje nieopakowany
+            // i mija kod wywolujacy, ktory lapie InvalidDataException. Osobny
+            // komunikat, bo "nie moge czytac" to nie to samo co "uszkodzony".
+            throw new InvalidDataException($"Nie mozna czytac comments.json w: {Path_}", ex);
+        }
     }
 
     /// Ten sam zapis atomowy co ProjectStore.Save: tmp + Move(overwrite). Przerwany
