@@ -24,6 +24,7 @@ public class HistoriaWersjiTests : BunitContext, IDisposable
         Services.AddSingleton<IProjectApi>(api);
         var p = await api.CreateAsync("idea", "Fryzjer");
         await api.ChooseProposalAsync(p.Id, "a");
+        await api.CreateFirstVersionAsync(p.Id);   // wersja 1 to OSOBNE zadanie (jak w ProjectApi)
         await api.ApplyCommentsAsync(p.Id, 1, [C("hero", "nazwa większa")]);
         return (api, p.Id);
     }
@@ -69,6 +70,7 @@ public class HistoriaWersjiTests : BunitContext, IDisposable
         Services.AddSingleton<IProjectApi>(api);
         var p = await api.CreateAsync("idea", "Fryzjer");
         await api.ChooseProposalAsync(p.Id, "a");
+        await api.CreateFirstVersionAsync(p.Id);   // wersja 1 to OSOBNE zadanie (jak w ProjectApi)
 
         var cut = Render<Editor>(ps => ps.Add(x => x.ProjectId, p.Id));
 
@@ -197,6 +199,7 @@ public class HistoriaWersjiTests : BunitContext, IDisposable
         Services.AddSingleton<IProjectApi>(api);
         var p = await api.CreateAsync("idea", "Fryzjer");
         await api.ChooseProposalAsync(p.Id, "a");
+        await api.CreateFirstVersionAsync(p.Id);   // wersja 1 to OSOBNE zadanie (jak w ProjectApi)
 
         var cut = Render<Editor>(ps => ps.Add(x => x.ProjectId, p.Id));
 

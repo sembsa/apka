@@ -12,6 +12,68 @@ public class MockProjectApiTests
     private static CommentDto C(string id, string? anchor, string text) =>
         new(id, anchor, text, "desktop", DateTimeOffset.UtcNow, "open", null);
 
+
+    /// <summary>
+    /// Ostatnia znana rozbieznosc atrapy (Sebastian zostawil ja do decyzji). Prawdziwe
+    /// `ProjectApi` rozdziela: wybor tylko zapisuje kierunek, a wersje 1 buduje OSOBNE
+    /// zadanie `CreateFirstVersionAsync` — bo generacja trwa minuty. Atrapa robila to
+    /// odwrotnie: wersje tworzyl wybor, a `CreateFirstVersionAsync` nie robilo nic.
+    ///
+    /// Roznica jest niewidoczna, dopoki UI wola obie metody po kolei — ale test
+    /// komponentu, ktory zawola samo `Choose`, przechodzi pod atrapa i klamie
+    /// o produkcji. Dokladnie ta klasa bledu, ktora kosztowala nas juz cztery pomylki.
+    /// </summary>
+    [Fact]
+    public async Task Wybor_propozycji_NIE_tworzy_wersji_tak_jak_w_prawdziwym_api()
+    {
+        var api = Api();
+        var p = await api.CreateAsync("idea", "Fryzjer");
+
+        // Sam wybor. BEZ CreateFirstVersionAsync — o to w tym tescie chodzi.
+        await api.ChooseProposalAsync(p.Id, "a");
+
+        Assert.Empty((await api.GetAsync(p.Id)).Versions);
+        Assert.Equal(0, (await api.GetAsync(p.Id)).CurrentVersion);
+    }
+
+    [Fact]
+    public async Task Wersje_pierwsza_tworzy_dopiero_CreateFirstVersion()
+    {
+        var api = Api();
+        var p = await api.CreateAsync("idea", "Fryzjer");
+        await api.ChooseProposalAsync(p.Id, "a");
+        await api.CreateFirstVersionAsync(p.Id);
+
+        var po = await api.GetAsync(p.Id);
+        Assert.Equal(1, po.CurrentVersion);
+        Assert.Equal(1, Assert.Single(po.Versions).Number);
+    }
+
+    [Fact]
+    public async Task Wersji_pierwszej_nie_da_sie_zbudowac_bez_wyboru()
+    {
+        // Prawdziwe API rzuca InvalidOperationException („klient nie wybral propozycji").
+        var api = Api();
+        var p = await api.CreateAsync("idea", "Fryzjer");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => api.CreateFirstVersionAsync(p.Id));
+    }
+
+    [Fact]
+    public async Task Druga_wersja_pierwsza_jest_odrzucana()
+    {
+        // Straz z prawdziwego API: wersje pierwsza generuje sie tylko raz, kolejne
+        // zmiany ida przez runde uwag. Bez tego powrot strzalka „wstecz" budowal
+        // klientowi druga wersje pierwsza za pieniadze.
+        var api = Api();
+        var p = await api.CreateAsync("idea", "Fryzjer");
+        await api.ChooseProposalAsync(p.Id, "a");
+        await api.CreateFirstVersionAsync(p.Id);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => api.CreateFirstVersionAsync(p.Id));
+    }
     [Fact]
     public async Task Nowy_projekt_ma_token_i_liczniki_z_kontraktu()
     {
@@ -30,6 +92,7 @@ public class MockProjectApiTests
         var api = Api();
         var p = await api.CreateAsync("idea", "x");
         await api.ChooseProposalAsync(p.Id, "a");   // runda potrzebuje wersji biezacej (5.1)
+        await api.CreateFirstVersionAsync(p.Id);   // wersja 1 to OSOBNE zadanie (jak w ProjectApi)
 
         var jobId = await api.ApplyCommentsAsync(p.Id, 1, [C("c1", "hero", "telefon za maly")]);
 
@@ -45,6 +108,7 @@ public class MockProjectApiTests
         var api = Api();
         var p = await api.CreateAsync("idea", "x");
         await api.ChooseProposalAsync(p.Id, "a");   // runda potrzebuje wersji biezacej (5.1)
+        await api.CreateFirstVersionAsync(p.Id);   // wersja 1 to OSOBNE zadanie (jak w ProjectApi)
         api.NextJobOutcome = MockJobOutcome.Halted;
 
         var jobId = await api.ApplyCommentsAsync(p.Id, 1, [C("c1", null, "x")]);
@@ -61,6 +125,7 @@ public class MockProjectApiTests
         var api = Api();
         var p = await api.CreateAsync("idea", "x");
         await api.ChooseProposalAsync(p.Id, "a");   // runda potrzebuje wersji biezacej (5.1)
+        await api.CreateFirstVersionAsync(p.Id);   // wersja 1 to OSOBNE zadanie (jak w ProjectApi)
         api.NextJobOutcome = MockJobOutcome.Halted;
         await api.ApplyCommentsAsync(p.Id, 1, [C("c1", null, "x")]);
 
@@ -95,6 +160,7 @@ public class MockProjectApiTests
         var api = Api();
         var p = await api.CreateAsync("idea", "x");
         await api.ChooseProposalAsync(p.Id, "a");   // runda potrzebuje wersji biezacej (5.1)
+        await api.CreateFirstVersionAsync(p.Id);   // wersja 1 to OSOBNE zadanie (jak w ProjectApi)
         var jobId = await api.ApplyCommentsAsync(p.Id, 1, [C("c1", "hero", "telefon za maly")]);
         await api.GetJobAsync(jobId);
 
@@ -114,6 +180,7 @@ public class MockProjectApiTests
         var api = Api();
         var p = await api.CreateAsync("idea", "x");
         await api.ChooseProposalAsync(p.Id, "a");
+        await api.CreateFirstVersionAsync(p.Id);   // wersja 1 to OSOBNE zadanie (jak w ProjectApi)
 
         // Szkic spoza bialej listy silnika (a|b|c) — glosno, nie cicho.
         await Assert.ThrowsAsync<KeyNotFoundException>(() => api.ChooseProposalAsync(p.Id, "p-1"));
@@ -139,6 +206,7 @@ public class MockProjectApiTests
         var api = new MockProjectApi { SimulatedDelay = TimeSpan.FromMilliseconds(200) };
         var p = await api.CreateAsync("idea", "x");
         await api.ChooseProposalAsync(p.Id, "a");
+        await api.CreateFirstVersionAsync(p.Id);   // wersja 1 to OSOBNE zadanie (jak w ProjectApi)
 
         var pierwsza = api.ApplyCommentsAsync(p.Id, 1, [C("c1", null, "raz")]);
 

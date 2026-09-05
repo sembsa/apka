@@ -22,6 +22,7 @@ public class MockSnapshotTests : IDisposable
         var api = new MockProjectApi { SimulatedDelay = TimeSpan.Zero, SnapshotRoot = _root };
         var p = await api.CreateAsync("idea", "Fryzjer");
         await api.ChooseProposalAsync(p.Id, "a");   // runda potrzebuje wersji biezacej (5.1)
+        await api.CreateFirstVersionAsync(p.Id);   // wersja 1 to OSOBNE zadanie (jak w ProjectApi)
 
         await api.ApplyCommentsAsync(p.Id, 1, []);
 
@@ -37,6 +38,7 @@ public class MockSnapshotTests : IDisposable
         var api = new MockProjectApi { SimulatedDelay = TimeSpan.Zero, SnapshotRoot = _root };
         var p = await api.CreateAsync("idea", "Fryzjer");
         await api.ChooseProposalAsync(p.Id, "a");   // runda potrzebuje wersji biezacej (5.1)
+        await api.CreateFirstVersionAsync(p.Id);   // wersja 1 to OSOBNE zadanie (jak w ProjectApi)
         await api.ApplyCommentsAsync(p.Id, 1, []);
 
         var wersja = (await api.GetAsync(p.Id)).Versions[^1].Number;
@@ -55,6 +57,7 @@ public class MockSnapshotTests : IDisposable
         var api = new MockProjectApi { SimulatedDelay = TimeSpan.Zero, SnapshotRoot = _root };
         var p = await api.CreateAsync("idea", "Fryzjer");
         await api.ChooseProposalAsync(p.Id, "a");   // runda potrzebuje wersji biezacej (5.1)
+        await api.CreateFirstVersionAsync(p.Id);   // wersja 1 to OSOBNE zadanie (jak w ProjectApi)
         await api.ApplyCommentsAsync(p.Id, 1, []);
 
         var wersja = (await api.GetAsync(p.Id)).Versions[^1].Number;
@@ -75,6 +78,7 @@ public class MockSnapshotTests : IDisposable
         var p = await api.CreateAsync("idea", "Fryzjer");
 
         await api.ChooseProposalAsync(p.Id, "a");
+        await api.CreateFirstVersionAsync(p.Id);   // wersja 1 to OSOBNE zadanie (jak w ProjectApi)
 
         var po = await api.GetAsync(p.Id);
         var wersja = Assert.Single(po.Versions);
@@ -97,6 +101,7 @@ public class MockSnapshotTests : IDisposable
         var api = new MockProjectApi { SimulatedDelay = TimeSpan.Zero, SnapshotRoot = _root };
         var p = await api.CreateAsync("idea", "Fryzjer");
         await api.ChooseProposalAsync(p.Id, "a");
+        await api.CreateFirstVersionAsync(p.Id);   // wersja 1 to OSOBNE zadanie (jak w ProjectApi)
         await api.ApplyCommentsAsync(p.Id, 1, []);
 
         var projekt = await api.GetAsync(p.Id);

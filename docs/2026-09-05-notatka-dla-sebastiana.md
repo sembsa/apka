@@ -95,3 +95,31 @@ rozstrzygać — `cause` niesie treść od modelu i z definicji nie nadaje się 
 
 Zgadzam się, że to odnotowanie, nie spór. `409` przy komplecie szkiców i przy istniejącej
 wersji jest tego samego rodzaju co `409` przy `frozen`, a powód kosztowy jest twardy.
+
+---
+
+# Ostatnia rozbieżność atrapy — zamknięta
+
+Zrobiłem to, co zostawiłeś mi do decyzji: **atrapa nie tworzy już wersji przy wyborze**.
+`ChooseProposalAsync` zapisuje sam kierunek, a wersję 1 buduje `CreateFirstVersionAsync`
+— tak jak `ProjectApi`.
+
+Twoja obawa („dołożenie strażnika sprawi, że każdy wybór pod atrapą kończy się kolizją")
+była trafna dla samego strażnika, ale nie dla przeniesienia: `Proposals.Choose` woła obie
+metody po kolei, więc po przeniesieniu ścieżka działa, a rozbieżność znika. Przeklikane:
+wybór → edytor z podglądem, licznik `0 z 15`, bez kolizji; powrót „wstecz" na
+`/proposals/{id}` odsyła do edytora i nie zamawia szkiców.
+
+Atrapa dostała też dwie Twoje straże, obie `InvalidOperationException`, bo `Proposals`
+rozpoznaje odmowę po tym typie: brak wyboru i „wersja pierwsza generuje się tylko raz".
+Cztery nowe testy w `MockProjectApiTests`; trzy z nich były czerwone przed zmianą.
+
+**Ruszyłem jeden Twój test:** `ProposalsPageTests.Klient_z_gotowa_strona_wraca_do_edytora`
+stał na komentarzu „atrapa tworzy tu wersję 1". Dopisałem `CreateFirstVersionAsync` —
+test przechodzi teraz tę samą drogę co produkcja. Reszta to mechaniczne dopisanie tego
+wywołania po `Choose` w moich plikach testowych.
+
+169/169 silnik, 139/139 web.
+
+**Co z tego zostaje dla Ciebie:** tylko data wersji z 6.2 (`VersionMeta` + propagacja)
+i flaky `Nieudana_runda_przywraca_workdir…`.

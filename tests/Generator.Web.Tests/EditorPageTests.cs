@@ -22,6 +22,7 @@ public class EditorPageTests : BunitContext
         Services.AddSingleton<IProjectApi>(api);
         var p = await api.CreateAsync("idea", "Fryzjer");
         await api.ChooseProposalAsync(p.Id, "a");
+        await api.CreateFirstVersionAsync(p.Id);   // wersja 1 to OSOBNE zadanie (jak w ProjectApi)
         await api.ApplyCommentsAsync(p.Id, 1, []);      // wersja 1 istnieje
         api.NextJobOutcome = dalsze;
         return (api, p.Id);
@@ -267,6 +268,7 @@ public class EditorPageTests : BunitContext
         Services.AddSingleton<IProjectApi>(api);
         var p = await api.CreateAsync("idea", "Fryzjer");
         await api.ChooseProposalAsync(p.Id, "a");
+        await api.CreateFirstVersionAsync(p.Id);   // wersja 1 to OSOBNE zadanie (jak w ProjectApi)
 
         var cut = Render<Editor>(ps => ps.Add(x => x.ProjectId, p.Id));
 

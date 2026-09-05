@@ -23,6 +23,7 @@ public class RollbackTests : IDisposable
         var api = Api();
         var p = await api.CreateAsync("idea", "Fryzjer");
         await api.ChooseProposalAsync(p.Id, "a");
+        await api.CreateFirstVersionAsync(p.Id);   // wersja 1 to OSOBNE zadanie (jak w ProjectApi)
         await api.ApplyCommentsAsync(p.Id, 1, [C("hero", "nazwa większa")]);
 
         await api.RollbackAsync(p.Id, 1);
@@ -40,6 +41,7 @@ public class RollbackTests : IDisposable
         var api = Api();
         var p = await api.CreateAsync("idea", "Fryzjer");
         await api.ChooseProposalAsync(p.Id, "a");
+        await api.CreateFirstVersionAsync(p.Id);   // wersja 1 to OSOBNE zadanie (jak w ProjectApi)
         await api.ApplyCommentsAsync(p.Id, 1, [C("hero", "nazwa większa")]);
         var rundyPrzed = (await api.GetAsync(p.Id)).RoundsUsed;
 
@@ -55,6 +57,7 @@ public class RollbackTests : IDisposable
         var api = Api();
         var p = await api.CreateAsync("idea", "Fryzjer");
         await api.ChooseProposalAsync(p.Id, "a");
+        await api.CreateFirstVersionAsync(p.Id);   // wersja 1 to OSOBNE zadanie (jak w ProjectApi)
         await api.ApplyCommentsAsync(p.Id, 1, [C("hero", "nazwa większa")]);
         api.ForceFrozen(p.Id);
 
@@ -69,6 +72,7 @@ public class RollbackTests : IDisposable
         var api = Api();
         var p = await api.CreateAsync("idea", "Fryzjer");
         await api.ChooseProposalAsync(p.Id, "a");
+        await api.CreateFirstVersionAsync(p.Id);   // wersja 1 to OSOBNE zadanie (jak w ProjectApi)
 
         await Assert.ThrowsAnyAsync<Exception>(() => api.RollbackAsync(p.Id, 7));
     }
@@ -84,6 +88,7 @@ public class RollbackTests : IDisposable
         var api = Api();
         var p = await api.CreateAsync("idea", "Fryzjer");
         await api.ChooseProposalAsync(p.Id, "a");
+        await api.CreateFirstVersionAsync(p.Id);   // wersja 1 to OSOBNE zadanie (jak w ProjectApi)
         await api.ApplyCommentsAsync(p.Id, 1, [C("hero", "nazwa większa")]);   // v2
         await api.RollbackAsync(p.Id, 1);
         await api.ApplyCommentsAsync(p.Id, 1, [C("kontakt", "telefon większy")]);   // v3
@@ -102,6 +107,7 @@ public class RollbackTests : IDisposable
         var api = Api();
         var p = await api.CreateAsync("idea", "Fryzjer");
         await api.ChooseProposalAsync(p.Id, "a");
+        await api.CreateFirstVersionAsync(p.Id);   // wersja 1 to OSOBNE zadanie (jak w ProjectApi)
         await api.ApplyCommentsAsync(p.Id, 1, [C("hero", "nazwa większa")]);
         await api.RollbackAsync(p.Id, 1);
         await api.ApplyCommentsAsync(p.Id, 1, [C("kontakt", "telefon większy")]);
@@ -127,6 +133,7 @@ public class RollbackTests : IDisposable
         var api = Api();
         var p = await api.CreateAsync("idea", "Fryzjer");
         await api.ChooseProposalAsync(p.Id, "a");
+        await api.CreateFirstVersionAsync(p.Id);   // wersja 1 to OSOBNE zadanie (jak w ProjectApi)
 
         var v1 = (await api.GetAsync(p.Id)).Versions.Single();
         Assert.Null(v1.BasedOn);

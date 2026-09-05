@@ -209,28 +209,60 @@ public class MockProjectApi : IProjectApi
         if (!DozwoloneId.Contains(proposalId))
             throw new KeyNotFoundException($"nie ma propozycji {proposalId} w projekcie {id}");
 
-        if (project.Versions.Count > 0) return;
-
-        await ZapiszSnapshot(id, 1, [], rodzic: null);
-        _projects[id] = project with
-        {
-            Status = "active",
-            Versions = [new VersionView(1, $"/preview/{id}/1/", [], BasedOn: null, ChangedAnchors: [])],
-            CurrentVersion = 1,
-        };
+        // Wybor tylko ZAPISUJE kierunek — wersje 1 buduje osobne zadanie, dokladnie jak
+        // w `ProjectApi`. Atrapa robila to odwrotnie (wersja przy wyborze, puste
+        // `CreateFirstVersionAsync`) i byla to ostatnia znana rozbieznosc: test
+        // komponentu wolajacy samo `Choose` przechodzil, choc pod prawdziwym API klient
+        // zostawalby w edytorze bez zadnej wersji.
+        _wybrane[id] = proposalId;
+        _projects[id] = project with { Status = "active" };
+        await Task.CompletedTask;
     }
+
+    /// Wybrany kierunek — u silnika `ProjectMeta.ChosenProposal`.
+    private readonly ConcurrentDictionary<string, string> _wybrane = new();
 
     /// <summary>
     /// Atrapa tworzy wersje 1 juz przy wyborze i robi to synchronicznie, wiec nie ma
     /// czego czekac: zadanie jest gotowe w chwili powstania. W Planie B ta metoda
     /// odpala model na minuty, dlatego w kontrakcie jest zadaniem, a nie `void`.
     /// </summary>
-    public Task<string> CreateFirstVersionAsync(string id)
+    /// <summary>
+    /// Wersja 1 z wybranego kierunku — osobne zadanie, jak w `ProjectApi`. Te same dwie
+    /// straze, oba `InvalidOperationException` (tak rzuca prawdziwe API, a `Proposals`
+    /// rozpoznaje odmowe wlasnie po tym typie):
+    /// brak wyboru i „wersja pierwsza generuje sie tylko raz".
+    /// </summary>
+    public async Task<string> CreateFirstVersionAsync(string id)
     {
         Wolne(id);
+        var project = _projects[id];
+
+        if (project.Versions.Count > 0)
+            throw new InvalidOperationException(
+                $"projekt {id} ma juz {project.Versions.Count} wersji — wersje pierwsza " +
+                "generuje sie tylko raz; kolejne zmiany ida przez runde uwag");
+
+        if (!_wybrane.ContainsKey(id))
+            throw new InvalidOperationException($"projekt {id}: klient nie wybral propozycji");
+
         var jobId = Guid.NewGuid().ToString();
-        _jobs[jobId] = new JobView(jobId, "succeeded", null);
-        return Task.FromResult(jobId);
+        Zajmij(id, jobId);
+        try
+        {
+            await ZapiszSnapshot(id, 1, [], rodzic: null);
+            _projects[id] = _projects[id] with
+            {
+                Versions = [new VersionView(1, $"/preview/{id}/1/", [], BasedOn: null, ChangedAnchors: [])],
+                CurrentVersion = 1,
+            };
+            _jobs[jobId] = new JobView(jobId, "succeeded", null);
+            return jobId;
+        }
+        finally
+        {
+            Zwolnij(id, jobId);
+        }
     }
 
     /// <summary>

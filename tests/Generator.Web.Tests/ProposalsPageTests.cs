@@ -185,7 +185,11 @@ public class ProposalsPageTests : BunitContext
         Services.AddSingleton<IProjectApi>(szpieg);
 
         var p = await atrapa.CreateAsync("idea", "Fryzjer");
-        await atrapa.ChooseProposalAsync(p.Id, "a");     // atrapa tworzy tu wersje 1
+        // Klient ma juz gotowa strone: wybor PLUS zbudowana wersja 1. Atrapa tworzyla
+        // ja kiedys przy samym wyborze — teraz, jak `ProjectApi`, wymaga osobnego
+        // zadania, wiec test musi przejsc te sama droge co produkcja.
+        await atrapa.ChooseProposalAsync(p.Id, "a");
+        await atrapa.CreateFirstVersionAsync(p.Id);
 
         Render<Proposals>(ps => ps.Add(x => x.ProjectId, p.Id));
 
