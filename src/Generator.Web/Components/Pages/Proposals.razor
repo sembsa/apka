@@ -2,10 +2,23 @@
 @inject IProjectApi Api
 @inject NavigationManager Nav
 @using Generator.Web.Contracts
+@implements IDisposable
 
 <h1>Wybierz, która wygląda lepiej</h1>
 
-@if (_proposals is null)
+@if (_zatrzymane)
+{
+    @* Kontrakt 4.3: rozgalezienie po `handling`, nigdy po przyczynie. *@
+    <p role="alert" data-test="zatrzymane">
+        Coś się u nas zacięło i nie udało się przygotować strony —
+        <strong>nic nie przepadło</strong>. Zajmiemy się tym, klikanie ponownie nic nie zmieni.
+    </p>
+}
+else if (_buduje)
+{
+    <p aria-live="polite" data-test="buduje">Buduję Twoją stronę…</p>
+}
+else if (_proposals is null)
 {
     <p aria-live="polite">Przygotowuję trzy propozycje…</p>
 }
@@ -27,17 +40,75 @@ else
 @code {
     [Parameter] public string ProjectId { get; set; } = string.Empty;
 
-    private IReadOnlyList<ProposalView>? _proposals;
+    /// Parametr, bo testy nie moga czekac 2 sekund na tik. Tak samo jak w Editor.
+    [Parameter] public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(2);
 
+    private IReadOnlyList<ProposalView>? _proposals;
+    private bool _buduje;
+    private bool _zatrzymane;
+    private readonly CancellationTokenSource _zycie = new();
+
+    /// <summary>
+    /// Propozycje sa ZADANIEM (kontrakt 1), a nie odpowiedzia synchroniczna: prawdziwy
+    /// silnik oddaje `jobId` od reki i pisze szkice na dysk minute pozniej. Pytanie
+    /// o `GetProposalsAsync` zaraz po `RequestProposalsAsync` dawaloby PUSTA liste —
+    /// na atrapie nie, bo ta konczy zadanie, zanim je odda.
+    /// </summary>
     protected override async Task OnInitializedAsync()
     {
-        await Api.RequestProposalsAsync(ProjectId);
+        if (!await Poczekaj(await Api.RequestProposalsAsync(ProjectId))) return;
         _proposals = await Api.GetProposalsAsync(ProjectId);
     }
 
     private async Task Choose(string proposalId)
     {
         await Api.ChooseProposalAsync(ProjectId, proposalId);
+
+        // Wersja 1 to OSOBNE zadanie, nie skutek uboczny wyboru (IProjectApi.
+        // CreateFirstVersionAsync). Atrapa tworzy ja przy wyborze, prawdziwe API juz
+        // nie — bo generacja trwa minuty. Bez tego wywolania edytor otwieral sie
+        // z pusta lista wersji: klient nie mial w co kliknac, czyli produkt nie istnial.
+        // Testy komponentow tego nie widza, bo chodza po atrapie.
+        _buduje = true;
+        var udalo = await Poczekaj(await Api.CreateFirstVersionAsync(ProjectId));
+        _buduje = false;
+        if (!udalo) return;
+
         Nav.NavigateTo($"/editor/{ProjectId}");
+    }
+
+    /// <summary>
+    /// Czeka na koniec zadania. `true` = `succeeded`. Stan sprawdzamy PRZED pierwszym
+    /// odczekaniem, zeby atrapa (ktora oddaje zadanie juz gotowe) zostala dla testow
+    /// komponentow synchroniczna.
+    /// </summary>
+    private async Task<bool> Poczekaj(string jobId)
+    {
+        try
+        {
+            while (!_zycie.IsCancellationRequested)
+            {
+                var job = await Api.GetJobAsync(jobId);
+                if (job.Status == "succeeded") return true;
+                if (job.Status == "failed")
+                {
+                    _zatrzymane = true;
+                    return false;
+                }
+
+                await Task.Delay(PollInterval, _zycie.Token);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Klient zamknal karte w trakcie generacji. Nie jest to blad.
+        }
+        return false;
+    }
+
+    public void Dispose()
+    {
+        _zycie.Cancel();
+        _zycie.Dispose();
     }
 }

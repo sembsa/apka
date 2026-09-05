@@ -1,4 +1,5 @@
 using Generator.Engine.Versioning;
+using Generator.Web.Api;
 using Generator.Web.Components;
 using Generator.Web.Contracts;
 using Generator.Web.Mock;
@@ -11,15 +12,32 @@ var builder = WebApplication.CreateBuilder(args);
 var snapshotRoot = builder.Configuration["Projects:Root"]
     ?? Path.Combine(Path.GetTempPath(), "generator-stron");
 
-// Backend w pamieci do czasu Planu B. Podmiana na klienta HTTP dotknie tej jednej linii.
-builder.Services.AddSingleton<IProjectApi>(_ => new MockProjectApi
-{
-    SnapshotRoot = snapshotRoot,
+var claudeCmd = builder.Configuration["Projects:ClaudeCmd"] ?? "claude";
 
-    // W devie powtorka po chwili sie udaje, zeby dalo sie zobaczyc, ze polling podnosi
-    // wynik bez odswiezania strony. Bez tego `retrying` wisialoby w nieskonczonosc.
-    RetryResolvesAfter = builder.Environment.IsDevelopment() ? TimeSpan.FromSeconds(4) : null,
-});
+builder.Services.AddSingleton(new ProjectPaths(snapshotRoot, claudeCmd));
+builder.Services.AddSingleton<JobQueue>();
+
+// Ruling 9: mock zostaje. Praca nad UI bez zainstalowanego `claude` i galezie
+// `failed` z /dev/wynik-rundy stoja na nim. Domyslnie WYLACZONY.
+if (builder.Configuration.GetValue("Projects:UseMock", false))
+{
+    builder.Services.AddSingleton<IProjectApi>(_ => new MockProjectApi
+    {
+        SnapshotRoot = snapshotRoot,
+
+        // W devie powtorka po chwili sie udaje, zeby dalo sie zobaczyc, ze polling podnosi
+        // wynik bez odswiezania strony. Bez tego `retrying` wisialoby w nieskonczonosc.
+        RetryResolvesAfter = builder.Environment.IsDevelopment() ? TimeSpan.FromSeconds(4) : null,
+    });
+}
+else
+{
+    // ProjectPaths rozwiazywane Z KONTENERA, nie zamkniete w domkniecie: testy HTTP
+    // podmieniaja je na atrape silnika przez RemoveAll/AddSingleton, a to dziala tylko
+    // wtedy, gdy rejestracja siega po nie w chwili budowania IProjectApi.
+    builder.Services.AddSingleton<IProjectApi>(sp => new ProjectApi(
+        sp.GetRequiredService<ProjectPaths>(), sp.GetRequiredService<JobQueue>()));
+}
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
@@ -50,6 +68,10 @@ app.MapRazorComponents<App>()
 app.MapPreview((projectId, version) =>
     new VersionStore(Path.Combine(snapshotRoot, projectId)).SnapshotPath(version));
 
+// Kontrakt 1. Nasze Blazorowe UI chodzi po IProjectApi w procesie — te trasy sa dla
+// klientow spoza niego.
+app.MapApi();
+
 // TYLKO Development. Gałęzie `failed` z kontraktu 4.3 nie mają wyzwalacza w UI —
 // bez tego nie da się ich przejść jak klient, a to jedyna rzecz, której testy
 // komponentów nie zastąpią. Za `IsDevelopment()`, bo w produkcji nie ma mocka
@@ -68,3 +90,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.Run();
+
+/// Widoczne dla WebApplicationFactory w testach — Program z top-level statements
+/// jest domyslnie internal, a testy sa w innym assembly.
+public partial class Program;
