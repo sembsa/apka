@@ -175,23 +175,29 @@ public class ClaudeRunner(string executable, IReadOnlyList<string>? prefixArgs =
             var stdout = p.StandardOutput.ReadToEndAsync(ct);
             var stderr = p.StandardError.ReadToEndAsync(ct);
 
+            // Zapis promptu jest W TYM SAMYM `try`, co czekanie na koniec procesu, a nie
+            // przed nim. Anulowanie w trakcie pisania briefu (`WriteAsync` honoruje token)
+            // rzuca OperationCanceledException — gdyby leciala poza tym `try`, blok
+            // `finally` nizej nigdy by sie nie wykonal i prawdziwy `claude` zostalby
+            // sierota: dalej dziala i dalej wydaje budzet. To ta sama awaria, przed
+            // ktora broni Kill nizej, tylko wejsciem od strony stdin.
             try
             {
-                await p.StandardInput.WriteAsync(request.Instruction.AsMemory(), ct);
-            }
-            catch (Exception ex) when (ex is IOException or ObjectDisposedException)
-            {
-                // Potomek zamknal swoj koniec potoku, zanim odebral calosc (np. padl
-                // na zlej fladze). Nie ma czego dostarczyc, a prawdziwa przyczyne
-                // niesie exit code i stderr — zapis nie moze ich przeslonic.
-            }
+                try
+                {
+                    await p.StandardInput.WriteAsync(request.Instruction.AsMemory(), ct);
+                }
+                catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+                {
+                    // Potomek zamknal swoj koniec potoku, zanim odebral calosc (np. padl
+                    // na zlej fladze). Nie ma czego dostarczyc, a prawdziwa przyczyne
+                    // niesie exit code i stderr — zapis nie moze ich przeslonic.
+                }
 
-            // Zamkniecie jest obowiazkowe, nie kosmetyczne: `claude -p` czyta stdin
-            // do EOF, wiec bez tego czekalby w nieskonczonosc.
-            p.StandardInput.Close();
+                // Zamkniecie jest obowiazkowe, nie kosmetyczne: `claude -p` czyta stdin
+                // do EOF, wiec bez tego czekalby w nieskonczonosc.
+                p.StandardInput.Close();
 
-            try
-            {
                 await p.WaitForExitAsync(ct);
             }
             finally

@@ -275,14 +275,17 @@ public class ClaudeRunnerTests : IDisposable
         // Cudzyslow, ktory .NET dokłada wokol argumentu ze spacja, neutralizuje
         // `< > & | ^` — dlatego `<style>` w dopisku propozycji jest bezpieczny, i
         // dlatego obecnosc spacji jest tu asercja, a nie zalozeniem. Nie neutralizuje
-        // dwoch rzeczy: nowa linia konczy polecenie niezaleznie od cudzyslowow, a `%`
-        // rozwija sie w cudzyslowach jak poza nimi.
+        // trzech rzeczy: nowa linia konczy polecenie niezaleznie od cudzyslowow, `%`
+        // rozwija sie w cudzyslowach jak poza nimi, a wlasny cudzyslow ten parasol
+        // ZDEJMUJE — .NET zapisuje go jako `\"`, czego cmd.exe nie rozumie, wiec
+        // cudzyslow sie przelacza i reszta argumentu zostaje odslonieta.
         foreach (var dopisek in new[] { ClaudeRunner.PageAppendix, ClaudeRunner.ProposalsAppendix })
         {
             Assert.Contains(' ', dopisek);
             Assert.DoesNotContain('\n', dopisek);
             Assert.DoesNotContain('\r', dopisek);
             Assert.DoesNotContain('%', dopisek);
+            Assert.DoesNotContain('"', dopisek);
         }
     }
 
@@ -317,6 +320,36 @@ public class ClaudeRunnerTests : IDisposable
         Assert.True(
             await WaitUntilProcessDeadAsync(pid, TimeSpan.FromSeconds(5)),
             $"proces {pid} (atrapa --scenario sleep) nadal zyje po anulowaniu — zostal sierota");
+    }
+
+    [Fact]
+    public async Task Anulowanie_w_trakcie_wysylania_promptu_tez_nie_zostawia_sieroty()
+    {
+        // Drugie wejscie w to samo ryzyko, ktore opisuje komentarz przy Kill: prompt
+        // idzie teraz kanalem stdin i zapis TEZ honoruje token. Scenariusz "sleep"
+        // nigdy nie czyta stdin, wiec przy dostatecznie duzej instrukcji zapis staje
+        // na pelnym potoku — dokladnie tak, jak stanie prawdziwy brief z wklejonym
+        // szkicem HTML na wolnym laczu. Anulowanie w tym momencie rzuca
+        // OperationCanceledException Z ZAPISU, nie z czekania na koniec procesu.
+        // Gdyby zapis lezal poza `try`, blok `finally` z Kill nigdy by sie nie wykonal
+        // i prawdziwy `claude` zostalby sierota — dalej dzialajac i dalej wydajac.
+        var pidFile = Path.Combine(_work, "fake-pid-stdin.txt");
+        using var cts = new CancellationTokenSource();
+        var runner = new ClaudeRunner("dotnet", [FakeClaude.DllPath, "--scenario", "sleep", "--pidfile", pidFile]);
+
+        // Wiecej niz bufor potoku (64 kB), zeby zapis na pewno sie zablokowal.
+        var ogromnaInstrukcja = new string('x', 4 * 1024 * 1024);
+        var runTask = runner.RunAsync(
+            new ClaudeRunRequest(_work, ogromnaInstrukcja, null, IsFirstRun: true), cts.Token);
+
+        var pid = await WaitForPidFileAsync(pidFile, TimeSpan.FromSeconds(5));
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => runTask);
+
+        Assert.True(
+            await WaitUntilProcessDeadAsync(pid, TimeSpan.FromSeconds(5)),
+            $"proces {pid} zyje po anulowaniu w trakcie wysylania promptu — zostal sierota");
     }
 
     private static async Task<int> WaitForPidFileAsync(string path, TimeSpan timeout)
