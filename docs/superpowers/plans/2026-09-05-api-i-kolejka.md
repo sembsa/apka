@@ -1800,6 +1800,40 @@ public class ProjectApiTests : IDisposable
     }
 
     [Fact]
+    public async Task Uwagi_do_projektu_bez_zadnej_wersji_sa_odrzucane()
+    {
+        // Bez tej strazy runda idzie promptem „popraw obecna strone" na pusty
+        // WorkDir i zabiera klientowi jedna z 15 poprawek za postawienie strony,
+        // ktora poprawka nie jest. `version: 0` przechodzi przez sam warunek
+        // `version != CurrentVersion`, bo przy braku wersji CurrentVersion to 0.
+        var (api, _) = Zbuduj();
+        var p = await api.CreateAsync("idea", "kwiaciarnia");
+
+        await Assert.ThrowsAsync<StaleVersionException>(() =>
+            api.ApplyCommentsAsync(p.Id, 0, [Uwaga("k1")]));
+        await Assert.ThrowsAsync<StaleVersionException>(() =>
+            api.ApplyCommentsAsync(p.Id, 1, [Uwaga("k1")]));
+    }
+
+    [Theory]
+    [InlineData("../../inny/versions/003/index")]
+    [InlineData("/etc/passwd")]
+    [InlineData("d")]
+    [InlineData("")]
+    public async Task Wybor_propozycji_spoza_listy_jest_odrzucany_glosno(string zle)
+    {
+        // `proposalId` idzie prosto z URL-a. Silnik ma wlasna biala liste, ale jako
+        // OSTATNIA linia obrony i traktuje zly wybor cicho jak brak wyboru — tutaj
+        // musi byc glosno, inaczej literowka daje wersje 1 bez kierunku za pieniadze.
+        var (api, _) = Zbuduj();
+        var p = await api.CreateAsync("idea", "kwiaciarnia");
+        await Poczekaj(api, await api.RequestProposalsAsync(p.Id));
+
+        await Assert.ThrowsAsync<KeyNotFoundException>(() => api.ChooseProposalAsync(p.Id, zle));
+        Assert.Null(new ProjectStore(Path.Combine(_root, p.Id)).Load().ChosenProposal);
+    }
+
+    [Fact]
     public async Task Rollback_przestawia_biezaca_wersje_nie_kasujac_historii()
     {
         var (api, _) = Zbuduj();
@@ -2089,10 +2123,25 @@ public class ProjectApi(ProjectPaths paths, JobQueue queue) : IProjectApi
         return Task.FromResult<IReadOnlyList<ProposalView>>(lista);
     }
 
+    /// Dozwolone identyfikatory propozycji. Ta sama trojka co `GenerationService.SketchIds`
+    /// — swiadome powtorzenie, bo to granica zaufania: silnik ma swoja biala liste jako
+    /// OSTATNIA linie obrony, a ta jest PIERWSZA. Wspolna stala kusi, ale zrobilaby
+    /// z dwoch niezaleznych warstw jedna.
+    private static readonly string[] DozwoloneId = ["a", "b", "c"];
+
     public Task ChooseProposalAsync(string id, string proposalId)
     {
         var store = paths.Store(id);
         var meta = store.Load();
+
+        // Walidacja przy ZAPISIE, nie przy odczycie (watpliwosc 4 z Zadania 4).
+        // Silnik traktuje wybor spoza listy jak brak wyboru — cicho, bo jest
+        // ostatnia linia obrony. Tutaj musi byc glosno: literowka w zadaniu HTTP
+        // dalaby wersje 1 bez kierunku, za pieniadze, a klient nie dowiedzialby sie,
+        // ze jego wybor przepadl. `proposalId` idzie prosto z URL-a.
+        if (!DozwoloneId.Contains(proposalId))
+            throw new KeyNotFoundException($"nie ma propozycji {proposalId} w projekcie {id}");
+
         if (!File.Exists(Path.Combine(paths.Dir(id), "proposals", $"{proposalId}.html")))
             throw new KeyNotFoundException($"nie ma propozycji {proposalId} w projekcie {id}");
 
@@ -2122,6 +2171,21 @@ public class ProjectApi(ProjectPaths paths, JobQueue queue) : IProjectApi
     {
         var meta = Wczytaj(id);
         if (meta.Status == ProjectStatus.Frozen) throw new ProjectFrozenException(id);
+
+        // Straz przeniesiona z Zadania 4 (watpliwosc 3 wykonawcy). Silnikowe
+        // `RunRoundAsync` na projekcie BEZ wersji buduje wersje 1 promptem
+        // „popraw obecna strone" na pustym WorkDir i ZUZYWA klientowi jedna z 15,
+        // wbrew rulingowi 7. W silniku tego nie zamykamy: `Generator.Cli` wola
+        // `RunRoundAsync` wprost wlasnie po to, zeby postawic pierwsza strone,
+        // i 23 testy silnika na tym stoja — to kontrakt silnika, nie blad.
+        // Zamykamy to TUTAJ, bo to jedyna sciezka, ktora dosiega klient.
+        //
+        // Sam warunek `version != CurrentVersion` NIE wystarcza: przy zerowej
+        // liczbie wersji `CurrentVersion` rowna sie 0, wiec zadanie z `version: 0`
+        // przeszloby przez niego bez szwanku.
+        if (meta.CurrentVersion == 0)
+            throw new StaleVersionException(version, 0);
+
         if (version != meta.CurrentVersion) throw new StaleVersionException(version, meta.CurrentVersion);
 
         // Zapis PRZED kolejka, nie w zadaniu: kontrakt 4.4 gwarantuje, ze po
