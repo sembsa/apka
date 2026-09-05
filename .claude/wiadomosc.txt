@@ -79,4 +79,23 @@ Zrobione, wszystko na main. 377 zielonych (184 silnik + 193 web).
    by sie w RollbackAsync dzialo. Teraz awarie wymusza podstawiony ProjectStore;
    `ProjectStore.Save` i `ProjectPaths.Store` sa `virtual` wylacznie w tym celu.
 
+6. SIEROTA PRZY ANULOWANIU — ZNALEZIONE PRZY OKAZJI
+   commit "fix: anulowanie w trakcie wysylania promptu nie zostawia sieroty"
+
+   Przeniesienie promptu na stdin otworzylo drugie wejscie w ryzyko, przed ktorym
+   broni Kill w `finally`: zapis tez honoruje token, wiec anulowanie w trakcie
+   wysylania briefu rzucalo OperationCanceledException Z ZAPISU, a ten lezal poza
+   `try` — `finally` z Kill nigdy sie nie wykonywalo i prawdziwy `claude` zostawal
+   sierota. Istniejacy test tego nie widzial, bo anuluje w trakcie WaitForExitAsync.
+   Nowy anuluje w trakcie zapisu (scenariusz "sleep" nie czyta stdin, wiec 4 MB
+   instrukcji zatrzymuje zapis na pelnym potoku). Zmierzone mutacja.
+
+   Dla kolejki z Taska 9 to ma znaczenie: to ona anuluje po przekroczeniu limitu czasu.
+
+7. PELNA SCIEZKA NA ZYWYM CLI PO ZMIANIE — PRZESZLA (macOS)
+   Wersja pierwsza $0,1274, potem runda przez `--resume` $0,0921. Sprawdzone
+   w project.json: v2 ma CreatedAt, BasedOn = 1 i ChangedAnchors z czterema NOWYMI
+   blokami menu — stare kotwice nietkniete. v1 ma CreatedAt = null, bo powstala przed
+   commitem z data: czyli zgodnosc wsteczna widziana na zywym pliku, nie tylko w tescie.
+
 --- Ta wiadomosc wisi, dopoki jej nie skasujesz: rm .claude/wiadomosc.txt ---
