@@ -1,5 +1,6 @@
 using Bunit;
 using Generator.Web.Components.Pages;
+using Generator.Web.Api;
 using Generator.Web.Contracts;
 using Generator.Web.Mock;
 using Microsoft.Extensions.DependencyInjection;
@@ -78,10 +79,78 @@ public class ProposalsPageTests : BunitContext
 
         cut.WaitForAssertion(() => Assert.Contains("Przygotowuję", cut.Markup));
         Assert.Empty(cut.FindAll("iframe"));
-        Assert.DoesNotContain(nameof(IProjectApi.GetProposalsAsync), szpieg.Wywolania);
+
+        // JEDNO pytanie o szkice — to sonda „czy jest co pokazac" sprzed zamowienia.
+        // Drugie, czyli ODBIOR wyniku, nie ma prawa paść, dopóki zadanie trwa:
+        // prawdziwy silnik oddaje wtedy pusta liste i klient nie ma czego wybierac.
+        Assert.Equal(1, szpieg.Wywolania.Count(w => w == nameof(IProjectApi.GetProposalsAsync)));
 
         szpieg.ZadanieTrwa = false;
         cut.WaitForAssertion(() => Assert.Equal(3, cut.FindAll("iframe").Count));
+    }
+
+    [Fact]
+    public async Task Powrot_na_strone_szkicow_nie_zamawia_drugiego_kompletu()
+    {
+        // Klient wracajacy strzalka „wstecz" z edytora placil ~$0,50 za nowy komplet
+        // szkicow, ktorego nie zamawial — a `RunProposalsAsync` przy okazji kasuje
+        // `proposals/` i zeruje `ChosenProposal`, wiec powrot wycieral mu wybor.
+        var szpieg = new Szpieg(new MockProjectApi { SimulatedDelay = TimeSpan.Zero });
+        Services.AddSingleton<IProjectApi>(szpieg);
+        var p = await szpieg.CreateAsync("idea", "Fryzjer");
+
+        // Pierwsze wejscie: komplet powstaje i zostaje na dysku.
+        await szpieg.RequestProposalsAsync(p.Id);
+        szpieg.Wywolania.Clear();
+
+        var cut = Render<Proposals>(ps => ps.Add(x => x.ProjectId, p.Id));
+
+        cut.WaitForAssertion(() => Assert.Equal(3, cut.FindAll("iframe").Count));
+        Assert.DoesNotContain(nameof(IProjectApi.RequestProposalsAsync), szpieg.Wywolania);
+    }
+
+    [Fact]
+    public async Task Odmowa_przy_wejsciu_pokazuje_zdanie_zamiast_zrywac_obwod()
+    {
+        // Druga karta otwarta w trakcie generacji dostawala `JobRunningException`
+        // prosto z `OnInitializedAsync` — a wyjatek stamtad KONCZY OBWOD: klient
+        // widzi pasek „polaczenie zerwane" zamiast zdania o tym, co sie dzieje.
+        var szpieg = new Szpieg(new MockProjectApi { SimulatedDelay = TimeSpan.Zero })
+        {
+            RzucaPrzyZamowieniu = new JobRunningException("p"),
+        };
+        Services.AddSingleton<IProjectApi>(szpieg);
+        var p = await szpieg.CreateAsync("idea", "Fryzjer");
+
+        var cut = Render<Proposals>(ps => ps.Add(x => x.ProjectId, p.Id));
+
+        cut.WaitForAssertion(() => Assert.NotNull(cut.Find("[data-test='kolizja']")));
+        Assert.Equal("alert", cut.Find("[data-test='kolizja']").GetAttribute("role"));
+        // „Przygotowuję…" pod komunikatem o odmowie byloby klamstwem — nic sie nie liczy.
+        Assert.DoesNotContain("Przygotowuję", cut.Markup);
+    }
+
+    [Fact]
+    public async Task Odmowa_przy_wyborze_pokazuje_zdanie_i_nie_zostawia_buduje()
+    {
+        // Klik w „Ta mi sie podoba" nie mial ZADNEGO try/catch: kazda odmowa
+        // prawdziwego API (trwajace zadanie, zamrozony projekt, szkic ktorego juz
+        // nie ma) wychodzila z uchwytu zdarzenia i zabijala obwod.
+        var szpieg = new Szpieg(new MockProjectApi { SimulatedDelay = TimeSpan.Zero })
+        {
+            RzucaPrzyWyborze = new JobRunningException("p"),
+        };
+        Services.AddSingleton<IProjectApi>(szpieg);
+        var p = await szpieg.CreateAsync("idea", "Fryzjer");
+
+        var cut = Render<Proposals>(ps => ps.Add(x => x.ProjectId, p.Id));
+        cut.WaitForAssertion(() => Assert.NotEmpty(cut.FindAll("[data-test='wybierz']")));
+        cut.Find("[data-test='wybierz']").Click();
+
+        cut.WaitForAssertion(() => Assert.NotNull(cut.Find("[data-test='kolizja']")));
+        // Strona nie moze zostac na „Buduję Twoją stronę…", skoro nic sie nie buduje.
+        Assert.Empty(cut.FindAll("[data-test='buduje']"));
+        Assert.NotEmpty(cut.FindAll("[data-test='wybierz']"));
     }
 
     [Fact]
@@ -107,6 +176,11 @@ public class ProposalsPageTests : BunitContext
         public List<string> Wywolania { get; } = [];
         public bool ZadanieTrwa { get; set; }
 
+        /// Odmowa `ProjectApi` w dwoch miejscach, w ktorych strona ja realnie dostaje.
+        /// Osobne pola, bo test wyboru musi NAJPIERW dostac szkice, zeby mial w co kliknac.
+        public Exception? RzucaPrzyZamowieniu { get; set; }
+        public Exception? RzucaPrzyWyborze { get; set; }
+
         public Task<ProjectView> CreateAsync(string source, string description) =>
             atrapa.CreateAsync(source, description);
 
@@ -115,6 +189,7 @@ public class ProposalsPageTests : BunitContext
         public Task<string> RequestProposalsAsync(string id)
         {
             Wywolania.Add(nameof(RequestProposalsAsync));
+            if (RzucaPrzyZamowieniu is not null) throw RzucaPrzyZamowieniu;
             return atrapa.RequestProposalsAsync(id);
         }
 
@@ -127,6 +202,7 @@ public class ProposalsPageTests : BunitContext
         public Task ChooseProposalAsync(string id, string proposalId)
         {
             Wywolania.Add(nameof(ChooseProposalAsync));
+            if (RzucaPrzyWyborze is not null) throw RzucaPrzyWyborze;
             return atrapa.ChooseProposalAsync(id, proposalId);
         }
 

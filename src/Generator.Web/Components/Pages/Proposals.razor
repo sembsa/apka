@@ -1,6 +1,7 @@
 @page "/proposals/{ProjectId}"
 @inject IProjectApi Api
 @inject NavigationManager Nav
+@using Generator.Web.Api
 @using Generator.Web.Contracts
 @implements IDisposable
 
@@ -18,11 +19,7 @@ else if (_buduje)
 {
     <p aria-live="polite" data-test="buduje">Buduję Twoją stronę…</p>
 }
-else if (_proposals is null)
-{
-    <p aria-live="polite">Przygotowuję trzy propozycje…</p>
-}
-else
+else if (_proposals is not null)
 {
     <div class="propozycje">
         @foreach (var p in _proposals)
@@ -36,6 +33,19 @@ else
         }
     </div>
 }
+else if (_kolizja is null)
+{
+    @* Tylko wtedy, gdy naprawde czekamy. Przy odmowie z API nie ma czego przygotowywac
+       i „Przygotowuję…" pod czerwonym komunikatem klamaloby klientowi w oczy. *@
+    <p aria-live="polite">Przygotowuję trzy propozycje…</p>
+}
+
+@* Ta sama konwencja co w Editor.razor: jedno miejsce na zdanie o odmowie, poza
+   lancuchem stanow — odmowa moze przyjsc i przy wejsciu, i przy wyborze. *@
+@if (_kolizja is not null)
+{
+    <p role="alert" data-test="kolizja">@_kolizja</p>
+}
 
 @code {
     [Parameter] public string ProjectId { get; set; } = string.Empty;
@@ -43,21 +53,90 @@ else
     /// Parametr, bo testy nie moga czekac 2 sekund na tik. Tak samo jak w Editor.
     [Parameter] public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(2);
 
+    /// Ile szkicow to KOMPLET (ruling 4: trzy kierunki, jedno wywolanie modelu).
+    /// Ta sama liczba, ktora `ProjectApi.Komplet` sprawdza po swojej stronie —
+    /// gdyby strona uznawala dwa szkice za komplet, pokazywalaby wybor z dwoma
+    /// kartami i nigdy nie dowiozla trzeciej.
+    private const int Komplet = 3;
+
     private IReadOnlyList<ProposalView>? _proposals;
     private bool _buduje;
     private bool _zatrzymane;
+    private string? _kolizja;
     private readonly CancellationTokenSource _zycie = new();
+
+    /// <summary>
+    /// Odmowy `ProjectApi`, ktore sa normalna odpowiedzia na wejscie albo klikniecie,
+    /// a nie awaria aplikacji. Szerzej niz cztery typy z `Editor`, bo tutaj docieraja
+    /// takze straze rzucajace GOLYM `InvalidOperationException` (drugi komplet szkicow,
+    /// druga wersja pierwsza) — a `ProjectFrozenException`, `StaleVersionException`
+    /// i `JobRunningException` i tak po nim dziedzicza. To ta sama granica, ktora
+    /// `ApiEndpoints.Zamien` mapuje na 409, a nie na 500.
+    ///
+    /// Cena: lapiemy tez `ObjectDisposedException` z zamykanej kolejki. Przy zamykaniu
+    /// procesu klient i tak nie doczeka sie odpowiedzi, a zerwany obwod nie powie mu
+    /// o tym nic madrzejszego niz to zdanie.
+    /// </summary>
+    private static bool Kolizja(Exception ex) => ex is InvalidOperationException or KeyNotFoundException;
+
+    /// Kontrakt oddaje galaz, nie gotowe zdania — tresc pisze frontend. Po odmowie
+    /// czytamy szkice z serwera: odmowa z definicji znaczy, ze stan po drugiej stronie
+    /// jest inny, niz zakladal ten klik.
+    private async Task Odswiez(Exception ex)
+    {
+        _kolizja = ex switch
+        {
+            ProjectFrozenException => "Wykorzystaliście już wszystkie poprawki w tym pakiecie.",
+            JobRunningException => "Szkice już się dla Ciebie liczą — chwila i będą gotowe.",
+            KeyNotFoundException => "Tej propozycji już nie ma. Odświeżyliśmy listę.",
+            _ => "Twoja strona jest już gotowa — nowych szkiców nie zamawiamy.",
+        };
+
+        try
+        {
+            var szkice = await Api.GetProposalsAsync(ProjectId);
+            if (szkice.Count > 0) _proposals = szkice;
+        }
+        catch (Exception e) when (Kolizja(e))
+        {
+            // Odswiezanie po odmowie nie ma prawa wywolac drugiej odmowy w twarz
+            // klientowi — zdanie wyzej juz jest ustawione i to ono zostaje.
+        }
+    }
 
     /// <summary>
     /// Propozycje sa ZADANIEM (kontrakt 1), a nie odpowiedzia synchroniczna: prawdziwy
     /// silnik oddaje `jobId` od reki i pisze szkice na dysk minute pozniej. Pytanie
     /// o `GetProposalsAsync` zaraz po `RequestProposalsAsync` dawaloby PUSTA liste —
     /// na atrapie nie, bo ta konczy zadanie, zanim je odda.
+    ///
+    /// Najpierw jednak PYTAMY, co juz jest. Bezwarunkowe zamawianie kosztowalo okolo
+    /// pol dolara przy kazdym wejsciu na ten adres — a klient wraca tu strzalka
+    /// „wstecz" z edytora zupelnie normalnie. Gorzej niz koszt: `RunProposalsAsync`
+    /// kasuje `proposals/` i zeruje `ChosenProposal`, wiec powrot wycieral klientowi
+    /// wybor, ktory juz zrobil.
     /// </summary>
     protected override async Task OnInitializedAsync()
     {
-        if (!await Poczekaj(await Api.RequestProposalsAsync(ProjectId))) return;
-        _proposals = await Api.GetProposalsAsync(ProjectId);
+        try
+        {
+            var istniejace = await Api.GetProposalsAsync(ProjectId);
+            if (istniejace.Count == Komplet)
+            {
+                _proposals = istniejace;
+                return;
+            }
+
+            if (!await Poczekaj(await Api.RequestProposalsAsync(ProjectId))) return;
+            _proposals = await Api.GetProposalsAsync(ProjectId);
+        }
+        catch (Exception ex) when (Kolizja(ex))
+        {
+            // Druga karta w trakcie generacji dostawala `JobRunningException` prosto
+            // z inicjalizacji — a wyjatek z `OnInitializedAsync` konczy obwod i klient
+            // widzi pasek „polaczenie zerwane" zamiast zdania o tym, co sie dzieje.
+            await Odswiez(ex);
+        }
     }
 
     private async Task Choose(string proposalId)
@@ -68,17 +147,29 @@ else
         // Ustawiane SYNCHRONICZNIE, przed pierwszym await: po nim jest juz za pozno.
         if (_buduje) return;
         _buduje = true;
+        _kolizja = null;
 
-        await Api.ChooseProposalAsync(ProjectId, proposalId);
+        try
+        {
+            await Api.ChooseProposalAsync(ProjectId, proposalId);
 
-        // Wersja 1 to OSOBNE zadanie, nie skutek uboczny wyboru (IProjectApi.
-        // CreateFirstVersionAsync). Atrapa tworzy ja przy wyborze, prawdziwe API juz
-        // nie — bo generacja trwa minuty. Bez tego wywolania edytor otwieral sie
-        // z pusta lista wersji: klient nie mial w co kliknac, czyli produkt nie istnial.
-        // Testy komponentow tego nie widza, bo chodza po atrapie.
-        var udalo = await Poczekaj(await Api.CreateFirstVersionAsync(ProjectId));
-        _buduje = false;
-        if (!udalo) return;
+            // Wersja 1 to OSOBNE zadanie, nie skutek uboczny wyboru (IProjectApi.
+            // CreateFirstVersionAsync). Atrapa tworzy ja przy wyborze, prawdziwe API juz
+            // nie — bo generacja trwa minuty. Bez tego wywolania edytor otwieral sie
+            // z pusta lista wersji: klient nie mial w co kliknac, czyli produkt nie istnial.
+            // Testy komponentow tego nie widza, bo chodza po atrapie.
+            var udalo = await Poczekaj(await Api.CreateFirstVersionAsync(ProjectId));
+            _buduje = false;
+            if (!udalo) return;
+        }
+        catch (Exception ex) when (Kolizja(ex))
+        {
+            // `_buduje` PRZED `Odswiez`: bez tego strona zostaje na „Buduję Twoją
+            // stronę…" na zawsze, mimo ze nic sie juz nie buduje.
+            _buduje = false;
+            await Odswiez(ex);
+            return;
+        }
 
         Nav.NavigateTo($"/editor/{ProjectId}");
     }

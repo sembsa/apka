@@ -37,6 +37,26 @@ public class ProjectApi(ProjectPaths paths, JobQueue queue) : IProjectApi
         var meta = Wczytaj(id);
         if (meta.Status == ProjectStatus.Frozen) throw new ProjectFrozenException(id);
 
+        // Straz na WYDATEK, nie na porzadek. Komplet szkicow to jedno wywolanie
+        // modelu za okolo pol dolara, a `RunProposalsAsync` zaczyna od skasowania
+        // `proposals/` i wyzerowania `ChosenProposal` — czyli powtorne zamowienie
+        // nie tylko placi drugi raz, ale i kasuje wybor, ktory klient juz zrobil.
+        // Straznik siedzi TUTAJ, a nie w `Proposals.razor`: komponent nie jest
+        // jedyna droga (sa endpointy §1), a pieniedzy nie broni sie w widoku.
+        //
+        // Komplet, nie „cokolwiek na dysku": nieudane zadanie potrafi zostawic
+        // 2 z 3 szkicow (silnik zwraca wtedy `failed` z „model zapisal 2 z 3”).
+        // Warunek `> 0` zamykalby wtedy projekt na zawsze — klient mialby dwie
+        // karty do wyboru i zadnej drogi po trzecia.
+        if (meta.Versions.Count > 0)
+            throw new InvalidOperationException(
+                $"projekt {id} ma juz {meta.Versions.Count} wersji — szkice kierunku " +
+                "zamawia sie tylko przed wersja pierwsza");
+
+        if (Komplet(id))
+            throw new InvalidOperationException(
+                $"projekt {id} ma juz komplet szkicow — pokaz istniejace zamiast zamawiac nowe");
+
         return Task.FromResult(queue.Enqueue(id, async (jobId, ct) =>
         {
             var wynik = await paths.Engine(id).RunProposalsAsync(paths.Store(id).Load(), ct);
@@ -53,6 +73,11 @@ public class ProjectApi(ProjectPaths paths, JobQueue queue) : IProjectApi
         var lista = SzkiceZDysku(katalog);
         return Task.FromResult<IReadOnlyList<ProposalView>>(lista);
     }
+
+    /// Czy na dysku lezy PELNA trojka szkicow. Ten sam odczyt co `GetProposalsAsync`,
+    /// wiec straz i widok nie moga sie rozjechac.
+    private bool Komplet(string id) =>
+        SzkiceZDysku(Path.Combine(paths.Dir(id), "proposals")).Count == DozwoloneId.Length;
 
     /// Dozwolone identyfikatory propozycji. Ta sama trojka co `GenerationService.SketchIds`
     /// — swiadome powtorzenie, bo to granica zaufania: silnik ma swoja biala liste jako

@@ -25,6 +25,15 @@ public class MockProjectApi : IProjectApi
     /// </summary>
     private readonly ConcurrentDictionary<(string, int), HashSet<string>> _wyroznione = new();
 
+    /// <summary>
+    /// Projekty, dla ktorych szkice JUZ zamowiono. Bez tego atrapa oddawala trzy
+    /// propozycje projektowi, ktory o nie nigdy nie poprosil — a prawdziwe
+    /// `ProjectApi.GetProposalsAsync` na nieistniejacym `proposals/` oddaje PUSTA
+    /// liste. Roznica jest widoczna dokladnie tam, gdzie `Proposals` rozgalezia sie
+    /// na „pokaz, co jest" kontra „zamow komplet".
+    /// </summary>
+    private readonly ConcurrentDictionary<string, byte> _zamowione = new();
+
     public MockJobOutcome NextJobOutcome { get; set; } = MockJobOutcome.Success;
     public TimeSpan SimulatedDelay { get; set; } = TimeSpan.FromSeconds(2);
 
@@ -129,18 +138,19 @@ public class MockProjectApi : IProjectApi
     public async Task<string> RequestProposalsAsync(string id)
     {
         await Task.Delay(SimulatedDelay);
+        _zamowione[id] = 0;
         var jobId = Guid.NewGuid().ToString();
         _jobs[jobId] = new JobView(jobId, "succeeded", null);
         return jobId;
     }
 
     public Task<IReadOnlyList<ProposalView>> GetProposalsAsync(string id) =>
-        Task.FromResult<IReadOnlyList<ProposalView>>(
+        Task.FromResult<IReadOnlyList<ProposalView>>(_zamowione.ContainsKey(id) ?
         [
             new("p-1", "Ciepły i prosty", "<html><body style='font-family:system-ui'><h1 data-cmt-id=\"hero\">Fryzjer</h1></body></html>"),
             new("p-2", "Nowoczesny, ciemny", "<html><body style='background:#111;color:#eee'><h1 data-cmt-id=\"hero\">Fryzjer</h1></body></html>"),
             new("p-3", "Klasyczny z cennikiem", "<html><body><h1 data-cmt-id=\"hero\">Fryzjer</h1><ul data-cmt-id=\"cennik\"><li>Strzyżenie 60 zł</li></ul></body></html>"),
-        ]);
+        ] : []);
 
     /// <summary>
     /// Wybor propozycji MUSI utworzyc wersje 1 — to ona jest pierwsza strona klienta.

@@ -215,6 +215,59 @@ public class ProjectApiTests : IDisposable
             api.ApplyCommentsAsync(p.Id, 1, [Uwaga("k1")]));
     }
 
+    [Fact]
+    public async Task Drugie_zamowienie_szkicow_jest_odrzucane_zamiast_wydawac_pol_dolara()
+    {
+        // Komplet szkicow to jedno wywolanie modelu za okolo pol dolara. Wejscie
+        // na /proposals/{id} zamawialo go BEZWARUNKOWO, wiec powrot strzalka
+        // „wstecz" z edytora placil drugi raz — a `RunProposalsAsync` zaczyna od
+        // skasowania `proposals/` i wyzerowania `ChosenProposal`, wiec przy okazji
+        // wycieral klientowi wybor. Straz nalezy do API, bo komponent nie jest
+        // jedyna droga: `POST /api/projects/{id}/proposals` jest w §1.
+        var (api, runner) = Zbuduj();
+        var p = await api.CreateAsync("idea", "kwiaciarnia");
+        await Poczekaj(api, await api.RequestProposalsAsync(p.Id));
+        await api.ChooseProposalAsync(p.Id, "b");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => api.RequestProposalsAsync(p.Id));
+
+        // Dowod, ze odmowa jest PRZED wydatkiem: silnik dostal dokladnie jedno
+        // zlecenie propozycji, a wybor klienta stoi nietkniety.
+        Assert.Equal(1, runner(p.Id).Wywolania.Count(w => w == "proposals"));
+        Assert.Equal("b", new ProjectStore(Path.Combine(_root, p.Id)).Load().ChosenProposal);
+    }
+
+    [Fact]
+    public async Task Projekt_z_wersja_nie_zamawia_juz_szkicow_kierunku()
+    {
+        // Szkice sa krokiem SPRZED wersji pierwszej. Projekt, ktory ma juz strone,
+        // zamawiajac je placi za material, ktorego nie da sie do niczego uzyc —
+        // wersji pierwszej i tak drugi raz nie bedzie (`CreateFirstVersionAsync`).
+        var (api, runner) = Zbuduj();
+        var p = await Gotowy(api);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => api.RequestProposalsAsync(p.Id));
+        Assert.Equal(1, runner(p.Id).Wywolania.Count(w => w == "proposals"));
+    }
+
+    [Fact]
+    public async Task Niepelny_komplet_szkicow_wolno_zamowic_ponownie()
+    {
+        // Kontrapunkt do dwoch testow wyzej i powod, dla ktorego warunkiem jest
+        // KOMPLET, a nie „cokolwiek na dysku": nieudane zadanie zostawia 2 z 3
+        // szkicow (silnik oddaje wtedy `failed` z „model zapisal 2 z 3 szkicow").
+        // Warunek `> 0` zamykalby taki projekt na zawsze — klient ogladalby dwie
+        // karty i nie mial zadnej drogi po trzecia.
+        var (api, _) = Zbuduj();
+        var p = await api.CreateAsync("idea", "kwiaciarnia");
+        await Poczekaj(api, await api.RequestProposalsAsync(p.Id));
+
+        File.Delete(Path.Combine(_root, p.Id, "proposals", "c.html"));
+
+        await Poczekaj(api, await api.RequestProposalsAsync(p.Id));
+        Assert.Equal(3, (await api.GetProposalsAsync(p.Id)).Count);
+    }
+
     [Theory]
     [InlineData("../../inny/versions/003/index")]
     [InlineData("/etc/passwd")]
