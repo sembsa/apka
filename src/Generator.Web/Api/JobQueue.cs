@@ -16,6 +16,12 @@ public class JobQueue : IDisposable
 
     private readonly ConcurrentDictionary<string, JobView> _jobs = new();
     private readonly ConcurrentDictionary<string, string> _aktywne = new();  // projectId -> jobId
+
+    /// jobId -> projectId. Zyje DLUZEJ niz `_aktywne`, ktore znika z chwila konca
+    /// zadania: `GET /api/jobs/{id}` musi sprawdzic token wlasciwego projektu takze
+    /// (a wlasciwie zwlaszcza) wtedy, gdy zadanie juz sie skonczylo — po to klient
+    /// o nie pyta. Nie sprzatamy tego przez cale zycie procesu, tak samo jak `_jobs`.
+    private readonly ConcurrentDictionary<string, string> _zadaniaProjektow = new();
     private readonly Channel<Zadanie> _kanal = Channel.CreateUnbounded<Zadanie>();
     private readonly CancellationTokenSource _stop = new();
     private readonly Task _konsument;
@@ -41,6 +47,7 @@ public class JobQueue : IDisposable
         // natychmiast, a wtedy odwrotna kolejnosc nadpisalaby jego `running` przez
         // nasze `queued`.
         _jobs[jobId] = new JobView(jobId, "queued", null);
+        _zadaniaProjektow[jobId] = projectId;
 
         // Po `Dispose` kanal jest zamkniety i `TryWrite` zwraca `false`. Ignorowanie
         // tego oddawalo klientowi `jobId` zadania, ktorego nikt nigdy nie podniesie:
@@ -51,6 +58,7 @@ public class JobQueue : IDisposable
         {
             _aktywne.TryRemove(new KeyValuePair<string, string>(projectId, jobId));
             _jobs.TryRemove(jobId, out _);
+            _zadaniaProjektow.TryRemove(jobId, out _);
             throw new ObjectDisposedException(nameof(JobQueue),
                 "kolejka jest zamknieta — zadanie nie zostalo przyjete");
         }
@@ -59,6 +67,12 @@ public class JobQueue : IDisposable
     }
 
     public JobView? Get(string jobId) => _jobs.TryGetValue(jobId, out var j) ? j : null;
+
+    /// Do ktorego projektu nalezy zadanie; `null` = nie znamy takiego zadania.
+    /// Dzieki temu warstwa HTTP potrafi sprawdzic token WLASCIWEGO projektu,
+    /// zamiast wpuszczac kazdego, kto zna sam `jobId`.
+    public string? Projekt(string jobId) =>
+        _zadaniaProjektow.TryGetValue(jobId, out var projectId) ? projectId : null;
 
     /// Zadanie odklada wynik TUTAJ, a nie przez wyjatek: awaria modelu jest
     /// normalnym wynikiem (kontrakt 4.3), nie bledem programu.

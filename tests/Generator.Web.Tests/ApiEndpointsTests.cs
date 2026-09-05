@@ -88,6 +88,43 @@ public class ApiEndpointsTests : IClassFixture<WebApplicationFactory<Program>>, 
     }
 
     [Fact]
+    public async Task Stan_zadania_wymaga_tokenu_projektu_do_ktorego_nalezy()
+    {
+        // §1 mowi: „`/api/*` wymaga tokenu projektu". `/api/jobs/{id}` byla jedyna
+        // trasa, ktora szla przez `Zamien`, a nie `Chroniony` — czyli jedyna, ktora
+        // oddawala stan cudzego projektu kazdemu, kto zna sam `jobId`.
+        var klient = _app.CreateClient();
+        var p = await (await klient.PostAsJsonAsync("/api/projects",
+            new { source = "idea", description = "kwiaciarnia" })).Content.ReadFromJsonAsync<ProjectView>();
+        var jobId = await Zadanie(klient, p!, $"/api/projects/{p!.Id}/proposals");
+
+        Assert.Equal(HttpStatusCode.Unauthorized,
+            (await klient.GetAsync($"/api/jobs/{jobId}")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized,
+            (await klient.GetAsync($"/api/jobs/{jobId}?token=zle")).StatusCode);
+
+        // Cudzy WAZNY token tez nie otwiera cudzego zadania — sprawdzamy token
+        // projektu, DO KTOREGO to zadanie nalezy, a nie „jakikolwiek prawdziwy".
+        var obcy = await (await klient.PostAsJsonAsync("/api/projects",
+            new { source = "idea", description = "obcy" })).Content.ReadFromJsonAsync<ProjectView>();
+        Assert.Equal(HttpStatusCode.Unauthorized,
+            (await klient.GetAsync($"/api/jobs/{jobId}?token={obcy!.Token}")).StatusCode);
+
+        Assert.Equal(HttpStatusCode.OK,
+            (await klient.GetAsync($"/api/jobs/{jobId}?token={p.Token}")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Nieznane_zadanie_to_404_a_nie_401()
+    {
+        // Ta sama kolejnosc co przy projekcie: najpierw „nie ma czego chronic",
+        // dopiero potem token. Odwrotnie kazde zapytanie dawaloby 401 i nie dalo
+        // sie odroznic zlego linku od zlego tokenu.
+        var odp = await _app.CreateClient().GetAsync($"/api/jobs/{Guid.NewGuid()}?token=x");
+        Assert.Equal(HttpStatusCode.NotFound, odp.StatusCode);
+    }
+
+    [Fact]
     public async Task Nieznany_projekt_to_404_a_nie_500()
     {
         var odp = await _app.CreateClient().GetAsync($"/api/projects/{Guid.NewGuid()}?token=x");
@@ -124,7 +161,7 @@ public class ApiEndpointsTests : IClassFixture<WebApplicationFactory<Program>>, 
         // przechodzi. Po tej rundzie work/ trzyma juz v2 — i dopiero wtedy widac,
         // KTORA wersje klient naprawde pobral. Kontrakt 5.1: ZIP idzie za wersja,
         // ktora klient oglada, nie za ostatnim stanem katalogu roboczego.
-        await Poczekaj(klient, await Zadanie(klient, p, $"/api/projects/{p.Id}/versions/1/comments/apply",
+        await Poczekaj(klient, p, await Zadanie(klient, p, $"/api/projects/{p.Id}/versions/1/comments/apply",
             JsonContent.Create(new[] { Uwaga("k1") })));
 
         var odp = await klient.GetAsync($"/api/projects/{p.Id}/versions/1/zip?token={p.Token}");
@@ -191,9 +228,9 @@ public class ApiEndpointsTests : IClassFixture<WebApplicationFactory<Program>>, 
             new { source = "idea", description = "kwiaciarnia" }))
             .Content.ReadFromJsonAsync<ProjectView>())!;
 
-        await Poczekaj(klient, await Zadanie(klient, p, $"/api/projects/{p.Id}/proposals"));
+        await Poczekaj(klient, p, await Zadanie(klient, p, $"/api/projects/{p.Id}/proposals"));
         await Post(klient, p, $"/api/projects/{p.Id}/proposals/b/choose");
-        await Poczekaj(klient, await Zadanie(klient, p, $"/api/projects/{p.Id}/versions"));
+        await Poczekaj(klient, p, await Zadanie(klient, p, $"/api/projects/{p.Id}/versions"));
         return p;
     }
 
@@ -216,11 +253,13 @@ public class ApiEndpointsTests : IClassFixture<WebApplicationFactory<Program>>, 
     private static CommentDto Uwaga(string id) =>
         new(id, "hero", "tekst " + id, "desktop", DateTimeOffset.UnixEpoch, "open", null);
 
-    private static async Task Poczekaj(HttpClient klient, string jobId)
+    /// Token jest tu OBOWIAZKOWY, odkad `/api/jobs/{id}` przestal byc jedyna trasa
+    /// `/api/*` bez ochrony (§1). Bez niego to 401, nie 200.
+    private static async Task Poczekaj(HttpClient klient, ProjectView p, string jobId)
     {
         for (var i = 0; i < 200; i++)
         {
-            var job = await klient.GetFromJsonAsync<JobView>($"/api/jobs/{jobId}");
+            var job = await klient.GetFromJsonAsync<JobView>($"/api/jobs/{jobId}?token={p.Token}");
             if (job!.Status == "succeeded") return;
             Assert.NotEqual("failed", job.Status);
             await Task.Delay(25);

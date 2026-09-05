@@ -102,8 +102,23 @@ public static class ApiEndpoints
                     return Task.FromResult(Results.File(bufor, "application/zip", $"strona-v{n}.zip"));
                 }));
 
-        grupa.MapGet("/jobs/{jobId}", (string jobId, IProjectApi api) =>
-            Zamien(async () => Results.Ok(await api.GetJobAsync(jobId))));
+        // §1: „`/api/*` wymaga tokenu projektu". Ta trasa byla JEDYNA, ktora szla
+        // przez `Zamien`, a nie `Chroniony` — czyli jedyna bez ochrony. Bronil jej
+        // tylko nieodgadywalny `jobId`, a to nie jest obietnica, ktora zlozylismy:
+        // stan zadania mowi, co dzieje sie z cudzym projektem, i jest jedynym
+        // zasobem, ktory dawal to za darmo. Kolejka zna projekt zadania, wiec
+        // sprawdzamy token TEGO projektu.
+        grupa.MapGet("/jobs/{jobId}", (string jobId, IProjectApi api, JobQueue queue, HttpContext ctx) =>
+        {
+            // Nieznane zadanie to 404 PRZED tokenem — ta sama kolejnosc, ktora
+            // `Chroniony` stosuje do nieistniejacego projektu: nie ma czego chronic,
+            // a odwrotna kolejnosc dawalaby 401 na wszystko i nie pozwalala odroznic
+            // zlego linku od zlego tokenu.
+            var projectId = queue.Projekt(jobId);
+            return projectId is null
+                ? Task.FromResult(Results.NotFound())
+                : Chroniony(projectId, api, ctx, async _ => Results.Ok(await api.GetJobAsync(jobId)));
+        });
     }
 
     private record NowyProjekt(string Source, string Description);
