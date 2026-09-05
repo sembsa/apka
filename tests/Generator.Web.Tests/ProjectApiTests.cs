@@ -5,6 +5,7 @@ using Generator.Engine.Storage;
 using Generator.Engine.Versioning;
 using Generator.Web.Api;
 using Generator.Web.Contracts;
+using Microsoft.Extensions.Logging;
 using Xunit;
 
 namespace Generator.Web.Tests;
@@ -77,6 +78,7 @@ public class ProjectApiTests : IDisposable
     private readonly string _root =
         Path.Combine(Path.GetTempPath(), "gen-api-" + Guid.NewGuid().ToString("N"));
     private readonly JobQueue _queue = new();
+    private readonly ZapisujacyLogger _log = new();
 
     public void Dispose()
     {
@@ -100,7 +102,7 @@ public class ProjectApiTests : IDisposable
             runnery[id] = r;
             return r;
         });
-        return (new ProjectApi(paths, _queue), id => runnery[id]);
+        return (new ProjectApi(paths, _queue, _log), id => runnery[id]);
     }
 
     private static async Task Poczekaj(ProjectApi api, string jobId)
@@ -213,6 +215,37 @@ public class ProjectApiTests : IDisposable
             api.ApplyCommentsAsync(p.Id, 0, [Uwaga("k1")]));
         await Assert.ThrowsAsync<StaleVersionException>(() =>
             api.ApplyCommentsAsync(p.Id, 1, [Uwaga("k1")]));
+    }
+
+    [Fact]
+    public async Task Przyczyna_awarii_idzie_do_logu_a_do_klienta_nie()
+    {
+        // Kontrakt 4.3 projektowal `cause` jako „szczegol dla naszych logow, NIE do
+        // UI". Logow nie bylo — w calej aplikacji nie bylo ani jednego loggera —
+        // wiec precyzyjny komunikat RunGate („brak `claude` na PATH",
+        // permission_denials, stop_reason) ginal na tej granicy bez sladu.
+        var (api, runner) = Zbuduj();
+        var p = await Gotowy(api);
+        runner(p.Id).Awaria = new JobFailure(
+            FailureHandling.Halted, "nie znaleziono `claude` na PATH", Attempts: 2);
+
+        var jobId = await api.ApplyCommentsAsync(p.Id, 1, [Uwaga("k1")]);
+        await Poczekaj(api, jobId);
+
+        // Klient dostaje galaz i liczbe prob — i nic wiecej.
+        var job = await api.GetJobAsync(jobId);
+        Assert.Equal("failed", job.Status);
+        Assert.Equal("halted", job.Failure!.Handling);
+        Assert.Equal(2, job.Failure.Attempts);
+        Assert.DoesNotContain(typeof(JobFailureView).GetProperties(),
+            x => x.Name.Contains("Cause", StringComparison.OrdinalIgnoreCase));
+
+        // My dostajemy przyczyne — razem z tym, KOGO dotyczy. Bez projectId i jobId
+        // wpis mowilby tylko, ze cos gdzies padlo.
+        var wpis = Assert.Single(_log.Bledy);
+        Assert.Contains("nie znaleziono `claude` na PATH", wpis);
+        Assert.Contains(p.Id, wpis);
+        Assert.Contains(jobId, wpis);
     }
 
     [Fact]
@@ -571,5 +604,25 @@ public class ProjectApiTests : IDisposable
         await api.ChooseProposalAsync(p.Id, "b");
         await Poczekaj(api, await api.CreateFirstVersionAsync(p.Id));
         return p;
+    }
+}
+
+/// <summary>
+/// Logger z notatnikiem. Formatuje wpis dokladnie tak, jak zrobilby to prawdziwy
+/// dostawca logow, wiec test sprawdza TRESC, ktora ktos przeczyta o 2 w nocy —
+/// a nie sam fakt, ze cos zawolano.
+/// </summary>
+internal sealed class ZapisujacyLogger : ILogger<ProjectApi>
+{
+    public List<string> Bledy { get; } = [];
+
+    public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+    public bool IsEnabled(LogLevel logLevel) => true;
+
+    public void Log<TState>(LogLevel logLevel, EventId eventId, TState state,
+        Exception? exception, Func<TState, Exception?, string> formatter)
+    {
+        if (logLevel >= LogLevel.Error) Bledy.Add(formatter(state, exception));
     }
 }

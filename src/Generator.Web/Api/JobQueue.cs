@@ -19,8 +19,15 @@ public class JobQueue : IDisposable
     private readonly Channel<Zadanie> _kanal = Channel.CreateUnbounded<Zadanie>();
     private readonly CancellationTokenSource _stop = new();
     private readonly Task _konsument;
+    private readonly ILogger<JobQueue>? _logger;
 
-    public JobQueue() => _konsument = Task.Run(Konsumuj);
+    /// Logger opcjonalny, bo `new JobQueue()` stoi w kilkunastu testach, a kolejka
+    /// nie ma powodu wymagac kontenera. W aplikacji wstrzykuje go DI.
+    public JobQueue(ILogger<JobQueue>? logger = null)
+    {
+        _logger = logger;
+        _konsument = Task.Run(Konsumuj);
+    }
 
     public bool MaAktywne(string projectId) => _aktywne.ContainsKey(projectId);
 
@@ -83,9 +90,18 @@ public class JobQueue : IDisposable
             {
                 break;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // Wyjatek to nasza awaria, wiec halted: powtorka da to samo.
+                //
+                // DRUGA droga, ktora gubila przyczyne — i grozniejsza od tej
+                // w ProjectApi, bo tutaj nie ma nawet `JobFailure` z RunGate:
+                // trafia tu InvalidDataException z uszkodzonego project.json,
+                // brak pliku wybranego szkicu, blad zapisu snapshotu. Klient
+                // dostaje „halted" i tyle; bez tego wpisu nie zostaje nic.
+                _logger?.LogError(ex, "zadanie {JobId} projektu {ProjectId} rzucilo wyjatkiem",
+                    z.Id, z.ProjectId);
+
                 _aktywne.TryRemove(z.ProjectId, out _);
                 Fail(z.Id, "halted", 1);
             }

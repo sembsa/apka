@@ -8,7 +8,7 @@ namespace Generator.Web.Api;
 
 /// Kontrakt 1 w procesie. Blazor Server wola to bezposrednio (postep idzie
 /// obwodem SignalR), a ApiEndpoints jest cienka warstwa HTTP nad tym samym.
-public class ProjectApi(ProjectPaths paths, JobQueue queue) : IProjectApi
+public class ProjectApi(ProjectPaths paths, JobQueue queue, ILogger<ProjectApi> logger) : IProjectApi
 {
     public Task<ProjectView> CreateAsync(string source, string description)
     {
@@ -60,7 +60,7 @@ public class ProjectApi(ProjectPaths paths, JobQueue queue) : IProjectApi
         return Task.FromResult(queue.Enqueue(id, async (jobId, ct) =>
         {
             var wynik = await paths.Engine(id).RunProposalsAsync(paths.Store(id).Load(), ct);
-            if (!wynik.Succeeded) { queue.Fail(jobId, Handling(wynik.Failure!), wynik.Failure.Attempts); return; }
+            if (!wynik.Succeeded) { Awaria(jobId, id, wynik.Failure!); return; }
             ZapiszSzkice(id, wynik.Proposals);
         }));
     }
@@ -140,7 +140,7 @@ public class ProjectApi(ProjectPaths paths, JobQueue queue) : IProjectApi
         return Task.FromResult(queue.Enqueue(id, async (jobId, ct) =>
         {
             var wynik = await paths.Engine(id).RunFirstVersionAsync(paths.Store(id).Load(), ct);
-            if (!wynik.Succeeded) { queue.Fail(jobId, Handling(wynik.Failure!), wynik.Failure.Attempts); return; }
+            if (!wynik.Succeeded) { Awaria(jobId, id, wynik.Failure!); return; }
         }));
     }
 
@@ -186,7 +186,7 @@ public class ProjectApi(ProjectPaths paths, JobQueue queue) : IProjectApi
         return Task.FromResult(queue.Enqueue(id, async (jobId, ct) =>
         {
             var wynik = await paths.Engine(id).RunRoundAsync(paths.Store(id).Load(), silnikowe, ct);
-            if (!wynik.Succeeded) { queue.Fail(jobId, Handling(wynik.Failure!), wynik.Failure.Attempts); return; }
+            if (!wynik.Succeeded) { Awaria(jobId, id, wynik.Failure!); return; }
 
             // Kontrakt 4.4.2: status zmienia sie WYLACZNIE z raportu i WYLACZNIE
             // po udanej rundzie. Uwagi ida do wersji, ktora byla biezaca, gdy je
@@ -295,6 +295,28 @@ public class ProjectApi(ProjectPaths paths, JobQueue queue) : IProjectApi
                 return new ProposalView(x.Id,
                     m.Success ? m.Groups[1].Value.Trim() : $"Kierunek {x.Id.ToUpperInvariant()}", html);
             })];
+
+    /// <summary>
+    /// Jedyna droga awarii zadania na tej granicy. Kontrakt 4.3 projektowal `cause`
+    /// jako „szczegol dla naszych logow, NIE do UI" — logow nie bylo: `JobFailure`
+    /// wchodzil tu z precyzyjnym komunikatem `RunGate` (brak `claude` na PATH,
+    /// niepuste `permission_denials`, `stop_reason` inny niz `end_turn`), a wychodzil
+    /// jako para `handling` + `attempts`. Przyczyna gubila sie bezpowrotnie i nie
+    /// zostawalo NIC, co ktos moglby przeczytac o 2 w nocy.
+    ///
+    /// `cause` nadal NIE wychodzi do klienta — `JobFailureView` go nie ma i to
+    /// mapowanie jest jedynym miejscem, w ktorym ktos moglby go dolozyc.
+    /// `projectId` i `jobId` sa w logu obowiazkowo: bez nich wpis mowi, ze cos padlo,
+    /// ale nie u kogo.
+    /// </summary>
+    private void Awaria(string jobId, string id, JobFailure f)
+    {
+        logger.LogError(
+            "zadanie {JobId} projektu {ProjectId} nie powiodlo sie: handling={Handling}, attempts={Attempts}, cause={Cause}",
+            jobId, id, Handling(f), f.Attempts, f.Cause);
+
+        queue.Fail(jobId, Handling(f), f.Attempts);
+    }
 
     /// Kontrakt 4.3: UI rozgalezia sie po `handling`, a `attempts` idzie do niego
     /// w `Job.failure`. Wczesniej awaria wracala wyjatkiem i kolejka wpisywala

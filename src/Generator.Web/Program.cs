@@ -36,7 +36,9 @@ else
     // podmieniaja je na atrape silnika przez RemoveAll/AddSingleton, a to dziala tylko
     // wtedy, gdy rejestracja siega po nie w chwili budowania IProjectApi.
     builder.Services.AddSingleton<IProjectApi>(sp => new ProjectApi(
-        sp.GetRequiredService<ProjectPaths>(), sp.GetRequiredService<JobQueue>()));
+        sp.GetRequiredService<ProjectPaths>(),
+        sp.GetRequiredService<JobQueue>(),
+        sp.GetRequiredService<ILogger<ProjectApi>>()));
 }
 
 builder.Services.AddRazorComponents()
