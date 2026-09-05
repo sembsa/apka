@@ -767,6 +767,45 @@ public class GenerationServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Runda_startuje_z_work_odtworzonym_ze_snapshotu_wersji_biezacej()
+    {
+        // RestoreWorkDirAfterFailure wisi na `Failed()`, wiec cofa work/ TYLKO przy
+        // awarii, ktora zdazyla wrocic. Anulowanie i zabicie procesu nie wracaja:
+        // work/ zostawal z polowa zapisanego index.html, a nastepna runda szla
+        // --resume po urwanym pliku i utrwalala go jako wersje klienta.
+        var (meta, store, versions) = Setup();
+
+        await new GenerationService(
+            new ScriptedRunner((Json("s-1", 0.10m, "ok"),
+                WritePage("""<h1 data-cmt-id="hero">TRESC-V1</h1>"""))), store, versions)
+            .RunRoundAsync(store.Load(), [C("c1", null, "raz")]);
+
+        // Tak wyglada work/ po rundzie, ktora nie miala jak posprzatac po sobie.
+        await File.WriteAllTextAsync(Path.Combine(versions.WorkDir, "index.html"),
+            "<html><body>urwane w polowie");
+        await File.WriteAllTextAsync(Path.Combine(versions.WorkDir, "smiec.tmp"), "polowa zapisu");
+
+        string? zastane = null;
+        var runner = new ScriptedRunner((Json("s-1", 0.10m, "ok"), dir =>
+        {
+            // Model widzi katalog TAKI, jaki mu podamy — to jest cala asercja.
+            zastane = File.ReadAllText(Path.Combine(dir, "index.html"));
+            WritePage("""<h1 data-cmt-id="hero">TRESC-V2</h1>""")(dir);
+        }));
+
+        var outcome = await new GenerationService(runner, store, versions)
+            .RunRoundAsync(store.Load(), [C("c2", null, "dwa")]);
+
+        Assert.True(outcome.Succeeded);
+        Assert.Contains("TRESC-V1", zastane);
+        Assert.DoesNotContain("urwane w polowie", zastane!);
+
+        // Restore zastepuje CALY katalog, wiec smiec po przerwanym zapisie tez znika —
+        // inaczej trafilby do snapshotu wersji i do ZIP-a klienta.
+        Assert.False(File.Exists(Path.Combine(versions.WorkDir, "smiec.tmp")));
+    }
+
+    [Fact]
     public async Task Nieudana_runda_po_powrocie_przywraca_WorkDir_do_v1_a_nie_do_v2()
     {
         // Kontrakt 4.4: nieudana runda to dla klienta BRAK ZDARZENIA. Po powrocie
@@ -807,6 +846,13 @@ public class GenerationServiceTests : IDisposable
         var (meta, store, versions) = Setup();
         var runner = new ScriptedRunner(
             (Json("s-1", 0.10m, "ok"), WritePage("""<h1 data-cmt-id="hero">v9</h1>""")));
+
+        // Wersja na LISCIE musi miec snapshot na DYSKU — od chwili, w ktorej runda
+        // odtwarza work/ ze snapshotu wersji biezacej, metadane bez katalogu sa
+        // zlamanym niezmiennikiem, a nie ubogim setupem testu.
+        Directory.CreateDirectory(versions.SnapshotPath(9));
+        File.WriteAllText(Path.Combine(versions.SnapshotPath(9), "index.html"),
+            """<html><body><h1 data-cmt-id="hero">stara v9</h1></body></html>""");
 
         store.Save(store.Load() with
         {

@@ -73,6 +73,29 @@ public partial class GenerationService(IClaudeRunner runner, ProjectStore projec
                 [], 0m);
         }
 
+        // work/ jest JEDYNA mutowalna prawda systemu, a rdzen dotad przyjmowal go
+        // w stanie, w jakim zostawil go poprzedni przebieg. Jedyne przywrocenie,
+        // jakie istnialo (RestoreWorkDirAfterFailure), wisi na `Failed()` — czyli
+        // dziala wylacznie przy awarii, ktora zdazyla WROCIC. Anulowanie i zabicie
+        // procesu nie wracaja nigdy: work/ zostaje z polowa zapisanego index.html,
+        // a nastepna runda idzie `--resume` po urwanym pliku i utrwala go jako
+        // wersje, za ktora klient placi.
+        //
+        // W sciezce szczesliwej to no-op: po udanej rundzie work/ jest juz kopia
+        // snapshotu wersji biezacej. W sciezce po awarii to naprawa, i to przed
+        // pierwszym wywolaniem modelu, czyli za darmo.
+        //
+        // TYLKO gdy wersja biezaca istnieje. Przypadku `Current is null` nie ruszamy:
+        // Generator.Cli wola RunRoundAsync na pustym projekcie wlasnie po to, zeby
+        // postawic pierwsza strone, i to jest kontrakt silnika, nie blad.
+        //
+        // Brak snapshotu wersji, ktora JEST na liscie, to zlamany niezmiennik, nie
+        // sytuacja do przemilczenia — `Restore` rzuca DirectoryNotFoundException
+        // i wyjatek leci dalej (kolejka zapisze `halted` i zaloguje przyczyne).
+        // Cicha tolerancja znaczylaby dokladnie to, przed czym ta linia broni:
+        // runde po katalogu o nieznanej zawartosci.
+        if (meta.Current is not null) versions.Restore(meta.CurrentVersion);
+
         // previousAnchors ZOSTAJE w rdzeniu, mimo ze instrukcje buduje juz lambda:
         // bramka miekka (petla naprawy kotwic, nizej) porownuje z nimi stan katalogu
         // po przebiegu, wiec bez tej linii nie skompilowalaby sie. Dla RunRoundAsync
