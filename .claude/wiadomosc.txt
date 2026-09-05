@@ -1,41 +1,82 @@
-=== WIADOMOSC OD PRZEMKA ===
+=== WIADOMOSC OD SEBASTIANA (2026-09-05, wieczor) ===
 
-PRZESTAŃ OGLĄDAĆ TELEWIZOR!!!
+Zrobione, wszystko na main. 377 zielonych (184 silnik + 193 web).
 
-A konkretnie: SILNIK NIE DZIAŁA NA WINDOWS. Wyszło przy pierwszej próbie przejścia
-ścieżki klienta na prawdziwym `claude` — 175 zielonych testów silnika chodzi po
-FakeClaude, a `Projects:UseMock` omija silnik w całości, więc nikt tego nie widział.
+1. STDIN — TWOJA DIAGNOZA POTWIERDZONA I NAPRAWIONA
+   commit "fix: prompt idzie do claude przez STDIN, nie argumentem"
 
-Dwie przyczyny, jedna naprawiona:
+   `-p` zostaje golą flagą, instrukcja idzie StandardInputem. Przy okazji znikaja
+   dwie rzeczy, ktorych jeszcze nie trafilismy: limit ~8191 znakow linii polecen
+   cmd.exe (brief z wklejonym szkicem HTML potrafi go przekroczyc) i mielenie
+   `% ^ & | < >` z tekstu klienta przez interpreter.
 
-A. NAPRAWIONE (commit "fix(engine): rozwijanie sciezki claude po PATH i PATHEXT").
-   `Process.Start` nie stosuje PATHEXT, więc trafiał w skrypt sh zamiast claude.cmd.
-   Dodałem ClaudeRunner.Znajdz + 6 testów. Ruszyłem Twój plik — bez tego nie było
-   jak niczego zmierzyć.
+   Trzy strumienie dostaly jawny UTF-8 bez BOM. Bez tego „Krakow" z briefu doszloby
+   do modelu przekrecone (przekierowany strumien bierze strone kodowa konsoli —
+   u Ciebie CP1250). FakeClaude ustawia to samo po swojej stronie.
 
-B. DLA CIEBIE, bo to rdzeń Twojej warstwy i dotyka FakeClaude:
-   wieloliniowy prompt ginie w cmd.exe. `.cmd` idzie przez cmd.exe, a ten urywa
-   polecenie na pierwszym znaku nowej linii — PromptBuilder składa prompt przez
-   AppendLine, więc:
-     - `--output-format json` NIGDY nie dociera (stdout to proza, nie JSON)
-     - model dostaje TYLKO PIERWSZĄ LINIĘ instrukcji
+   Kolejnosc w RunAsync: najpierw startujemy czytanie stdout/stderr, potem piszemy
+   prompt. Odwrotnie duzy brief zakleszcza sie na pelnych potokach.
 
-   Czyli na Windows model pracuje z innym promptem niż napisaliśmy: bez opisu
-   klienta, bez wymogu <title>, bez zakazu data-cmt-id. Twoje straże z §2 tego nie
-   złapią, bo czytają JSON, którego nie ma.
+   PROSBA: uruchom u siebie `dotnet run --project src/Generator.Cli -- <katalog poza
+   repo> "<opis>"`. U mnie na macOS przeszlo za $0.1274, wrocil JSON, snapshot ma
+   data-cmt-id i polskie znaki w calosci. Twoja maszyna jest jedynym dowodem na
+   cmd.exe — moje testy sprawdzaja KANAL (instrukcja z nowymi liniami, metaznakami
+   i polskimi znakami wraca ze stdin bajt w bajt ORAZ nie ma jej w argv), nie
+   zachowanie cmd.exe.
 
-   Dowód (ten sam zestaw flag, prompt trzyliniowy, claude.cmd wołany wprost):
-   stdout = 198 bajtów prozy, a model odpowiada "bo nie podałeś treści".
-   Prompt jednolinijkowy przez ten sam claude.cmd oddaje JSON poprawnie.
+2. TWOJE 275 SEKUND JEST NIEWAZNE — ZMIERZ PONOWNIE
+   Model pracowal wtedy z jedna linia i dopytywal o tresc. To nie jest czas
+   generowania trzech propozycji, tylko czas rozmowy o niczym. Po pullu zmierz
+   jeszcze raz; dopiero ta liczba nadaje sie do §4.2. Sama uwaga o UI zostaje
+   sluszna niezaleznie od liczby.
 
-   Propozycja: prompt przez STDIN zamiast argumentem (claude czyta stdin — jego
-   własne ostrzeżenie "no stdin data received in 3s" to potwierdza). Alternatywa:
-   node <cli.js> bezpośrednio, omija cmd.exe, ale zaszywa szczegół instalacji npm.
+3. TWOJE TESTY Znajdz — RUSZYLEM JE, BYLY CZERWONE NA macOS
+   commit "test: ClaudeRunnerZnajdzTests skladaja sciezki przez Path.Combine"
 
-Pierwsze realne liczby do §4.2: propozycje = 275 SEKUND jednego wywołania.
-Kosztu nie mamy, bo JSON nie wrócił. 275 s jest istotne dla UI — klient patrzy
-w "Przygotowuję trzy propozycje…" prawie pięć minut.
+   Implementacja jest poprawna, blad byl w tescie: dysk-atrapa i oczekiwania mialy
+   `C:\npm\claude.cmd` wpisane wprost, a `Znajdz` sklada kandydata `Path.Combine`,
+   ktore na macOS daje `C:\npm/claude.cmd`. Padaly trzy z szesciu. Dolozylem helper
+   `Kat`/`Plik` — buduja sciezke bezwzgledna w konwencji biezacego systemu.
 
-Szczegóły: docs/2026-09-05-notatka-dla-sebastiana.md
+   To lustrzane odbicie bledu, ktory Ty znalazles u mnie (liczby formatowane kultura
+   systemu). Zapisalem to jako pamiec: .claude/memory/feedback-testy-niezalezne-od-maszyny.md
 
---- Ta wiadomość wisi, dopóki jej nie skasujesz: rm .claude/wiadomosc.txt ---
+   Przy okazji `Sciezki_podanej_wprost_nie_zgadujemy` przestal byc slepy — dysk ma
+   teraz plik, ktory petla zgadywania by znalazla, wiec test faktycznie sprawdza
+   wczesne wyjscie (zmierzone mutacja).
+
+4. VersionMeta.CreatedAt — §6.2 ZROBIONE
+   Data stemplowana w VersionStore.Commit (nie parametrem — Commit ma dalej szesc
+   argumentow, Twoj FakeRunner bez zmian). Propagacja do VersionView i do
+   HistoriaWersji. Stare project.json wczytuje sie z `null` i UI pokazuje wtedy sam
+   numer — SWIADOMIE nie podstawiam mtime katalogu snapshotu, bo kopiowanie i
+   synchronizacja go zmieniaja, wiec byla by to data wygladajaca na prawdziwa
+   i czasem falszywa. Format numeryczny + InvariantCulture, z tego samego powodu
+   co punkt 3. Koszt do listy wersji nie wchodzi (§4.1) i jest na to asercja.
+
+5. TWOJ FLAKY `Nieudana_runda_przywraca_workdir...` — HIPOTEZA, POTRZEBNY POMIAR
+   commit "fix: jeden zapis atomowy z unikalnym tmp i ponowieniem (ZapisAtomowy)"
+
+   Dwie przyczyny, rozne poziomy pewnosci:
+
+   a) WYSCIG O `plik.tmp` — POTWIERDZONY, takze na macOS. ProjectStore.Save
+      i CommentStore.Write pisaly obie do `<sciezka>.tmp`, wiec dwa rownolegle zapisy
+      tej samej sciezki uzywaly tego samego pliku. Przywrocilem wspolna nazwe na probe:
+      nowy test pada 3/3 z FileNotFoundException (pierwszy watek zabral tmp Move'em,
+      zanim drugi zdazyl). Na Windows ten sam wyscig wychodzi jako
+      UnauthorizedAccessException — czyli dokladnie Twoj objaw. Teraz nazwa ma Guid.
+
+   b) PRZEJSCIOWA BLOKADA (antywirus/indeksator) — tego na macOS nie odtworze.
+      Dolozylem 5 prob z rosnacym odstepem, tylko dla IOException
+      i UnauthorizedAccessException.
+
+   Ktora z dwoch jest przyczyna U CIEBIE — nie wiem, i nie chce tego zgadywac.
+   POMIAR NALEZY DO CIEBIE: pelny przebieg x10 przed i po, ile czerwonych.
+
+   Uwaga uboczna: ta zmiana zdemaskowala `Nieudany_zapis_przy_powrocie_cofa_work...`,
+   ktory wymuszal awarie zapisu, tworzac katalog o nazwie `project.json.tmp` — czyli
+   wiazal sie z nazwa pliku tymczasowego. Przy losowej nazwie przechodzilby, cokolwiek
+   by sie w RollbackAsync dzialo. Teraz awarie wymusza podstawiony ProjectStore;
+   `ProjectStore.Save` i `ProjectPaths.Store` sa `virtual` wylacznie w tym celu.
+
+--- Ta wiadomosc wisi, dopoki jej nie skasujesz: rm .claude/wiadomosc.txt ---
