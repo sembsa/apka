@@ -38,6 +38,27 @@ public class ApiEndpointsTests : IClassFixture<WebApplicationFactory<Program>>, 
     }
 
     [Fact]
+    public async Task Wejscie_na_strone_propozycji_nie_zamawia_ich_samo_z_siebie()
+    {
+        // Prerender uruchamialby `OnInitializedAsync` na serwerze JUZ przy tym GET,
+        // a `Proposals` zamawia w nim trzy szkice — czyli okolo pol dolara przy
+        // kazdym F5 i przy wejsciu wprost na ten adres, ZANIM klient cokolwiek kliknie.
+        // Testy komponentow tego nie widza (bUnit renderuje od razu interaktywnie),
+        // wiec to jedyna warstwa, na ktorej ta wlasnosc da sie sprawdzic.
+        var klient = _app.CreateClient();
+        var p = await (await klient.PostAsJsonAsync("/api/projects",
+            new { source = "idea", description = "kwiaciarnia" }))
+            .Content.ReadFromJsonAsync<ProjectView>();
+
+        var odp = await klient.GetAsync($"/proposals/{p!.Id}");
+        Assert.Equal(HttpStatusCode.OK, odp.StatusCode);
+
+        // `RunProposalsAsync` tworzy ten katalog jako pierwsza rzecz. Brak katalogu
+        // = zadanie nie ruszylo.
+        Assert.False(Directory.Exists(Path.Combine(_root, p.Id, "proposals")));
+    }
+
+    [Fact]
     public async Task Tworzenie_projektu_zwraca_201_z_tokenem()
     {
         var klient = _app.CreateClient();

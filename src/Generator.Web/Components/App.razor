@@ -15,7 +15,18 @@
 <body>
     @* Bez tego cala aplikacja chodzi w statycznym SSR i kazdy @onclick jest martwy —
        testy bUnit tego nie widza, bo bUnit zawsze renderuje interaktywnie. *@
-    <Routes @rendermode="InteractiveServer" />
+    @* prerender: false — nie optymalizacja, tylko ochrona przed placeniem dwa razy.
+       Prerender uruchamia `OnInitializedAsync` raz na serwerze i drugi raz w obwodzie
+       interaktywnym. Dopoki backendem byla atrapa, to drugie wywolanie bylo niewidoczne;
+       z prawdziwym silnikiem `Proposals` zamawia przy tym DRUGI KOMPLET TRZECH SZKICOW
+       za okolo pol dolara — przy kazdym F5 i przy wejsciu wprost na /proposals/{id}.
+       Wybieramy wylaczenie prerenderu zamiast strazy `RendererInfo.IsInteractive`
+       w kazdym komponencie: kazda strona tej aplikacji robi I/O w inicjalizacji, wiec
+       straz trzeba by pamietac przy KAZDEJ nowej, a zapomniana kosztuje pieniadze.
+       Nie tracimy przy tym nic: aplikacja jest za linkiem z tokenem, wiec prerender
+       nie daje ani SEO, ani sensownego pierwszego renderu — i tak nie ma co pokazac,
+       zanim obwod nie odpyta API. *@
+    <Routes @rendermode="new InteractiveServerRenderMode(prerender: false)" />
     <ReconnectModal />
     <script src="/js/comment-bridge.js"></script>
     <script src="@Assets["_framework/blazor.web.js"]"></script>

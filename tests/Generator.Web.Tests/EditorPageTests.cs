@@ -1,5 +1,6 @@
 using Bunit;
 using Generator.Web.Components.Pages;
+using Generator.Web.Api;
 using Generator.Web.Contracts;
 using Generator.Web.Mock;
 using Microsoft.Extensions.DependencyInjection;
@@ -26,6 +27,43 @@ public class EditorPageTests : BunitContext
         return (api, p.Id);
     }
 
+
+    [Theory]
+    [InlineData("frozen")]
+    [InlineData("stale")]
+    [InlineData("running")]
+    public async Task Odmowa_z_API_pokazuje_zdanie_zamiast_zrywac_obwod(string co)
+    {
+        // Wyjatek z uchwytu zdarzenia Blazora KONCZY OBWOD — klient dostaje pasek
+        // „polaczenie zerwane" zamiast informacji, co sie stalo. Atrapa nie rzucala
+        // zadnego z tych wyjatkow, wiec do podmiany backendu nie bylo tego jak zlapac.
+        var (api, id) = await Setup();
+
+        // Zasiew MUSI trafic do wersji BIEZACEJ, nie do numeru 1: Setup() robi wybor
+        // propozycji (v1) i jedna runde (v2), wiec edytor czyta uwagi wersji 2.
+        // Uwagi zasiane gdzie indziej nie doliczaja sie do DoWyslania(), przycisk
+        // „Popraw to" zostaje disabled i klik nie robi nic — test przechodzilby
+        // prozno albo padal na czekaniu, jak u mnie za pierwszym razem.
+        var biezaca = (await api.GetAsync(id)).NumerAktualnej();
+        api.SeedComments(id, biezaca, "za ciemno");
+
+        Exception czym = co switch
+        {
+            "frozen" => new ProjectFrozenException(id),
+            "stale" => new StaleVersionException(1, 2),
+            _ => new JobRunningException(id),
+        };
+        Services.AddSingleton<IProjectApi>(new RzucajacyApi(api, czym));
+
+        var cut = Render<Editor>(ps => ps.Add(p => p.ProjectId, id));
+        cut.WaitForAssertion(() => Assert.NotNull(cut.Find("[data-test='popraw']")));
+
+        // Bez `catch` ten klik rzuca i konczy obwod — czyli test padnie na wyjatku,
+        // a nie na asercji. To jest ta roznica, o ktora chodzi.
+        await cut.Find("[data-test='popraw']").ClickAsync(new());
+
+        cut.WaitForAssertion(() => Assert.NotEmpty(cut.Find("[data-test='kolizja']").TextContent));
+    }
 
     /// <summary>
     /// Tryb podgladu jest jednym zrodlem prawdy: ta sama wartosc steruje szerokoscia
@@ -276,6 +314,28 @@ public class EditorPageTests : BunitContext
     }
 
     /// Liczy pytania o stan zadania. Nie da sie tego sprawdzic z zewnatrz inaczej.
+    /// Atrapa nie rzuca zadnego z wyjatkow dziedzinowych `ProjectApi`, wiec az do
+    /// podmiany backendu nie bylo czym sprawdzic, co robi UI, gdy API mowi „nie teraz".
+    /// A mowi: zamrozenie po pietnastej rundzie trafi w KAZDEGO klienta.
+    private sealed class RzucajacyApi(IProjectApi wewnetrzny, Exception czym) : IProjectApi
+    {
+        public Task<string> ApplyCommentsAsync(string id, int version, IReadOnlyList<CommentDto> comments) =>
+            throw czym;
+
+        public Task RollbackAsync(string id, int version) => throw czym;
+
+        public Task<ProjectView> CreateAsync(string source, string description) =>
+            wewnetrzny.CreateAsync(source, description);
+        public Task<ProjectView> GetAsync(string id) => wewnetrzny.GetAsync(id);
+        public Task<string> RequestProposalsAsync(string id) => wewnetrzny.RequestProposalsAsync(id);
+        public Task<IReadOnlyList<ProposalView>> GetProposalsAsync(string id) => wewnetrzny.GetProposalsAsync(id);
+        public Task ChooseProposalAsync(string id, string proposalId) => wewnetrzny.ChooseProposalAsync(id, proposalId);
+        public Task<string> CreateFirstVersionAsync(string id) => wewnetrzny.CreateFirstVersionAsync(id);
+        public Task<JobView> GetJobAsync(string jobId) => wewnetrzny.GetJobAsync(jobId);
+        public Task<IReadOnlyList<CommentDto>> GetCommentsAsync(string id, int version) =>
+            wewnetrzny.GetCommentsAsync(id, version);
+    }
+
     private sealed class LiczacyApi(IProjectApi wewnetrzny) : IProjectApi
     {
         private int _zapytania;

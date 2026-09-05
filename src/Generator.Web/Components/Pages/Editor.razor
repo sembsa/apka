@@ -1,6 +1,7 @@
 @page "/editor/{ProjectId}"
 @inject IProjectApi Api
 @inject IJSRuntime JS
+@using Generator.Web.Api
 @using Generator.Web.Contracts
 @implements IAsyncDisposable
 
@@ -123,6 +124,11 @@ else
         Popraw to
     </button>
 
+    @if (_kolizja is not null)
+    {
+        <p role="alert" data-test="kolizja">@_kolizja</p>
+    }
+
     <JobStatus Job="_job" />
 
     <HistoriaWersji Project="_project" Job="_job" OnRollback="Wroc" />
@@ -142,6 +148,28 @@ else
     private CommentDto? _draft;
     private string _draftText = string.Empty;
     private JobView? _job;
+    private string? _kolizja;
+
+    /// Cztery wyjatki, ktorymi `ProjectApi` mowi „nie teraz" albo „juz nie" — wszystkie
+    /// sa normalnymi odpowiedziami na klikniecie, nie awariami aplikacji.
+    private static bool Kolizja(Exception ex) => ex
+        is ProjectFrozenException or StaleVersionException
+        or JobRunningException or KeyNotFoundException;
+
+    /// Kontrakt oddaje galaz, nie gotowe zdania — tresc pisze frontend. Po kazdej
+    /// kolizji przeladowujemy stan z serwera, bo kolizja z definicji znaczy, ze to,
+    /// co klient widzi, rozjechalo sie z prawda.
+    private async Task Odswiez(Exception ex)
+    {
+        _kolizja = ex switch
+        {
+            ProjectFrozenException => "Wykorzystaliście już wszystkie poprawki w tym pakiecie.",
+            JobRunningException => "Poprzednia poprawka jeszcze się liczy — chwila i będzie gotowa.",
+            StaleVersionException => "Strona zmieniła się w międzyczasie. Odświeżyliśmy podgląd.",
+            _ => "Tej wersji już nie ma. Odświeżyliśmy listę.",
+        };
+        await Reload();
+    }
     private CancellationTokenSource? _poll;
 
     /// Domyslnie WLACZONE: po rundzie klient chce wiedziec, co sie zmienilo.
@@ -260,9 +288,19 @@ else
     /// </summary>
     private async Task Wroc(int wersja)
     {
-        await Api.RollbackAsync(ProjectId, wersja);
+        try
+        {
+            await Api.RollbackAsync(ProjectId, wersja);
+        }
+        catch (Exception ex) when (Kolizja(ex))
+        {
+            await Odswiez(ex);
+            return;
+        }
+
         _draft = null;
         _draftText = string.Empty;
+        _kolizja = null;
         await Reload();
     }
 
@@ -277,7 +315,24 @@ else
         var doWyslania = DoWyslania();
         if (doWyslania.Count == 0) return;
 
-        var jobId = await Api.ApplyCommentsAsync(ProjectId, wersja, doWyslania);
+        string jobId;
+        try
+        {
+            jobId = await Api.ApplyCommentsAsync(ProjectId, wersja, doWyslania);
+        }
+        catch (Exception ex) when (Kolizja(ex))
+        {
+            // Atrapa nie rzucala zadnego z tych wyjatkow, wiec az do podmiany backendu
+            // ten `catch` nie mial czego lapac. Prawdziwe API rzuca je normalnie —
+            // a wyjatek z uchwytu zdarzenia Blazora KONCZY OBWOD: klient dostaje pasek
+            // „polaczenie zerwane" zamiast zdania o tym, co sie stalo. Zamrozenie
+            // po pietnastej rundzie trafi w kazdego klienta, wiec to nie jest
+            // przypadek brzegowy.
+            await Odswiez(ex);
+            return;
+        }
+
+        _kolizja = null;
         _job = await Api.GetJobAsync(jobId);
 
         // Kontrakt 4.4: przy nieudanej rundzie komentarze zostaja open i nic nie przepada.

@@ -109,8 +109,48 @@ dokładnie jak w bliźniaczym teście kilka linii wyżej. Po niej 0/20 i 0/15 po
 Komponent był w porządku — kłamała asercja. To jedyna rzecz, jaką zmieniłem w Twoim
 pliku testów; jeśli wolisz to cofnąć, powiedz.
 
+## 9. Dwie zmiany w Twoich komponentach — obie są skutkiem podmiany atrapy
+
+Nie chciałem Ci ich zostawiać jako „znanych problemów", bo to ja je uruchomiłem,
+przepinając DI z `MockProjectApi` na prawdziwe `ProjectApi`.
+
+**`App.razor` — wyłączyłem prerender.** `<Routes @rendermode="new InteractiveServerRenderMode(prerender: false)" />`
+
+Prerender uruchamia `OnInitializedAsync` raz na serwerze i drugi raz w obwodzie
+interaktywnym. Przy atrapie to drugie wywołanie było niewidoczne. Przy prawdziwym
+silniku `Proposals` zamawia w nim **drugi komplet trzech szkiców za około pół dolara**
+— przy każdym F5 i przy wejściu wprost na `/proposals/{id}`. Wejście kliknięciem ze
+`Start` prerenderu nie ma, więc na najczęstszej ścieżce tego nie widać.
+
+Wybrałem wyłączenie prerenderu zamiast strażnika `RendererInfo.IsInteractive` w każdym
+komponencie: **każda strona tej aplikacji robi I/O w inicjalizacji**, więc strażnika
+trzeba by pamiętać przy każdej nowej, a zapomniany kosztuje pieniądze. Nie tracimy przy
+tym nic — aplikacja jest za linkiem z tokenem, więc prerender nie daje ani SEO, ani
+sensownego pierwszego renderu.
+
+Jest na to test HTTP: `GET /proposals/{id}` nie może utworzyć katalogu `proposals/`.
+Testy komponentów tego nie złapią, bo bUnit renderuje od razu interaktywnie.
+
+**`Editor.razor` — `Apply` i `Wroc` łapią wyjątki dziedzinowe.** Atrapa nie rzucała
+żadnego z czterech (`ProjectFrozenException`, `StaleVersionException`,
+`JobRunningException`, `KeyNotFoundException`), a prawdziwe API rzuca je normalnie.
+Wyjątek z uchwytu zdarzenia Blazora **kończy obwód** — klient dostaje pasek „połączenie
+zerwane" zamiast zdania o tym, co się stało. **Zamrożenie po piętnastej rundzie trafi
+w każdego klienta**, więc to nie jest przypadek brzegowy.
+
+Dołożyłem `_kolizja` i `<p role="alert" data-test="kolizja">` obok Twojego `JobStatus`,
+w tej samej konwencji co `data-test="zamrozone"`. Zdania są moje i pewnie chcesz je
+przepisać — kontrakt oddaje gałąź, nie treść, a treść jest Twoja.
+
 ## Stan silnika na teraz
 
-`Generator.Engine.Tests` 145/145, `Generator.Web.Tests` 84/84.
+`Generator.Engine.Tests` 166/166, `Generator.Web.Tests` 119/119. Plan B skończony:
+aplikacja chodzi po prawdziwym silniku, nie po atrapie. Mock zostaje za
+`Projects:UseMock` (domyślnie wyłączony).
+
+Pełny przebieg klienta przez przeglądarkę kosztował **$1,03** (propozycje $0,50,
+wersja 1 $0,24, dwie rundy $0,17 i $0,12). Mieści się w widełkach z §4.2 kontraktu —
+tym razem ekstrapolacja nie była 4× za wysoka jak w Planie A, więc §4.2 nie wymaga
+przestawienia.
 Model wersji zna `currentVersion`, `basedOn` i numerację `max+1` — czyli powrót do
 starszej wersji nie zepsuje numeracji ani podświetlania, tak jak wymaga Twój §5.1.
