@@ -1,4 +1,13 @@
+using System.Text;
 using System.Text.Json;
+
+// Jawny UTF-8 bez BOM na stdin i stdout. Domyslnie Console uzywa strony kodowej
+// konsoli — na polskim Windows CP1250 — a rodzic (ClaudeRunner) czyta i pisze UTF-8.
+// Bez tego test na polskie znaki w promptcie byl zielony na macOS i czerwony na
+// Windows. Prawdziwy `claude` (Node) pisze UTF-8, wiec atrapa musi robic to samo.
+var utf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+Console.SetIn(new StreamReader(Console.OpenStandardInput(), utf8));
+Console.SetOut(new StreamWriter(Console.OpenStandardOutput(), utf8) { AutoFlush = true });
 
 // Atrapa `claude -p` dla testów. Nie waliduje flag poza --scenario;
 // sprawdzanie flag jest zadaniem testów ClaudeRunner, nie atrapy.
@@ -48,8 +57,19 @@ switch (scenario)
     case "echo-args":
         // Dla testow end-to-end na BuildArguments/RunAsync: wypisuje WLASNE argv
         // (to, co faktycznie dostal proces, nie to, co ClaudeRunner mysli, ze wyslal)
-        // jako tablice JSON. Nie czyta stdin.
+        // jako tablice JSON. Odsacza stdin, mimo ze go nie uzywa: rodzic pisze tam
+        // teraz prompt, a atrapa konczaca sie bez odczytu zrywa potok w trakcie
+        // zapisu — test padalby losowo, w zaleznosci od tego, kto zdazyl pierwszy.
+        Console.In.ReadToEnd();
         Console.Out.Write(JsonSerializer.Serialize(args));
+        return 0;
+    case "echo-stdin":
+        // Dla testu kanalu promptu: odsyla RAZEM argv i tresc stdin, zeby jeden
+        // test mogl stwierdzic i to, ze instrukcja dotarla w calosci, i to, ze NIE
+        // ma jej w argumentach. Sama „obecnosc w stdin" nie wystarcza — przy
+        // promptcie w obu miejscach naraz test byl by zielony, a na Windows cmd.exe
+        // dalej urywalby polecenie na pierwszej nowej linii.
+        Console.Out.Write(JsonSerializer.Serialize(new Echo(args, Console.In.ReadToEnd())));
         return 0;
     case "sleep":
         // Dla testu anulowania: spi realnie dlugo, zeby dac czas na Cancel() w
@@ -65,3 +85,5 @@ switch (scenario)
         Console.Error.Write($"nieznany scenariusz: {scenario}");
         return 2;
 }
+
+record Echo(string[] Argv, string Stdin);

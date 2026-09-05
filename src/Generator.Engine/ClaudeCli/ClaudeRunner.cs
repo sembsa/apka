@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Text;
 
 namespace Generator.Engine.ClaudeCli;
 
@@ -14,6 +15,10 @@ public class ClaudeRunner(string executable, IReadOnlyList<string>? prefixArgs =
 {
     public const string Model = "claude-opus-5";
     public const string AllowedTools = "Read,Write,Edit,Glob,Grep";
+
+    /// UTF8Encoding(false) — jawnie BEZ BOM. `new UTF8Encoding()` i `Encoding.UTF8`
+    /// pisza BOM, ktory trafilby na poczatek promptu jako trzy smieciowe bajty.
+    private static readonly UTF8Encoding Utf8BezBom = new(encoderShouldEmitUTF8Identifier: false);
 
     /// Dopisek dla generowania STRONY (wersja pierwsza i kazda runda uwag).
     public const string PageAppendix =
@@ -77,9 +82,17 @@ public class ClaudeRunner(string executable, IReadOnlyList<string>? prefixArgs =
 
     public static IReadOnlyList<string> BuildArguments(ClaudeRunRequest r, bool useBare)
     {
+        // `-p` BEZ tresci promptu: instrukcja idzie przez STDIN (patrz RunAsync).
+        // Zmierzone przez Przemka na Windows: `claude.cmd` uruchamia sie przez cmd.exe,
+        // a cmd.exe urywa polecenie na pierwszym znaku nowej linii. PromptBuilder sklada
+        // prompt przez AppendLine, wiec do modelu docierala TYLKO PIERWSZA LINIA, a
+        // wszystko po niej — z `--output-format json` wlacznie — gubilo sie po drodze
+        // (stdout byl proza, nie JSON-em). Przy okazji znika limit ~8191 znakow linii
+        // polecenia cmd.exe, ktory brief z wklejonym szkicem HTML potrafi przekroczyc,
+        // i mielenie `% ^ & | < >` z tekstu klienta przez interpreter poleceń.
         var args = new List<string>
         {
-            "-p", r.Instruction,
+            "-p",
             "--output-format", "json",
             "--restricted",
             "--strict-mcp-config",
@@ -111,8 +124,18 @@ public class ClaudeRunner(string executable, IReadOnlyList<string>? prefixArgs =
             WorkingDirectory = request.WorkspaceDir,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
-            RedirectStandardInput = true,   // wymagane, zeby moc zamknac stdin
+            RedirectStandardInput = true,   // kanal promptu (patrz nizej)
             UseShellExecute = false,
+
+            // Jawny UTF-8 bez BOM na wszystkich trzech strumieniach. Domyslne
+            // kodowanie przekierowanych strumieni to strona kodowa konsoli — na
+            // polskim Windows CP1250 — wiec „Kraków" w briefie klienta dotarloby
+            // do modelu przekrecone, a polskie znaki w JSON-ie z odpowiedzia
+            // wrocilyby przekrecone do nas. BOM (UTF8Encoding domyslnie go pisze)
+            // dokleilby trzy bajty na poczatku promptu.
+            StandardInputEncoding = Utf8BezBom,
+            StandardOutputEncoding = Utf8BezBom,
+            StandardErrorEncoding = Utf8BezBom,
         };
 
         foreach (var a in prefixArgs ?? []) psi.ArgumentList.Add(a);
@@ -144,11 +167,29 @@ public class ClaudeRunner(string executable, IReadOnlyList<string>? prefixArgs =
 
         using (p)
         {
-            // Natychmiast: inaczej claude -p czeka 3 s na dane wejsciowe.
-            p.StandardInput.Close();
-
+            // Kolejnosc jest istotna: najpierw ZACZYNAMY czytac stdout i stderr,
+            // dopiero potem piszemy prompt. Brief z wklejonym szkicem HTML ma
+            // dziesiatki kilobajtow; gdyby potomek zdazyl zapelnic swoj bufor
+            // wyjscia, zanim my skonczymy pisac, oba procesy staneleby na
+            // pelnych potokach — klasyczny zakleszczenie na potoku.
             var stdout = p.StandardOutput.ReadToEndAsync(ct);
             var stderr = p.StandardError.ReadToEndAsync(ct);
+
+            try
+            {
+                await p.StandardInput.WriteAsync(request.Instruction.AsMemory(), ct);
+            }
+            catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+            {
+                // Potomek zamknal swoj koniec potoku, zanim odebral calosc (np. padl
+                // na zlej fladze). Nie ma czego dostarczyc, a prawdziwa przyczyne
+                // niesie exit code i stderr — zapis nie moze ich przeslonic.
+            }
+
+            // Zamkniecie jest obowiazkowe, nie kosmetyczne: `claude -p` czyta stdin
+            // do EOF, wiec bez tego czekalby w nieskonczonosc.
+            p.StandardInput.Close();
+
             try
             {
                 await p.WaitForExitAsync(ct);

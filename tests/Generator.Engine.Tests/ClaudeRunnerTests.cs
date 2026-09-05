@@ -228,6 +228,64 @@ public class ClaudeRunnerTests : IDisposable
         }
     }
 
+    // --- Prompt idzie kanalem stdin, nie argumentem ---
+
+    private sealed record Echo(string[] Argv, string Stdin);
+
+    /// Instrukcja z wszystkim, co cmd.exe psuje: nowe linie (na nich urywa polecenie),
+    /// metaznaki interpretera i polskie znaki (kodowanie strumienia).
+    private const string TrudnaInstrukcja =
+        "linia 1: naglowek\n" +
+        "linia 2: 100% & <cennik> | \"cudzyslow\" ^ znak\n" +
+        "linia 3: Kraków, Gdańsk, zażółć gęślą jaźń";
+
+    [Fact]
+    public async Task Instrukcja_dociera_kanalem_stdin_w_calosci_i_nie_ma_jej_w_argumentach()
+    {
+        // To jest test KANALU, nie zachowania cmd.exe — tego na macOS nie sprawdzimy.
+        // Na Uniksie sama wieloliniowosc niczego by nie zepsula w argumencie, wiec
+        // „jest w stdin" bez „nie ma w argv" byloby zielone takze dla wersji, ktora
+        // wysyla prompt w obu miejscach naraz — czyli dla wersji dalej zepsutej na
+        // Windows. Dopiero druga asercja zabija te mutacje.
+        var runner = new ClaudeRunner("dotnet", [FakeClaude.DllPath, "--scenario", "echo-stdin"]);
+        var outcome = await runner.RunAsync(
+            new ClaudeRunRequest(_work, TrudnaInstrukcja, null, IsFirstRun: true));
+
+        Assert.True(outcome.ProcessStarted);
+        Assert.Equal(0, outcome.ExitCode);
+
+        var echo = JsonSerializer.Deserialize<Echo>(outcome.Stdout)!;
+
+        Assert.Equal(TrudnaInstrukcja, echo.Stdin);
+        Assert.DoesNotContain(echo.Argv, a => a.Contains("linia 1"));
+
+        // `-p` zostaje, ale jako goła flaga: nastepny element to juz kolejna flaga.
+        var i = IndexOfFlag(echo.Argv, "-p");
+        Assert.True(i >= 0, "brak -p w argv");
+        Assert.StartsWith("--", echo.Argv[i + 1]);
+    }
+
+    [Fact]
+    public void Dopiski_systemowe_przezyja_cmd_exe_bo_jada_argumentem()
+    {
+        // Prompt klienta juz tedy nie idzie, ale --append-system-prompt dalej
+        // podrozuje jako argument, wiec na Windows przechodzi przez cmd.exe
+        // (`claude.cmd` to skrypt wsadowy — CreateProcess uruchamia go interpreterem).
+        //
+        // Cudzyslow, ktory .NET dokłada wokol argumentu ze spacja, neutralizuje
+        // `< > & | ^` — dlatego `<style>` w dopisku propozycji jest bezpieczny, i
+        // dlatego obecnosc spacji jest tu asercja, a nie zalozeniem. Nie neutralizuje
+        // dwoch rzeczy: nowa linia konczy polecenie niezaleznie od cudzyslowow, a `%`
+        // rozwija sie w cudzyslowach jak poza nimi.
+        foreach (var dopisek in new[] { ClaudeRunner.PageAppendix, ClaudeRunner.ProposalsAppendix })
+        {
+            Assert.Contains(' ', dopisek);
+            Assert.DoesNotContain('\n', dopisek);
+            Assert.DoesNotContain('\r', dopisek);
+            Assert.DoesNotContain('%', dopisek);
+        }
+    }
+
     // --- Fix round 2/5: anulowanie nie moze zostawiac sieroty ---
 
     [Fact]
