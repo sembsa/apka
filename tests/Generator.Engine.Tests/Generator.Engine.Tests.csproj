@@ -20,8 +20,21 @@
     <ProjectReference Include="..\..\src\Generator.Engine\Generator.Engine.csproj" />
   </ItemGroup>
 
-  <!-- Atrapa NIE jest ProjectReference: to program konsolowy, nie biblioteka.
-       Budujemy ja do siostrzanego OutDir i odpalamy przez `dotnet <dll>`.
+  <!-- Punkt 11 raportu: bez tego "dotnet test <sciezka-do-csproj>" na swiezym
+       klonie pada z NETSDK1004 (brak project.assets.json dla Generator.FakeClaude) —
+       przez solucje dziala, bo `dotnet test`/`build` na .sln przywraca WSZYSTKIE
+       projekty w niej wymienione, ale wywolanie samego tego .csproj (typowe w IDE
+       i w niejednym kroku CI) nigdy nie wyzwala restore dla projektu, o ktorym
+       ten plik nie wie NIC poza wlasnym celem MSBuild ponizej. ReferenceOutputAssembly
+       ="false": to nadal NIE jest prawdziwa referencja binarna (patrz komentarz pod
+       celem BuildFakeClaude) — chodzi wylacznie o to, zeby restore/build tego
+       projektu byl uwzgledniony w grafie zaleznosci, bez linkowania jego wyjscia. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Generator.FakeClaude\Generator.FakeClaude.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <!-- Atrapa NIE jest (w sensie linkowania) ProjectReference: to program konsolowy,
+       nie biblioteka. Budujemy ja do siostrzanego OutDir i odpalamy przez `dotnet <dll>`.
        OutDir musi byc jawnie zlozony z $(MSBuildProjectDirectory) tego projektu:
        $(OutDir) jest wzgledny (np. "bin\Debug\net10.0\"), a MSBuild rozwiazuje
        wzgledne Properties przekazane do zagniezdzonego <MSBuild> wzgledem

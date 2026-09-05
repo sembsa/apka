@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 
 namespace Generator.Engine.ClaudeCli;
@@ -67,10 +68,18 @@ public class ClaudeRunner(string executable, IReadOnlyList<string>? prefixArgs =
         {
             p = Process.Start(psi);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is Win32Exception or InvalidOperationException or PlatformNotSupportedException)
         {
-            // Brak pliku wykonywalnego to normalna sciezka (bramka z Taska 5 ja
-            // rozpoznaje po ProcessStarted: false) — nie moze rzucic wyjatkiem.
+            // Punkt 10 raportu: to jest sciezka INTERPRETACJI (brak pliku
+            // wykonywalnego to normalna sciezka, ktora bramka z Taska 5 rozpoznaje
+            // po ProcessStarted: false), nie sprzatanie w finally — zgodnie z zasada
+            // projektu ("waski catch tam, gdzie interpretujemy, szeroki tylko w
+            // blokach sprzatajacych") lapiemy tylko wyjatki, ktore Process.Start
+            // faktycznie dokumentuje dla "nie udalo sie wystartowac procesu"
+            // (brak pliku, zla nazwa, brak wsparcia platformy). Szeroki catch
+            // (Exception) zamienialby np. OutOfMemoryException w zwykle
+            // "proces nie wystartowal" — myslacy blad staje sie cichym Halt zamiast
+            // wywalic sie tak, jak powinien.
             return new ClaudeRunOutcome(false, -1, string.Empty, ex.Message, sw.Elapsed);
         }
 

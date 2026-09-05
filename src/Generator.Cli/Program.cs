@@ -16,6 +16,16 @@ if (args.Length < 2)
 var projectDir = Path.GetFullPath(args[0]);
 var description = args[1];
 
+// Punkt 11 raportu: pusty opis przechodzil bramke argumentow (dlugosc args == 2
+// jest spelniona przez pusty string) i wydawal pieniadze na model za nic. Trzy
+// linie walidacji, PRZED czymkolwiek innym, zeby nie tworzyc nawet katalogu
+// projektu dla wywolania, ktore i tak zaraz odrzucimy.
+if (string.IsNullOrWhiteSpace(description))
+{
+    Console.Error.WriteLine("Opis klienta nie moze byc pusty.");
+    return 2;
+}
+
 // Wykrywanie "katalog lezy w drzewie repo" idzie przez szukanie .git w gore
 // od KATALOGU PROJEKTU, nie przez Directory.GetCurrentDirectory(): przy
 // "dotnet run" biezacy katalog procesu to katalog projektu Generator.Cli,
@@ -37,7 +47,13 @@ var meta = File.Exists(Path.Combine(projectDir, "project.json"))
     ? projects.Load()
     : projects.Create(SourceKind.Idea);
 
-var runner = new ClaudeRunner("claude");
+// Punkt 11 raportu: "claude" na sztywno bylo jedynym miejscem w tym programie,
+// ktore wydaje prawdziwe pieniadze — nie dalo sie sprawdzic reczne calej sciezki
+// CLI inaczej niz placac. GENERATOR_CLAUDE_CMD pozwala podstawic atrape
+// (Generator.FakeClaude) bez modyfikowania kodu, np.:
+//   GENERATOR_CLAUDE_CMD="dotnet /pelna/sciezka/Generator.FakeClaude.dll --scenario success"
+var (claudeExecutable, claudePrefixArgs) = ResolveClaudeCommand();
+var runner = new ClaudeRunner(claudeExecutable, claudePrefixArgs);
 var service = new GenerationService(runner, projects, versions);
 
 // Pierwsza wersja: opis klienta jedzie jako komentarz globalny (Anchor = null)
@@ -73,6 +89,19 @@ foreach (var r in outcome.CommentResults)
     Console.WriteLine($"  {r.CommentId}: {r.Status} — {r.Note}");
 
 return 0;
+
+// GENERATOR_CLAUDE_CMD: prosty split po bialych znakach (bez obslugi cudzyslowow —
+// wystarcza do postaci "dotnet <dll> --scenario <nazwa>", ktorej uzywaja testy i
+// ta atrapa). Brak zmiennej = zachowanie produkcyjne, "claude" bez argumentow z gory.
+static (string Executable, IReadOnlyList<string>? PrefixArgs) ResolveClaudeCommand()
+{
+    var raw = Environment.GetEnvironmentVariable("GENERATOR_CLAUDE_CMD");
+    if (string.IsNullOrWhiteSpace(raw))
+        return ("claude", null);
+
+    var parts = raw.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    return (parts[0], parts.Length > 1 ? parts[1..] : null);
+}
 
 // Szuka .git (katalog zwyklego repo albo plik — worktree/submodul) w gore od
 // "start" wlacznie. Zwraca znaleziony korzen repozytorium albo null, gdy
