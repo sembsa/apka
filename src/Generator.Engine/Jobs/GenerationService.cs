@@ -66,13 +66,13 @@ public partial class GenerationService(IClaudeRunner runner, ProjectStore projec
         var previousAnchors = PreviousAnchors(meta);
         var instruction = PromptBuilder.BuildRound(comments, previousAnchors);
 
-        // Sesja: PIERWSZY przebieg projektu (brak wersji) dostaje nowy GUID i
-        // --session-id; kazdy kolejny przebieg — w tym powtorka w tej samej
-        // rundzie i kazda kolejna runda — wznawia ten sam identyfikator przez
-        // --resume. Nie ma tu rozroznienia "runda" vs "powtorka": to jeden
-        // ciagly identyfikator na caly projekt.
-        var sessionId = meta.Versions.Count > 0 ? meta.Versions[^1].SessionId : Guid.NewGuid().ToString();
-        var isFirstRun = meta.Versions.Count == 0;
+        // Sesja jest jedna na projekt, ale TYLKO dopoki historia jest liniowa.
+        // Po powrocie (CurrentVersion != najnowsza) --resume podalby modelowi
+        // transkrypt pamietajacy zmiany, ktorych w plikach juz nie ma. Pliki sa
+        // prawda: zaczynamy swieza sesje i tracimy wylacznie wlasny kontekst modelu.
+        var current = meta.Current;
+        var isFirstRun = current is null || meta.CurrentVersion != meta.Versions.Max(v => v.Number);
+        var sessionId = isFirstRun ? Guid.NewGuid().ToString() : current!.SessionId;
 
         decimal spent = 0m;
         var attempts = 0;
@@ -181,8 +181,8 @@ public partial class GenerationService(IClaudeRunner runner, ProjectStore projec
             // kazda wersja, nie tylko nad pierwszym przebiegiem). Dlatego trzymamy
             // kopie zapasowa ostatniego znanego DOBREGO stanu i przywracamy ja, gdy
             // proba naprawy cokolwiek popsuje.
-            var current = AnchorExtractor.Extract(versions.WorkDir);
-            var orphaned = AnchorExtractor.Orphaned(previousAnchors, current);
+            var currentAnchors = AnchorExtractor.Extract(versions.WorkDir);
+            var orphaned = AnchorExtractor.Orphaned(previousAnchors, currentAnchors);
 
             if (orphaned.Count > 0)
             {
@@ -212,8 +212,8 @@ public partial class GenerationService(IClaudeRunner runner, ProjectStore projec
                             break;
                         }
 
-                        current = AnchorExtractor.Extract(versions.WorkDir);
-                        orphaned = AnchorExtractor.Orphaned(previousAnchors, current);
+                        currentAnchors = AnchorExtractor.Extract(versions.WorkDir);
+                        orphaned = AnchorExtractor.Orphaned(previousAnchors, currentAnchors);
                         DirectoryOps.SafeReplace(versions.WorkDir, backupDir);   // ten stan tez jest dobry — odswiez kopie
                     }
                 }
@@ -240,13 +240,14 @@ public partial class GenerationService(IClaudeRunner runner, ProjectStore projec
                 }
             }
 
-            var number = meta.Versions.Count + 1;
-            var version = versions.Commit(number, sessionId, spent, orphaned);
+            var number = meta.NextVersionNumber;
+            var version = versions.Commit(number, sessionId, spent, orphaned, basedOn: meta.Current?.Number);
 
             var updated = ProjectStore.WithRoundConsumed(ProjectStore.WithSpend(meta, spent)) with
             {
                 Status = ProjectStatus.Active,
                 Versions = [.. meta.Versions, version],
+                CurrentVersion = number,
             };
             // Punkt 1 raportu, druga droga tej samej luki: versions.Commit() (wyzej)
             // jest PRZED tym Save. Jesli Save rzuci, snapshot juz lezy na dysku, ale
@@ -320,7 +321,7 @@ public partial class GenerationService(IClaudeRunner runner, ProjectStore projec
     {
         try
         {
-            if (meta.Versions.Count == 0)
+            if (meta.Current is null)
             {
                 if (Directory.Exists(versions.WorkDir))
                     Directory.Delete(versions.WorkDir, recursive: true);
@@ -328,22 +329,22 @@ public partial class GenerationService(IClaudeRunner runner, ProjectStore projec
             }
             else
             {
-                versions.Restore(meta.Versions[^1].Number);
+                // Za CurrentVersion, nie za ostatnia: po powrocie do v1 nieudana
+                // runda musi zostawic klientowi v1, a nie podmienic mu ja na v2.
+                versions.Restore(meta.CurrentVersion);
             }
         }
         catch (Exception)
         {
             // Sprzatanie WorkDir po awarii nie moze przesloniec PRAWDZIWEJ przyczyny
-            // awarii (JobFailure, ktory Failed() i tak juz zwraca) — to samo
-            // uzasadnienie co przy catch (Exception) wokol kasowania backupDir w
-            // petli naprawy kotwic, kilkadziesiat linii wyzej. NIE zawezaj.
+            // awarii (JobFailure, ktory Failed() i tak juz zwraca). NIE zawezaj.
         }
     }
 
     private IReadOnlyList<string> PreviousAnchors(ProjectMeta meta) =>
-        meta.Versions.Count == 0
+        meta.Current is null
             ? []
-            : [.. AnchorExtractor.Extract(meta.Versions[^1].SnapshotDir)];
+            : [.. AnchorExtractor.Extract(meta.Current.SnapshotDir)];
 
     /// Punkt 6 raportu: sygnatura stanu katalogu (sciezki wzgledne + rozmiary +
     /// czasy modyfikacji, posortowane deterministycznie). Rownosc sygnatury PRZED

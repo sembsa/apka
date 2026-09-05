@@ -697,4 +697,38 @@ public class GenerationServiceTests : IDisposable
         var r = Assert.Single(results);
         Assert.Equal("c1", r.CommentId);
     }
+
+    [Fact]
+    public async Task Runda_po_powrocie_ma_numer_3_rodzica_1_i_nowa_sesje()
+    {
+        var (meta, store, versions) = Setup();
+        var runner = new ScriptedRunner(
+            (Json("s-1", 0.10m, "ok"), WritePage("""<h1 data-cmt-id="hero">v1</h1>""")),
+            (Json("s-1", 0.10m, "ok"), WritePage("""<h1 data-cmt-id="stopka">v2</h1>""")),
+            (Json("s-9", 0.10m, "ok"), WritePage("""<h1 data-cmt-id="hero">v3</h1>""")));
+
+        var svc = new GenerationService(runner, store, versions);
+        await svc.RunRoundAsync(meta, [C("c1", null, "raz")]);
+        await svc.RunRoundAsync(store.Load(), [C("c2", null, "dwa")]);
+
+        // Powrot do v1 — to samo, co zrobi ProjectApi.RollbackAsync w Zadaniu 5.
+        store.Save(store.Load() with { CurrentVersion = 1 });
+
+        var outcome = await svc.RunRoundAsync(store.Load(), [C("c3", null, "trzy")]);
+
+        Assert.True(outcome.Succeeded);
+        Assert.Equal(3, outcome.Version!.Number);          // max+1, nie Count+1
+        Assert.Equal(1, outcome.Version!.BasedOn);         // rodzicem jest v1, nie v2
+        Assert.Equal(3, store.Load().CurrentVersion);
+
+        // Nowa sesja: --session-id, nie --resume po transkrypcie pamietajacym v2.
+        var ostatnie = runner.Requests[^1];
+        Assert.True(ostatnie.IsFirstRun);
+        Assert.NotEqual("s-1", ostatnie.SessionId);
+
+        // Kotwice do promptu ida z v1 ("hero"), nie z v2 ("stopka") — inaczej
+        // model dostalby polecenie zachowania bloku, ktorego nie ma w plikach.
+        Assert.Contains("hero", runner.Instructions[^1]);
+        Assert.DoesNotContain("stopka", runner.Instructions[^1]);
+    }
 }

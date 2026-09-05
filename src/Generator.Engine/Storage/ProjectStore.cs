@@ -43,8 +43,9 @@ public class ProjectStore(string projectDir)
         try
         {
             var json = File.ReadAllText(MetaPath);
-            return JsonSerializer.Deserialize<ProjectMeta>(json, Options)
+            var meta = JsonSerializer.Deserialize<ProjectMeta>(json, Options)
                 ?? throw new InvalidDataException($"project.json deserializuje sie na null w: {MetaPath}");
+            return Migruj(meta);
         }
         catch (IOException ex)
         {
@@ -55,6 +56,15 @@ public class ProjectStore(string projectDir)
             throw new InvalidDataException($"project.json jest uszkodzony lub niepelny w: {MetaPath}", ex);
         }
     }
+
+    /// project.json zapisany przed kontraktem 5.1 nie ma `CurrentVersion`, wiec
+    /// deserializuje sie na 0 — czyli „brak wersji" na projekcie, ktory je ma.
+    /// Podnosimy do najnowszej TYLKO gdy pole jest zerowe, a wersje sa: swiadomy
+    /// powrot zapisuje liczbe >= 1 i nie wolno go nadpisac.
+    private static ProjectMeta Migruj(ProjectMeta meta) =>
+        meta.CurrentVersion == 0 && meta.Versions.Count > 0
+            ? meta with { CurrentVersion = meta.Versions.Max(v => v.Number) }
+            : meta;
 
     public void Save(ProjectMeta meta)
     {

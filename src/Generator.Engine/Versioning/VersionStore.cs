@@ -10,13 +10,14 @@ public class VersionStore(string projectDir)
     public string SnapshotPath(int number) =>
         Path.Combine(projectDir, "versions", number.ToString("D3"));
 
-    public VersionMeta Commit(int number, string sessionId, decimal costUsd, IReadOnlyList<string> orphanedAnchors)
+    public VersionMeta Commit(int number, string sessionId, decimal costUsd,
+        IReadOnlyList<string> orphanedAnchors, int? basedOn)
     {
         var target = SnapshotPath(number);
         if (Directory.Exists(target)) Directory.Delete(target, recursive: true);
         DirectoryOps.Copy(WorkDir, target);
 
-        return new VersionMeta(number, sessionId, target, costUsd, orphanedAnchors);
+        return new VersionMeta(number, sessionId, target, costUsd, orphanedAnchors, basedOn);
     }
 
     /// Droga powrotna ze snapshotu (dotad VersionStore byl tylko-do-zapisu). Kopiuje
