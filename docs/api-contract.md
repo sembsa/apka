@@ -441,3 +441,57 @@ arkusza — inny font, brak układu.
 To nie jest kosmetyka, tylko **fałszywy obraz produktu**: klient ocenia swoją stronę na
 podstawie podglądu i zgłasza uwagi do wyglądu, którego w rzeczywistej stronie nie ma.
 Trafiło do nas dokładnie tak — wyszło dopiero przy oglądaniu aplikacji, nie w testach.
+
+## 6. Otwarte — do rozstrzygnięcia we dwóch (Sebastian, po Planie B)
+
+Trzy rzeczy, w których kod i kontrakt się rozjechały. **Żadnej nie rozstrzygam sam**:
+dwie zmieniają zdanie w sekcji, której nie jestem autorem, a trzecia jest sprzecznością
+wewnątrz kontraktu. Podaję bilans i to, jak jest teraz w kodzie.
+
+### 6.1 `POST .../comments/apply` kasuje uwagi `open` nieobecne w ciele
+
+**Stan w kodzie (Plan B, zadanie „poprawki końcowe"):** przychodząca lista jest **pełną
+listą uwag `open`** danej wersji; te spoza niej znikają z `comments.json`.
+`applied`/`rejected` są własnością silnika (4.4.2) i zostają nietknięte.
+
+**Dlaczego tak wyszło:** bez tego wycofana uwaga zostawała `open` na zawsze — wracała
+przy każdym odświeżeniu, odblokowywała „Popraw to" i wchodziła do następnej rundy.
+Klient płacił rundę za rzecz, którą sam odwołał.
+
+**Co za tym idzie:** endpoint przestał być czysto addytywny. Klient, który wyśle
+niepełną listę (np. z drugiej karty, gdzie ma tylko część uwag), skasuje sobie resztę.
+Dziś nie ma takiej ścieżki w naszym UI, ale kontrakt jest wiążący także dla klientów
+spoza niego.
+
+**Alternatywa:** osobny endpoint na wycofanie pojedynczej uwagi, a `apply` zostaje
+addytywne. Droższe (nowa trasa, nowa metoda w `IProjectApi`), za to nie zmienia
+znaczenia istniejącego zdania.
+
+**Znana luka przy obecnym wariancie:** wycofanie **wszystkich** uwag nie dociera na
+dysk, bo UI nie woła `apply` z pustą listą. Domknięcie wymaga tej samej decyzji.
+
+### 6.2 Lista wersji: sekcja 1 obiecuje datę i koszt, sekcja 4.1 zabrania kosztu
+
+`GET /api/projects/{id}/versions` ma wg tabeli w sekcji 1 oddawać „numer, **datę,
+koszt**". Ale 4.1 mówi wprost: „`spentUsd`/`budgetUsd` **nie wychodzą** przez żaden
+endpoint klienta — budżet tylko dla nas".
+
+**To sprzeczność wewnątrz kontraktu, nie luka w kodzie.** Obie sekcje są moje, więc
+zdanie w 4.1 traktuję jako mocniejsze (jest uzasadnione, tabela w 1 to szkic) —
+ale rozstrzygnięcia nie wpisuję jednostronnie, bo to zmiana obietnicy złożonej
+frontendowi.
+
+**Data** to osobna sprawa: nie ma jej dziś w modelu (`VersionMeta` nie zna czasu
+powstania), a historia wersji u klienta bez daty jest uboższa. To dołożenie pola,
+nie spór — czeka na potwierdzenie, że warto.
+
+### 6.3 `Job.failure` oddaje dwa pola z trzech
+
+Tabela w sekcji 1 mówi, że `GET /api/jobs/{id}` zwraca `failure {handling, cause,
+attempts}`. `JobFailureView` ma `handling` i `attempts`. **`cause` celowo nie wychodzi**
+— tak każe 4.3 („szczegół dla naszych logów, NIE do UI"), i od poprawek końcowych
+faktycznie trafia do logu.
+
+Czyli kod jest zgodny z 4.3, a niezgodny z tabelą w 1. Do poprawienia jest **tabela**
+— zapisuję to jako rzecz do zrobienia, a nie zrobioną, żeby ktoś czytający sekcję 1
+nie budował na `cause`, którego nie dostanie.
