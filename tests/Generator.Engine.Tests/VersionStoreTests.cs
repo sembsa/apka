@@ -108,4 +108,36 @@ public class VersionStoreTests : IDisposable
         Assert.False(File.Exists(Path.Combine(v2.SnapshotDir, "style.css")));
         Assert.False(Directory.Exists(Path.Combine(v2.SnapshotDir, "assets")));
     }
+
+    [Fact]
+    public void Restore_przywraca_starsza_wersje_na_katalog_roboczy_zastepujac_go_calkowicie()
+    {
+        // Droga powrotna ze snapshotu (punkt 3 raportu): dotad VersionStore byl
+        // tylko-do-zapisu. WorkDir musi zostac CALKOWICIE zastapiony tresc snapshotu,
+        // wlacznie z odrzuceniem plikow, ktorych snapshot nie ma.
+        var store = NewStore();
+        File.WriteAllText(Path.Combine(store.WorkDir, "index.html"), "wersja 1");
+        var v1 = store.Commit(1, "s-1", 0.1m, []);
+
+        File.WriteAllText(Path.Combine(store.WorkDir, "index.html"), "wersja 2, zepsuta");
+        File.WriteAllText(Path.Combine(store.WorkDir, "smiec.txt"), "nie powinno przetrwac przywrocenia");
+
+        store.Restore(1);
+
+        Assert.Equal("wersja 1", File.ReadAllText(Path.Combine(store.WorkDir, "index.html")));
+        Assert.False(File.Exists(Path.Combine(store.WorkDir, "smiec.txt")));
+        // Oryginalny snapshot musi zostac nietkniety (decyzja 5: kopiujemy, nie przenosimy).
+        Assert.Equal("wersja 1", File.ReadAllText(Path.Combine(v1.SnapshotDir, "index.html")));
+    }
+
+    [Fact]
+    public void Restore_nieistniejacej_wersji_rzuca_zrozumialy_blad_ze_sciezka()
+    {
+        var store = NewStore();
+
+        var ex = Assert.Throws<DirectoryNotFoundException>(() => store.Restore(7));
+
+        Assert.Contains("7", ex.Message);
+        Assert.Contains(store.SnapshotPath(7), ex.Message);
+    }
 }

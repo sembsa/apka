@@ -1,3 +1,4 @@
+using Generator.Engine.IO;
 using Generator.Engine.Model;
 
 namespace Generator.Engine.Versioning;
@@ -13,22 +14,27 @@ public class VersionStore(string projectDir)
     {
         var target = SnapshotPath(number);
         if (Directory.Exists(target)) Directory.Delete(target, recursive: true);
-        CopyDirectory(WorkDir, target);
+        DirectoryOps.Copy(WorkDir, target);
 
         return new VersionMeta(number, sessionId, target, costUsd, orphanedAnchors);
     }
 
-    private static void CopyDirectory(string from, string to)
+    /// Droga powrotna ze snapshotu (dotad VersionStore byl tylko-do-zapisu). Kopiuje
+    /// snapshot wersji "number" na WorkDir, calkowicie go zastepujac. Zamyka trzy
+    /// rzeczy naraz (patrz raport, punkt 3): powrot do wersji z decyzji 5
+    /// planu/kontraktu §5.1 (Plan B), naprawe zepsutego WorkDir po nieudanej rundzie
+    /// (GenerationService.Failed) i wyjscie awaryjne przy naprawie kotwic.
+    ///
+    /// Uzywa DirectoryOps.SafeReplace, NIE naiwnego "skasuj-potem-kopiuj" jak Commit
+    /// powyzej — tu ofiara nieudanej kopii w polowie byloby WorkDir, jedyna mutowalna
+    /// prawda systemu, a nie odtwarzalny snapshot.
+    public void Restore(int number)
     {
-        Directory.CreateDirectory(to);
+        var source = SnapshotPath(number);
+        if (!Directory.Exists(source))
+            throw new DirectoryNotFoundException(
+                $"Nie mozna przywrocic wersji {number}: brak snapshotu w {source}");
 
-        if (!Directory.Exists(from))
-            return;
-
-        foreach (var file in Directory.EnumerateFiles(from))
-            File.Copy(file, Path.Combine(to, Path.GetFileName(file)), overwrite: true);
-
-        foreach (var dir in Directory.EnumerateDirectories(from))
-            CopyDirectory(dir, Path.Combine(to, Path.GetFileName(dir)));
+        DirectoryOps.SafeReplace(source, WorkDir);
     }
 }
