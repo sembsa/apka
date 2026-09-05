@@ -30,12 +30,13 @@ a `GET /api/jobs/{id}` zostaje dla klientów poza naszym UI.
 | `POST` | `/api/projects/{id}/proposals/{proposalId}/choose` | `200` — wybór klienta |
 | `POST` | `/api/projects/{id}/versions` | `202` + `jobId` — wersja 1 z wybranej propozycji |
 | `POST` | `/api/projects/{id}/versions/{n}/comments/apply` | `202` + `jobId` — runda komentarzy; `409`, gdy projekt `frozen` (4.5) |
-| `GET` | `/api/projects/{id}/versions` | lista wersji (numer, data, koszt) |
+| `PUT` | `/api/projects/{id}/versions/{n}/comments` | `200` — zapisuje uwagi klienta **bez uruchamiania modelu** (6.1) |
+| `GET` | `/api/projects/{id}/versions` | lista wersji (numer, data powstania, `basedOn`, `changedAnchors`) — **bez kosztu** (4.1, 6.2) |
 | `GET` | `/preview/{id}/{n}/` | statyczne pliki wersji do iframe (koncowy ukosnik obowiazkowy — 5.4) |
 | `GET` | `/api/projects/{id}/versions/{n}/zip` | ZIP (decyzja 2) |
 | `POST` | `/api/projects/{id}/rollback/{n}` | `200` — przestawia `currentVersion` (5.1); `409` w trakcie zadania |
 | `GET` | `/api/projects/{id}/versions/{n}/comments` | uwagi tej wersji ze statusem z raportu silnika (3.3) |
-| `GET` | `/api/jobs/{id}` | status zadania + `failure {handling, cause, attempts}` (4.3) |
+| `GET` | `/api/jobs/{id}` | status zadania + `failure {handling, attempts}` — **bez `cause`** (4.3, 6.3) |
 
 Status zadania: `queued` \| `running` \| `succeeded` \| `failed`. **`failed` obejmuje
 przypadki, w których model „zakończył sukcesem"** — patrz sekcja 2. `cause` z `failure`
@@ -205,6 +206,18 @@ jest uczciwą odpowiedzią i klient musi ją zobaczyć. Komentarz bez wpisu w
 
 Wynika z tego wymóg planu, sekcja 4 („klient musi wiedzieć, że został zrozumiany"):
 `note` jest tekstem **przy komentarzu**, nie zbiorczym podsumowaniem wersji.
+
+**Uwagi `open` są własnością klienta, `applied`/`rejected` — silnika (rozstrzygnięcie
+6.1, 2026-09-05).** `PUT .../comments` przyjmuje **pełną listę uwag `open`** danej
+wersji: co przyszło — zostaje, uwagi `open` spoza listy **znikają**. Tak wygląda
+wycofanie (3.3), które wcześniej żyło wyłącznie w pamięci przeglądarki. Statusów
+nadanych przez silnik ten zapis nie dotyka, a `Comment.id` powstaje raz (3.2), więc
+ponowne wysłanie tej samej uwagi jest bez skutku.
+
+Zapis jest **oddzielony od rundy**: `PUT` nie uruchamia modelu, nie kosztuje i nie zużywa
+rundy. `POST .../comments/apply` tylko uruchamia rundę. Rozdzielenie bierze się stąd, że
+uwagi trzymane wyłącznie w obwodzie przepadały przy zamknięciu karty — klient tracił
+wszystko, czego jeszcze nie zdążył wysłać do poprawki.
 
 **Doprecyzowanie po przejściu ścieżki klienta (decyzja Przemka, 2026-09-04):** raport
 `applied` + `note` musi **trafić klientowi przed oczy**, a nie tylko istnieć w danych.
@@ -442,59 +455,51 @@ To nie jest kosmetyka, tylko **fałszywy obraz produktu**: klient ocenia swoją 
 podstawie podglądu i zgłasza uwagi do wyglądu, którego w rzeczywistej stronie nie ma.
 Trafiło do nas dokładnie tak — wyszło dopiero przy oglądaniu aplikacji, nie w testach.
 
-## 6. Otwarte — do rozstrzygnięcia we dwóch (Sebastian, po Planie B)
+## 6. Rozstrzygnięte we dwóch (2026-09-05)
 
-Trzy rzeczy, w których kod i kontrakt się rozjechały. **Żadnej nie rozstrzygam sam**:
-dwie zmieniają zdanie w sekcji, której nie jestem autorem, a trzecia jest sprzecznością
-wewnątrz kontraktu. Podaję bilans i to, jak jest teraz w kodzie.
+Sebastian podniósł trzy rzeczy po Planie B i świadomie nie rozstrzygnął żadnej sam.
+Przemek zdecydował 2026-09-05; poniżej decyzje z uzasadnieniem, w miejsce dawnych
+bilansów. Punkt 6.4 był od początku odnotowaniem, nie sporem, i zostaje bez zmian.
 
-### 6.1 `POST .../comments/apply` kasuje uwagi `open` nieobecne w ciele
+### 6.1 Zapis uwag oddzielony od rundy — ROZSTRZYGNIĘTE
 
-**Stan w kodzie (Plan B, zadanie „poprawki końcowe"):** przychodząca lista jest **pełną
-listą uwag `open`** danej wersji; te spoza niej znikają z `comments.json`.
-`applied`/`rejected` są własnością silnika (4.4.2) i zostają nietknięte.
+**Decyzja: osobny `PUT .../versions/{n}/comments`, który zapisuje uwagi bez uruchamiania
+modelu.** `POST .../comments/apply` tylko uruchamia rundę.
 
-**Dlaczego tak wyszło:** bez tego wycofana uwaga zostawała `open` na zawsze — wracała
-przy każdym odświeżeniu, odblokowywała „Popraw to" i wchodziła do następnej rundy.
-Klient płacił rundę za rzecz, którą sam odwołał.
+Wariant „zostawiamy i dopisujemy zdanie" był tańszy o całą trasę, ale zostawiał lukę,
+którą Sebastian sam nazwał: wycofanie **wszystkich** uwag nigdy nie docierało na dysk,
+bo UI nie woła `apply` z pustą listą.
 
-**Co za tym idzie:** endpoint przestał być czysto addytywny. Klient, który wyśle
-niepełną listę (np. z drugiej karty, gdzie ma tylko część uwag), skasuje sobie resztę.
-Dziś nie ma takiej ścieżki w naszym UI, ale kontrakt jest wiążący także dla klientów
-spoza niego.
+Rozstrzygnęło jednak co innego, szersze od samego 6.1. Uwagi żyły **wyłącznie w pamięci
+obwodu** do chwili kliknięcia „Popraw to": klient, który dodał pięć uwag i zamknął kartę,
+tracił wszystkie pięć. Przy modelu „bez kont, link z tokenem" (decyzja 3) przerwanie
+pracy w połowie i powrót później to nie brzeg, tylko normalny scenariusz. Wariant
+z osobnym kasowaniem pojedynczej uwagi (`DELETE`) kosztował tyle samo, a tego nie
+naprawiał — i wymagałby tolerowania `404` dla uwag, które istnieją tylko w przeglądarce.
 
-**Alternatywa:** osobny endpoint na wycofanie pojedynczej uwagi, a `apply` zostaje
-addytywne. Droższe (nowa trasa, nowa metoda w `IProjectApi`), za to nie zmienia
-znaczenia istniejącego zdania.
+Semantyka zapisu (pełna lista `open`, uwagi spoza niej znikają) jest opisana w 3.3 —
+tam, gdzie mieszka reszta reguł o statusach uwag.
 
-**Znana luka przy obecnym wariancie:** wycofanie **wszystkich** uwag nie dociera na
-dysk, bo UI nie woła `apply` z pustą listą. Domknięcie wymaga tej samej decyzji.
+### 6.2 Lista wersji: bez kosztu, z datą — ROZSTRZYGNIĘTE
 
-### 6.2 Lista wersji: sekcja 1 obiecuje datę i koszt, sekcja 4.1 zabrania kosztu
+**Koszt wypada.** Zdanie z 4.1 („`spentUsd`/`budgetUsd` nie wychodzą przez żaden
+endpoint klienta") jest mocniejsze niż tabela w sekcji 1: ma uzasadnienie, a tabela była
+szkicem. Poprawiona została **tabela**. To nie jest kompromis — pokazanie klientowi
+kosztu rundy zmienia rozmowę z „czy strona jest dobra" na „czy warto było wydać",
+a cały produkt stoi na tym pierwszym.
 
-`GET /api/projects/{id}/versions` ma wg tabeli w sekcji 1 oddawać „numer, **datę,
-koszt**". Ale 4.1 mówi wprost: „`spentUsd`/`budgetUsd` **nie wychodzą** przez żaden
-endpoint klienta — budżet tylko dla nas".
+**Data powstania wersji wchodzi.** Historia wersji z samymi numerami zmusza klienta do
+pamiętania, co robił; „Wersja 2 — wczoraj 14:30" rozpoznaje się bez wysiłku. Przy
+powrocie do starszej wersji (5.1) to różnica między świadomym wyborem a zgadywaniem.
 
-**To sprzeczność wewnątrz kontraktu, nie luka w kodzie.** Obie sekcje są moje, więc
-zdanie w 4.1 traktuję jako mocniejsze (jest uzasadnione, tabela w 1 to szkic) —
-ale rozstrzygnięcia nie wpisuję jednostronnie, bo to zmiana obietnicy złożonej
-frontendowi.
+**Do zrobienia po stronie silnika:** `VersionMeta` nie zna dziś czasu powstania. Pole
+plus propagacja do `VersionView`. To dołożenie, nie zmiana znaczenia niczego.
 
-**Data** to osobna sprawa: nie ma jej dziś w modelu (`VersionMeta` nie zna czasu
-powstania), a historia wersji u klienta bez daty jest uboższa. To dołożenie pola,
-nie spór — czeka na potwierdzenie, że warto.
+### 6.3 `Job.failure` bez `cause` — ROZSTRZYGNIĘTE
 
-### 6.3 `Job.failure` oddaje dwa pola z trzech
-
-Tabela w sekcji 1 mówi, że `GET /api/jobs/{id}` zwraca `failure {handling, cause,
-attempts}`. `JobFailureView` ma `handling` i `attempts`. **`cause` celowo nie wychodzi**
-— tak każe 4.3 („szczegół dla naszych logów, NIE do UI"), i od poprawek końcowych
-faktycznie trafia do logu.
-
-Czyli kod jest zgodny z 4.3, a niezgodny z tabelą w 1. Do poprawienia jest **tabela**
-— zapisuję to jako rzecz do zrobienia, a nie zrobioną, żeby ktoś czytający sekcję 1
-nie budował na `cause`, którego nie dostanie.
+**Kod miał rację, tabela była błędna** — poprawiona. `cause` nie wychodzi do UI (4.3),
+a od poprawek końcowych trafia do logu, gdzie jest przydatny nam. Nie ma tu wyboru do
+zrobienia: `cause` niesie treść od modelu i z definicji nie nadaje się dla klienta.
 
 ### 6.4 `POST .../proposals` odmawia teraz 409 — odnotowane, nie sporne
 
