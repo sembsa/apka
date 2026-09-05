@@ -1,3 +1,4 @@
+using Generator.Engine.Versioning;
 using Generator.Web.Components;
 using Generator.Web.Contracts;
 using Generator.Web.Mock;
@@ -43,7 +44,11 @@ app.MapRazorComponents<App>()
 
 // Podglad snapshotu wersji. Skrypt zbierajacy klikniecia doklejamy TUTAJ, przy
 // serwowaniu - snapshot na dysku i ZIP klienta zostaja czyste.
-app.MapPreview((projectId, version) => Path.Combine(snapshotRoot, projectId, $"v{version}"));
+// Jedna prawda o tym, gdzie lezy snapshot: VersionStore. Recznie sklejana sciezka
+// „snapshotRoot/id/vN" zgadzala sie tylko z atrapa — silnik pisze do
+// „snapshotRoot/id/versions/001" i podglad pokazywalby pusty iframe.
+app.MapPreview((projectId, version) =>
+    new VersionStore(Path.Combine(snapshotRoot, projectId)).SnapshotPath(version));
 
 // TYLKO Development. Gałęzie `failed` z kontraktu 4.3 nie mają wyzwalacza w UI —
 // bez tego nie da się ich przejść jak klient, a to jedyna rzecz, której testy

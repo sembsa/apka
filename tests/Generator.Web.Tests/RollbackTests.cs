@@ -1,3 +1,4 @@
+using Generator.Engine.Versioning;
 using Generator.Web.Contracts;
 using Generator.Web.Mock;
 using Xunit;
@@ -114,8 +115,8 @@ public class RollbackTests : IDisposable
         // Sama lista zmian tego nie rozstrzyga: przy blednej bazie kumulacja daje
         // przypadkiem ten sam wynik. Rozstrzyga TRESC v3 — powrot do v1 i nowa runda
         // nie moga po cichu wciagnac poprawki z porzuconej v2.
-        var html = await File.ReadAllTextAsync(
-            Path.Combine(_root, p.Id, "v3", "index.html"));
+        var html = await File.ReadAllTextAsync(Path.Combine(
+            new VersionStore(Path.Combine(_root, p.Id)).SnapshotPath(3), "index.html"));
         Assert.DoesNotContain("""data-cmt-id="hero" style""", html);
         Assert.Contains("""data-cmt-id="kontakt" style""", html);
     }

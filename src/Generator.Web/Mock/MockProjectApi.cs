@@ -189,6 +189,16 @@ public class MockProjectApi : IProjectApi
     }
 
     /// <summary>
+    /// Gdzie lezy snapshot wersji. JEDNA prawda o tej sciezce jest `VersionStore` —
+    /// atrapa nie ma prawa miec wlasnej. Recznie sklejane „SnapshotRoot/id/vN"
+    /// zgadzalo sie tylko z atrapa: silnik pisze do „SnapshotRoot/id/versions/001",
+    /// wiec po podmianie DI `/preview` czytalby katalog, ktorego nie ma, i klient
+    /// dostawalby pusty iframe. Tego testy komponentow nie widza.
+    /// </summary>
+    private string Snapshot(string id, int numer) =>
+        new VersionStore(Path.Combine(SnapshotRoot, id)).SnapshotPath(numer);
+
+    /// <summary>
     /// To, co w produkcji robi silnik: ma snapshoty na dysku, wiec on liczy zmiany
     /// (kontrakt 5.3). Frontend nie sciaga dwoch pelnych wersji strony do przegladarki.
     /// </summary>
@@ -196,8 +206,8 @@ public class MockProjectApi : IProjectApi
     {
         if (rodzic is not { } r) return [];
 
-        var plikRodzica = Path.Combine(SnapshotRoot, id, $"v{r}", "index.html");
-        var plikWersji = Path.Combine(SnapshotRoot, id, $"v{numer}", "index.html");
+        var plikRodzica = Path.Combine(Snapshot(id, r), "index.html");
+        var plikWersji = Path.Combine(Snapshot(id, numer), "index.html");
         if (!File.Exists(plikRodzica) || !File.Exists(plikWersji)) return [];
 
         return await ZmienioneBloki.Policz(
@@ -304,7 +314,7 @@ public class MockProjectApi : IProjectApi
     private async Task ZapiszSnapshot(
         string id, int numer, IReadOnlyList<CommentDto> uwagi, int? rodzic)
     {
-        var katalog = Path.Combine(SnapshotRoot, id, $"v{numer}");
+        var katalog = Snapshot(id, numer);
         Directory.CreateDirectory(katalog);
 
         // Dziedziczymy wyrozniki po RODZICU i dokladamy kotwice z tej rundy.

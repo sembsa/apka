@@ -1,3 +1,4 @@
+using Generator.Engine.Versioning;
 using Generator.Web.Contracts;
 using Generator.Web.Mock;
 using Generator.Web.Preview;
@@ -24,7 +25,7 @@ public class MockSnapshotTests : IDisposable
         await api.ApplyCommentsAsync(p.Id, 1, []);
 
         var wersja = (await api.GetAsync(p.Id)).Versions[^1].Number;
-        var plik = Path.Combine(_root, p.Id, $"v{wersja}", "index.html");
+        var plik = Path.Combine(Snapshot(p.Id, wersja), "index.html");
         Assert.True(File.Exists(plik), $"brak snapshotu: {plik}");
     }
 
@@ -37,7 +38,7 @@ public class MockSnapshotTests : IDisposable
         await api.ApplyCommentsAsync(p.Id, 1, []);
 
         var wersja = (await api.GetAsync(p.Id)).Versions[^1].Number;
-        var html = await File.ReadAllTextAsync(Path.Combine(_root, p.Id, $"v{wersja}", "index.html"));
+        var html = await File.ReadAllTextAsync(Path.Combine(Snapshot(p.Id, wersja), "index.html"));
 
         Assert.Contains("data-cmt-id=\"hero\"", html);
         Assert.Contains("data-cmt-id=\"kontakt\"", html);
@@ -54,7 +55,7 @@ public class MockSnapshotTests : IDisposable
         await api.ApplyCommentsAsync(p.Id, 1, []);
 
         var wersja = (await api.GetAsync(p.Id)).Versions[^1].Number;
-        var sciezka = Path.Combine(_root, p.Id, $"v{wersja}", "index.html");
+        var sciezka = Path.Combine(Snapshot(p.Id, wersja), "index.html");
         var html = await File.ReadAllTextAsync(sciezka);
 
         Assert.DoesNotContain("preview-click.js", html);
@@ -77,7 +78,7 @@ public class MockSnapshotTests : IDisposable
         Assert.Equal(1, wersja.Number);
         // Ukosnik na koncu jest istotny, nie kosmetyczny — patrz test nizej.
         Assert.Equal($"/preview/{p.Id}/1/", wersja.PreviewUrl);
-        Assert.True(File.Exists(Path.Combine(_root, p.Id, "v1", "index.html")));
+        Assert.True(File.Exists(Path.Combine(Snapshot(p.Id, 1), "index.html")));
     }
 
     /// <summary>
@@ -100,9 +101,15 @@ public class MockSnapshotTests : IDisposable
 
         // I dowod, ze to ma znaczenie: snapshot faktycznie odwoluje sie relatywnie.
         var html = await File.ReadAllTextAsync(
-            Path.Combine(_root, p.Id, "v1", "index.html"));
+            Path.Combine(Snapshot(p.Id, 1), "index.html"));
         Assert.Contains("""href="styl.css""", html);
     }
+
+    /// Sciezke snapshotu zna wylacznie VersionStore — takze w tescie atrapy.
+    /// Wpisana tu na sztywno „v{n}" byla drugim zrodlem prawdy: zgadzala sie
+    /// z atrapa i rozjezdzala z silnikiem, ktory pisze do „versions/001".
+    private string Snapshot(string id, int numer) =>
+        new VersionStore(Path.Combine(_root, id)).SnapshotPath(numer);
 
     public void Dispose()
     {
