@@ -2107,7 +2107,7 @@ Pierwsze i jedyne miejsce w tym planie, które wydaje prawdziwe pieniądze. Spod
 - Consumes: `GenerationService`, `ProjectStore`, `VersionStore`, `ClaudeRunner`, `PromptBuilder`
 - Produces: `dotnet run --project src/Generator.Cli -- <katalog-projektu> "<opis klienta>"`
 
-- [ ] **Step 1: Utwórz projekt i napisz uprząż**
+- [x] **Step 1: Utwórz projekt i napisz uprząż**
 
 ```bash
 dotnet new console -o src/Generator.Cli -f net10.0
@@ -2197,13 +2197,13 @@ foreach (var r in outcome.CommentResults)
 return 0;
 ```
 
-- [ ] **Step 2: Sprawdź, że kompiluje się i broni przed katalogiem w repo**
+- [x] **Step 2: Sprawdź, że kompiluje się i broni przed katalogiem w repo**
 
 Run: `dotnet build -v q && dotnet run --project src/Generator.Cli -- ./w-repo "test"`
 Expected: exit 2 i komunikat „Katalog projektu lezy w drzewie repo (…)" z podaną ścieżką
 znalezionego repozytorium — dowód, że wykrywanie idzie przez `.git`, nie przez cwd.
 
-- [ ] **Step 3: Uruchom jeden prawdziwy przebieg**
+- [x] **Step 3: Uruchom jeden prawdziwy przebieg**
 
 Run:
 ```bash
@@ -2212,7 +2212,7 @@ dotnet run --project src/Generator.Cli -- ~/generator-projects/smoke-1 \
 ```
 Expected: wypisany koszt (rzędu $0,50–1,00), `Wersja 1: ~/generator-projects/smoke-1/versions/001`, a w środku `index.html` ze stroną fryzjera i atrybutami `data-cmt-id`.
 
-- [ ] **Step 4: Obejrzyj wynik i zapisz pomiar**
+- [x] **Step 4: Obejrzyj wynik i zapisz pomiar**
 
 ```bash
 open ~/generator-projects/smoke-1/versions/001/index.html
@@ -2221,7 +2221,7 @@ grep -o 'data-cmt-id="[^"]*"' ~/generator-projects/smoke-1/versions/001/index.ht
 
 Wpisz zmierzony koszt do sekcji 11 planu produktu — to pierwszy pomiar na **prawdziwej** stronie i on zastępuje ekstrapolację z kontraktu §4.2.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/Generator.Cli Generator.sln docs/plan/2026-09-04-generator-stron-plan.md
