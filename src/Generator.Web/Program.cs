@@ -135,8 +135,10 @@ if (KluczPanelu.Ustawiony(builder.Configuration) is { } kluczPanelu)
         if (!KluczPanelu.Zgadza(kluczPanelu, podany))
             return new RazorComponentResult<Panel>(new { Odmowa = true }) { StatusCode = 401 };
 
+        var dane = new PanelDane(sciezki);
+        var wiersze = dane.Wczytaj();
         return new RazorComponentResult<Panel>(
-            new { Dane = new PanelDane(sciezki).Wczytaj() });
+            new { Dane = wiersze, Suma = dane.Podsumuj(wiersze) });
     })
     // Formularz jest bezsesyjny: nie ma ciasteczka logowania, ktore CSRF moglby
     // wykorzystac, a bez znajomosci klucza cudze zadanie i tak nic nie pokaze.

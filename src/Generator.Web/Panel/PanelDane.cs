@@ -1,7 +1,28 @@
-using Generator.Engine.Model;
 using Generator.Web.Api;
 
 namespace Generator.Web.Panel;
+
+/// <summary>
+/// Co znaczy liczba w kolumnie „koszt". Trzy stany, nie dwa, bo „0,00 USD" ma
+/// dzis DWA rozne znaczenia i pomylenie ich zamienia panel w zrodlo falszywego
+/// spokoju.
+/// </summary>
+public enum StanKosztu
+{
+    /// Nie wiemy nic — projekt nie da sie odczytac.
+    Nieznany,
+
+    /// Projekt jeszcze nic nie kosztowal, bo jeszcze nic nie wygenerowal. To PRAWDA,
+    /// nie luka w danych.
+    JeszczeNic,
+
+    /// Sa wersje, a kosztu nie ma. Silnik zapisuje go dopiero, gdy `claude` odda JSON —
+    /// a na Windowsie dzis nie oddaje go wcale (awaria B). To BRAK POMIARU, nie
+    /// darmowa strona, i panel ma o tym mowic wprost.
+    NieZmierzony,
+
+    Zmierzony,
+}
 
 /// <summary>
 /// Jeden wiersz panelu: tyle o projekcie klienta, ile my — dwoje ludzi po naszej
@@ -33,23 +54,29 @@ public record WierszPanelu(
     DateTime OstatniZapis,
     string? Blad = null)
 {
-    /// <summary>
-    /// Czy „0.00 USD" znaczy „tanio", czy „nie mamy pomiaru". Silnik zapisuje koszt
-    /// dopiero wtedy, gdy `claude` odda JSON — a na Windowsie dzis nie oddaje go
-    /// wcale (awaria B). Projekt z wersjami i zerowym kosztem to wiec nie jest
-    /// projekt darmowy, tylko projekt niezmierzony, i panel ma to mowic wprost.
-    /// Bez tego rozroznienia podsumowanie „lacznie 0,00 USD" czyta sie jak dobra
-    /// wiadomosc, a jest brakiem danych.
-    /// </summary>
-    public bool KosztZmierzony => Wydano > 0m;
+    /// Jedno miejsce, ktore decyduje, co znaczy zero — komorka tabeli i podsumowanie
+    /// musza mowic to samo, inaczej panel sam sobie przeczy w dwoch miejscach ekranu.
+    public StanKosztu Koszt => this switch
+    {
+        { Blad: not null } => StanKosztu.Nieznany,
+        { Wydano: > 0m } => StanKosztu.Zmierzony,
+        { Wersji: 0 } => StanKosztu.JeszczeNic,
+        _ => StanKosztu.NieZmierzony,
+    };
 
     /// Projekt zamrozony ALBO na granicy — to sa wiersze, na ktore patrzymy najpierw.
     public bool WymagaUwagi =>
         Blad is not null || Status == "frozen" || RundyZuzyte >= RundyLimit || Wydano >= Budzet;
 }
 
-/// <param name="BezPomiaru">Ile projektow ma wersje, ale zerowy koszt — patrz KosztZmierzony.</param>
-public record PodsumowaniePanelu(int Projektow, decimal Wydano, decimal Budzet, int BezPomiaru);
+/// <param name="BezPomiaru">Ile projektow ma wersje, ale zerowy koszt — patrz StanKosztu.</param>
+/// <param name="ObceKatalogi">
+/// Katalogi w `projekty/`, ktore maja zawartosc, ale nie maja `project.json`, wiec panel
+/// nie umie o nich nic powiedziec. W devie to zwykle smieci po atrapie (pisze snapshoty
+/// do tego samego korzenia). W produkcji to znaczy, ze czyjas strona lezy na dysku bez
+/// metadanych — i wlasnie dlatego ta liczba jest na ekranie, a nie przemilczana.
+/// </param>
+public record PodsumowaniePanelu(int Projektow, decimal Wydano, decimal Budzet, int BezPomiaru, int ObceKatalogi);
 
 /// <summary>
 /// Czyta katalog projektow do postaci nadajacej sie na liste. Osobno od `ProjectApi`,
@@ -64,19 +91,30 @@ public class PanelDane(ProjectPaths paths)
         // panel przed pierwszym klientem jest pusty, a nie zepsuty.
         if (!Directory.Exists(paths.Root)) return [];
 
-        return Directory.EnumerateDirectories(paths.Root)
-            .Select(d => Path.GetFileName(d))
-            .Where(id => !string.IsNullOrEmpty(id) && paths.Exists(id))
+        return Katalogi()
+            .Where(paths.Exists)
             .Select(Wiersz)
             .OrderByDescending(w => w.OstatniZapis)
             .ToList();
     }
 
-    public static PodsumowaniePanelu Podsumuj(IReadOnlyList<WierszPanelu> wiersze) => new(
+    /// Katalogi z zawartoscia, ale bez `project.json` — patrz PodsumowaniePanelu.ObceKatalogi.
+    public int ObceKatalogi() =>
+        Directory.Exists(paths.Root)
+            ? Katalogi().Count(id => !paths.Exists(id) && Directory.EnumerateFileSystemEntries(paths.Dir(id)).Any())
+            : 0;
+
+    public PodsumowaniePanelu Podsumuj(IReadOnlyList<WierszPanelu> wiersze) => new(
         Projektow: wiersze.Count,
         Wydano: wiersze.Sum(w => w.Wydano),
         Budzet: wiersze.Sum(w => w.Budzet),
-        BezPomiaru: wiersze.Count(w => w.Blad is null && w.Wersji > 0 && !w.KosztZmierzony));
+        BezPomiaru: wiersze.Count(w => w.Koszt == StanKosztu.NieZmierzony),
+        ObceKatalogi: ObceKatalogi());
+
+    private IEnumerable<string> Katalogi() =>
+        Directory.EnumerateDirectories(paths.Root)
+            .Select(Path.GetFileName)
+            .Where(id => !string.IsNullOrEmpty(id))!;
 
     private WierszPanelu Wiersz(string id)
     {
@@ -104,4 +142,20 @@ public class PanelDane(ProjectPaths paths)
             return new WierszPanelu(id, "?", "", 0, 0, 0m, 0m, 0, 0, zapis, Blad: ex.Message);
         }
     }
+}
+
+/// <summary>
+/// Polska odmiana rzeczownika po liczbie. Bez tego panel pisze „2 projektów", co przy
+/// ekranie ogladanym codziennie kluje w oczy — a jest to jedno wyrazenie, nie problem.
+/// </summary>
+public static class Odmiana
+{
+    public static string Projektow(int n) => (n % 10, n % 100) switch
+    {
+        (1, not 11) => "projekt",
+        (2 or 3 or 4, not (12 or 13 or 14)) => "projekty",
+        _ => "projektów",
+    };
+
+    public static string Maja(int n) => n % 10 == 1 && n % 100 != 11 ? "ma" : "mają";
 }

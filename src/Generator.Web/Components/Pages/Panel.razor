@@ -17,7 +17,7 @@
        linku nie ma zaciagac listy klientow do cudzego cache. *@
     <meta name="robots" content="noindex, nofollow" />
     <meta name="referrer" content="no-referrer" />
-    <title>Panel — @(Dane is null ? "wejście" : $"{Dane.Count} projektów")</title>
+    <title>Panel — @(Dane is null ? "wejście" : $"{Dane.Count} {Odmiana.Projektow(Dane.Count)}")</title>
     <link rel="stylesheet" href="@Assets["app.css"]" />
 </head>
 <body class="panel-body">
@@ -44,17 +44,24 @@
     }
     else
     {
-        var suma = PanelDane.Podsumuj(Dane);
-
         <section class="panel-suma" data-test="podsumowanie">
-            <p><strong>@suma.Projektow</strong> projektów</p>
-            <p><strong>@Kwota(suma.Wydano)</strong> wydane z @Kwota(suma.Budzet) budżetu</p>
-            @if (suma.BezPomiaru > 0)
+            <p><strong>@Suma.Projektow</strong> @Odmiana.Projektow(Suma.Projektow)</p>
+            <p><strong>@Kwota(Suma.Wydano)</strong> wydane z @Kwota(Suma.Budzet) budżetu</p>
+            @if (Suma.BezPomiaru > 0)
             {
                 @* Rozroznienie, ktore decyduje, czy ta liczba to informacja, czy klamstwo. *@
                 <p class="ostrzezenie" data-test="bez-pomiaru">
-                    @suma.BezPomiaru @(suma.BezPomiaru == 1 ? "projekt ma" : "projekty mają")
+                    @Suma.BezPomiaru @Odmiana.Projektow(Suma.BezPomiaru) @Odmiana.Maja(Suma.BezPomiaru)
                     wersje, ale zerowy koszt — to <strong>brak pomiaru</strong>, nie darmowa strona.
+                </p>
+            }
+            @if (Suma.ObceKatalogi > 0)
+            {
+                @* Nie chowamy tego pod dywan: katalog z wersjami, ale bez project.json,
+                   to w devie smiec po atrapie, a w produkcji czyjas strona bez metadanych. *@
+                <p class="ostrzezenie" data-test="obce-katalogi">
+                    @Suma.ObceKatalogi @(Suma.ObceKatalogi == 1 ? "katalog" : "katalogi") w <code>projekty/</code>
+                    bez <code>project.json</code> — panel nic o nich nie wie.
                 </p>
             }
         </section>
@@ -85,17 +92,22 @@
                         }
                     </td>
                     <td>
-                        @if (w.Blad is not null)
+                        @* Trzy stany, nie dwa: „0,00 USD" znaczy co innego na swiezym
+                           projekcie, a co innego na takim, ktory ma juz wersje. *@
+                        @switch (w.Koszt)
                         {
-                            <span class="panel-brak">—</span>
-                        }
-                        else if (w.KosztZmierzony)
-                        {
-                            @Kwota(w.Wydano)<text> / </text>@Kwota(w.Budzet)
-                        }
-                        else
-                        {
-                            <span class="panel-brak" data-test="niezmierzony">nie zmierzono</span>
+                            case StanKosztu.Zmierzony:
+                                @Kwota(w.Wydano)<text> / </text>@Kwota(w.Budzet)
+                                break;
+                            case StanKosztu.NieZmierzony:
+                                <span class="ostrzezenie" data-test="niezmierzony">nie zmierzono</span>
+                                break;
+                            case StanKosztu.JeszczeNic:
+                                <span class="panel-brak" data-test="jeszcze-nic">jeszcze nic</span>
+                                break;
+                            default:
+                                <span class="panel-brak">—</span>
+                                break;
                         }
                     </td>
                     <td>
@@ -135,6 +147,9 @@
     [Parameter] public IReadOnlyList<WierszPanelu>? Dane { get; set; }
 
     [Parameter] public bool Odmowa { get; set; }
+
+    /// Liczone w trasie, razem z wierszami — komponent ma pokazywac, a nie chodzic po dysku.
+    [Parameter] public PodsumowaniePanelu Suma { get; set; } = new(0, 0m, 0m, 0, 0);
 
     private static string Kwota(decimal usd) => usd.ToString("0.00", CultureInfo.InvariantCulture) + " USD";
 

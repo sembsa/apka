@@ -85,7 +85,8 @@ public class PanelDaneTests : IDisposable
         Projekt(wydano: 0m, wersji: 2);
         Projekt(wydano: 1.50m, wersji: 1);
 
-        var suma = PanelDane.Podsumuj(Dane().Wczytaj());
+        var dane = Dane();
+        var suma = dane.Podsumuj(dane.Wczytaj());
 
         Assert.Equal(1, suma.BezPomiaru);
         Assert.Equal(1.50m, suma.Wydano);
@@ -97,7 +98,9 @@ public class PanelDaneTests : IDisposable
         // Swiezy projekt jeszcze nic nie kosztowal i to jest prawda, nie luka.
         Projekt(wydano: 0m, wersji: 0);
 
-        Assert.Equal(0, PanelDane.Podsumuj(Dane().Wczytaj()).BezPomiaru);
+        var dane = Dane();
+        Assert.Equal(0, dane.Podsumuj(dane.Wczytaj()).BezPomiaru);
+        Assert.Equal(StanKosztu.JeszczeNic, dane.Wczytaj().Single().Koszt);
     }
 
     [Fact]
@@ -116,11 +119,38 @@ public class PanelDaneTests : IDisposable
         Projekt(wydano: 1.25m, wersji: 1);
         Projekt(wydano: 2.75m, wersji: 1);
 
-        var suma = PanelDane.Podsumuj(Dane().Wczytaj());
+        var dane = Dane();
+        var suma = dane.Podsumuj(dane.Wczytaj());
 
         Assert.Equal(2, suma.Projektow);
         Assert.Equal(4.00m, suma.Wydano);
         Assert.Equal(2 * ProjectStore.DefaultBudgetUsd, suma.Budzet);
+    }
+
+    [Fact]
+    public void Katalog_z_wersjami_ale_bez_project_json_jest_LICZONY_a_nie_przemilczany()
+    {
+        // W devie to smiec po atrapie (pisze snapshoty do tego samego korzenia).
+        // W produkcji to czyjas strona lezaca na dysku bez metadanych — czyli
+        // dokladnie ta rzecz, ktorej panel nie ma prawa przemilczec. Nie jest to
+        // teoria: w `src/Generator.Web/projekty` leza dzis dwa takie katalogi.
+        Projekt();
+        Directory.CreateDirectory(Path.Combine(_root, "osierocony", "versions"));
+
+        var dane = Dane();
+        var wiersze = dane.Wczytaj();
+
+        Assert.Single(wiersze);
+        Assert.Equal(1, dane.Podsumuj(wiersze).ObceKatalogi);
+    }
+
+    [Fact]
+    public void Pusty_katalog_nie_jest_niczym_i_nie_zaklóca_licznika()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, "pusty"));
+
+        var dane = Dane();
+        Assert.Equal(0, dane.Podsumuj(dane.Wczytaj()).ObceKatalogi);
     }
 
     public void Dispose()
@@ -128,4 +158,47 @@ public class PanelDaneTests : IDisposable
         if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
         GC.SuppressFinalize(this);
     }
+}
+
+/// <summary>
+/// Kolumna kosztow ma trzy stany, nie dwa — bo „0,00 USD" znaczy dzis co innego na
+/// swiezym projekcie, a co innego na takim, ktory ma juz wersje. Te testy sa osobno,
+/// zeby bylo widac, ze to rozroznienie jest wymaganiem, a nie szczegolem widoku.
+/// </summary>
+public class StanKosztuTests
+{
+    private static WierszPanelu Wiersz(decimal wydano, int wersji, string? blad = null) =>
+        new("id", "active", "", 0, 15, wydano, 8m, wersji, wersji, DateTime.Now, blad);
+
+    [Fact]
+    public void Swiezy_projekt_jeszcze_nic_nie_kosztowal_i_to_jest_prawda_a_nie_luka()
+        => Assert.Equal(StanKosztu.JeszczeNic, Wiersz(wydano: 0m, wersji: 0).Koszt);
+
+    [Fact]
+    public void Wersje_bez_kosztu_to_brak_pomiaru()
+        => Assert.Equal(StanKosztu.NieZmierzony, Wiersz(wydano: 0m, wersji: 2).Koszt);
+
+    [Fact]
+    public void Koszt_wiekszy_od_zera_jest_zmierzony()
+        => Assert.Equal(StanKosztu.Zmierzony, Wiersz(wydano: 0.01m, wersji: 1).Koszt);
+
+    [Fact]
+    public void O_projekcie_ktorego_nie_da_sie_odczytac_nie_mowimy_nic()
+        => Assert.Equal(StanKosztu.Nieznany, Wiersz(wydano: 0m, wersji: 0, blad: "uszkodzony").Koszt);
+}
+
+public class OdmianaTests
+{
+    [Theory]
+    [InlineData(1, "projekt")]
+    [InlineData(2, "projekty")]
+    [InlineData(4, "projekty")]
+    [InlineData(5, "projektów")]
+    [InlineData(11, "projektów")]  // nie „projekt", mimo koncowki 1
+    [InlineData(12, "projektów")]  // nie „projekty", mimo koncowki 2
+    [InlineData(22, "projekty")]
+    [InlineData(25, "projektów")]
+    [InlineData(0, "projektów")]
+    public void Liczebnik_odmienia_rzeczownik(int n, string oczekiwane)
+        => Assert.Equal(oczekiwane, Odmiana.Projektow(n));
 }
