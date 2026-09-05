@@ -1369,7 +1369,13 @@ W `GenerationService`:
         var instruction = buildInstruction(meta);
 ```
 
-(`PreviousAnchors(meta)` przenosi się do lambdy w `RunRoundAsync` — rdzeń go nie liczy.)
+**Sprostowanie do tego kroku (wyszło przy wykonaniu):** `previousAnchors` zostaje
+w rdzeniu, bo jest tam używane jeszcze dwa razy — w bramce miękkiej
+(`AnchorExtractor.Orphaned`). Usunięcie go stamtąd nie kompiluje się. Podmieniasz
+wyłącznie linię budującą `instruction`. Skutek uboczny: dla `RunRoundAsync` snapshot
+rodzica jest odczytywany dwa razy (raz w lambdzie, raz w rdzeniu) — odczyt jest
+idempotentny, więc zero różnicy w zachowaniu. Wpisz to uzasadnienie w kod, żeby ktoś
+„porządkujący" nie usunął tej linii.
 
 3. Zamień `WithRoundConsumed` na warunkowe:
 
@@ -1437,11 +1443,18 @@ szkice, nie wersje. Mają własną, krótszą ścieżkę:
 
         var outcome = await runner.RunAsync(new ClaudeRunRequest(
             ProposalsDir, PromptBuilder.BuildProposals(meta.Description),
-            SessionId: Guid.NewGuid().ToString(), IsFirstRun: true), ct);
+            SessionId: Guid.NewGuid().ToString(), IsFirstRun: true,
+            SystemAppendix: ClaudeRunner.ProposalsAppendix), ct);
 
         var gate = RunGate.Evaluate(outcome);
         var spent = gate.Parsed?.TotalCostUsd ?? 0m;
-        projects.Save(ProjectStore.WithSpend(meta, spent));
+
+        // Freeze, nie goly WithSpend: kontrakt 4.1 mowi, ze projekt zatrzymuje
+        // PIERWSZY wyczerpany licznik. Propozycje to realny wydatek.
+        // Nie ma tu za to `finally` ratujacego koszt przy anulowaniu (jak w rundzie):
+        // runda kumuluje wydatek przez kilka przebiegow i ma co ratowac, a propozycje
+        // to JEDNO wywolanie — anulowane nie zwraca JSON-a, wiec kosztu nie znamy.
+        projects.Save(Freeze(ProjectStore.WithSpend(meta, spent)));
 
         if (gate.Verdict != GateVerdict.Ok)
         {
@@ -1488,6 +1501,59 @@ szkice, nie wersje. Mają własną, krótszą ścieżkę:
 ```csharp
     /// Katalog projektu. Potrzebny silnikowi na katalogi obok work/ (propozycje).
     public string Dir => projectDir;
+```
+
+- [ ] **Krok 5b: Rozdziel dopisek do promptu systemowego**
+
+`ClaudeRunner.SystemPromptAppendix` jest zaszyty na stałe i jedzie z **każdym**
+wywołaniem. Dla propozycji mówi modelowi dokładnie to, czego prompt propozycji
+zabrania: „jeden plik index.html" (a mają być trzy szkice) i „zachowuj data-cmt-id"
+(a szkic nie jest wersją, więc kotwic nie ma). Testy tego nie widzą, bo `ScriptedRunner`
+omija `ClaudeRunner` — wyszłoby dopiero przy prawdziwym `claude -p`.
+
+`ClaudeRunRequest` dostaje ostatni parametr:
+
+```csharp
+public record ClaudeRunRequest(
+    string WorkspaceDir,
+    string Instruction,
+    string? SessionId,
+    bool IsFirstRun,
+    string? SystemAppendix = null);
+```
+
+W `ClaudeRunner` dwa dopiski zamiast jednego, oba `public const` (test musi móc się
+do nich odwołać po nazwie, nie przez powtórzenie literału):
+
+```csharp
+    /// Dopisek dla generowania STRONY (wersja pierwsza i kazda runda uwag).
+    public const string PageAppendix =
+        "Generujesz prosta strone www: jeden plik index.html i jeden style.css, bez frameworkow. " +
+        "Zachowuj atrybuty data-cmt-id na blokach tresci.";
+
+    /// Dopisek dla PROPOZYCJI. Osobny, bo PageAppendix zada dokladnie tego, czego
+    /// propozycje zabraniaja.
+    public const string ProposalsAppendix =
+        "Generujesz TRZY szkice kierunku, kazdy jako jeden samodzielny plik HTML " +
+        "ze stylami w <style>. Bez frameworkow. Nie dodawaj atrybutow data-cmt-id.";
+```
+
+i w `BuildArguments`: `"--append-system-prompt", r.SystemAppendix ?? PageAppendix,`
+
+Test idzie do `ClaudeRunnerTests` — to jedyna warstwa, na której taki błąd da się złapać:
+
+```csharp
+    [Fact]
+    public void Dopiski_nie_moga_sobie_zaprzeczac_w_dwoch_konkretnych_punktach()
+    {
+        // Nie "teksty sa rozne" (przeszloby po dowolnej literowce), tylko dwie
+        // sprzecznosci, ktore realnie wystapily: liczba plikow i data-cmt-id.
+        Assert.Contains("index.html", ClaudeRunner.PageAppendix);
+        Assert.DoesNotContain("index.html", ClaudeRunner.ProposalsAppendix);
+
+        Assert.Contains("Zachowuj atrybuty data-cmt-id", ClaudeRunner.PageAppendix);
+        Assert.Contains("Nie dodawaj atrybutow data-cmt-id", ClaudeRunner.ProposalsAppendix);
+    }
 ```
 
 - [ ] **Krok 6: Szew `IRoundRunner`**

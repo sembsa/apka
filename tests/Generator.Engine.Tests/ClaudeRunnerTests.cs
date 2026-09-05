@@ -101,6 +101,38 @@ public class ClaudeRunnerTests : IDisposable
         Assert.Contains("--bare", prod);
     }
 
+    [Fact]
+    public void Propozycje_dostaja_wlasny_dopisek_systemowy_a_nie_dopisek_strony()
+    {
+        // Ta warstwa jest jedynym miejscem, gdzie taki blad da sie zlapac testem:
+        // GenerationServiceTests uzywaja ScriptedRunner, ktory OMIJA ClaudeRunner,
+        // wiec sprzecznosc dopiskow byla widoczna dopiero przy prawdziwym claude -p.
+        var strona = ClaudeRunner.BuildArguments(
+            new ClaudeRunRequest("/w", "runda", null, IsFirstRun: true), useBare: false);
+        var propozycje = ClaudeRunner.BuildArguments(
+            new ClaudeRunRequest("/w", "propozycje", null, IsFirstRun: true,
+                SystemAppendix: ClaudeRunner.ProposalsAppendix), useBare: false);
+
+        // Domyslnie (null) leci dopisek strony — tak jak przed ta zmiana.
+        Assert.Contains(ClaudeRunner.PageAppendix, strona);
+        Assert.DoesNotContain(ClaudeRunner.ProposalsAppendix, strona);
+
+        Assert.Contains(ClaudeRunner.ProposalsAppendix, propozycje);
+        Assert.DoesNotContain(ClaudeRunner.PageAppendix, propozycje);
+    }
+
+    [Fact]
+    public void Dopiski_nie_moga_sobie_zaprzeczac_w_dwoch_konkretnych_punktach()
+    {
+        // Nie "teksty sa rozne" (to przeszloby po dowolnej literowce), tylko dwie
+        // sprzecznosci, ktore realnie wystapily: liczba plikow i data-cmt-id.
+        Assert.Contains("index.html", ClaudeRunner.PageAppendix);
+        Assert.DoesNotContain("index.html", ClaudeRunner.ProposalsAppendix);
+
+        Assert.Contains("Zachowuj atrybuty data-cmt-id", ClaudeRunner.PageAppendix);
+        Assert.Contains("Nie dodawaj atrybutow data-cmt-id", ClaudeRunner.ProposalsAppendix);
+    }
+
     // --- Fix round 2/5: end-to-end na tym, co FAKTYCZNIE dostaje proces ---
     //
     // Powyzszy "Argumenty_zawieraja_wszystkie_flagi_sandboxa" sprawdza tylko liste

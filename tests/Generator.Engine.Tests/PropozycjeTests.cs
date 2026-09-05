@@ -1,3 +1,4 @@
+using Generator.Engine.ClaudeCli;
 using Generator.Engine.Jobs;
 using Generator.Engine.Model;
 using Generator.Engine.Storage;
@@ -71,6 +72,43 @@ public class PropozycjeTests : IDisposable
         var persisted = store.Load();
         Assert.Equal(0, persisted.RoundsUsed);
         Assert.Equal(0.05m, persisted.SpentUsd);
+    }
+
+    [Fact]
+    public async Task Propozycje_przekraczajace_budzet_zamrazaja_projekt()
+    {
+        // Kontrakt 4.1: projekt zatrzymuje PIERWSZY wyczerpany licznik. Propozycje
+        // to realny wydatek, wiec musza umiec przewazyc budzet tak samo jak runda.
+        // Bez Freeze projekt przekracza budzet po cichu i zamraza sie dopiero
+        // runde pozniej — czyli po wydaniu kolejnych pieniedzy.
+        var store = new ProjectStore(_project);
+        store.Save(store.Create(SourceKind.Idea) with
+        {
+            Description = "kwiaciarnia",
+            BudgetUsd = 0.04m,          // mniej niz kosztuja propozycje ponizej
+        });
+
+        var runner = new ScriptedRunner((Json("s-p", 0.05m), WriteSzkice()));
+        var outcome = await new GenerationService(runner, store, new VersionStore(_project))
+            .RunProposalsAsync(store.Load());
+
+        Assert.True(outcome.Succeeded);          // szkice powstaly i klient je dostaje
+        var persisted = store.Load();
+        Assert.Equal(0.05m, persisted.SpentUsd);
+        Assert.Equal(ProjectStatus.Frozen, persisted.Status);
+    }
+
+    [Fact]
+    public async Task Propozycje_dostaja_dopisek_systemowy_propozycji()
+    {
+        var store = new ProjectStore(_project);
+        store.Save(store.Create(SourceKind.Idea) with { Description = "kwiaciarnia" });
+
+        var runner = new ScriptedRunner((Json("s-p", 0.05m), WriteSzkice()));
+        await new GenerationService(runner, store, new VersionStore(_project))
+            .RunProposalsAsync(store.Load());
+
+        Assert.Equal(ClaudeRunner.ProposalsAppendix, runner.Requests[0].SystemAppendix);
     }
 
     [Fact]

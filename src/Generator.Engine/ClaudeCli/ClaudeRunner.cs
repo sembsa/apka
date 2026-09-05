@@ -15,9 +15,19 @@ public class ClaudeRunner(string executable, IReadOnlyList<string>? prefixArgs =
     public const string Model = "claude-opus-5";
     public const string AllowedTools = "Read,Write,Edit,Glob,Grep";
 
-    private static readonly string SystemPromptAppendix =
+    /// Dopisek dla generowania STRONY (wersja pierwsza i kazda runda uwag).
+    public const string PageAppendix =
         "Generujesz prosta strone www: jeden plik index.html i jeden style.css, bez frameworkow. " +
         "Zachowuj atrybuty data-cmt-id na blokach tresci.";
+
+    /// Dopisek dla PROPOZYCJI. Osobny, bo PageAppendix zada dokladnie tego, czego
+    /// propozycje zabraniaja: jednego index.html (a maja byc trzy szkice) i
+    /// zachowywania data-cmt-id (szkic nie jest wersja, wiec kotwic nie ma).
+    /// Zaszyty na stale dopisek strony jechal wczesniej takze z propozycjami —
+    /// model dostawal w jednym wywolaniu dwa wykluczajace sie polecenia.
+    public const string ProposalsAppendix =
+        "Generujesz TRZY szkice kierunku, kazdy jako jeden samodzielny plik HTML " +
+        "ze stylami w <style>. Bez frameworkow. Nie dodawaj atrybutow data-cmt-id.";
 
     public static IReadOnlyList<string> BuildArguments(ClaudeRunRequest r, bool useBare)
     {
@@ -31,7 +41,7 @@ public class ClaudeRunner(string executable, IReadOnlyList<string>? prefixArgs =
             "--permission-mode", "acceptEdits",
             "--permission-prompts", "none",
             "--model", Model,
-            "--append-system-prompt", SystemPromptAppendix,
+            "--append-system-prompt", r.SystemAppendix ?? PageAppendix,
         };
 
         if (useBare) args.Add("--bare");

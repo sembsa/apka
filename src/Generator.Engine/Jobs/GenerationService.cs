@@ -334,11 +334,22 @@ public partial class GenerationService(IClaudeRunner runner, ProjectStore projec
 
         var outcome = await runner.RunAsync(new ClaudeRunRequest(
             ProposalsDir, PromptBuilder.BuildProposals(meta.Description),
-            SessionId: Guid.NewGuid().ToString(), IsFirstRun: true), ct);
+            SessionId: Guid.NewGuid().ToString(), IsFirstRun: true,
+            SystemAppendix: ClaudeRunner.ProposalsAppendix), ct);
 
         var gate = RunGate.Evaluate(outcome);
         var spent = gate.Parsed?.TotalCostUsd ?? 0m;
-        projects.Save(ProjectStore.WithSpend(meta, spent));
+
+        // Freeze, nie goly WithSpend: kontrakt 4.1 mowi, ze projekt zatrzymuje
+        // PIERWSZY wyczerpany licznik. Propozycje to realny wydatek, wiec musza
+        // umiec przewazyc budzet tak samo jak runda — inaczej projekt z niskim
+        // budzetem przekracza go po cichu i zamraza sie dopiero runde pozniej.
+        //
+        // Nie ma tu za to `finally` ratujacego koszt przy anulowaniu (jak w rundzie):
+        // runda kumuluje wydatek przez kilka przebiegow i przy anulowaniu ma co
+        // uratowac, a propozycje to JEDNO wywolanie — anulowane, nie zwraca JSON-a,
+        // wiec kosztu i tak nie znamy. Zapisanie zera nie byloby ratunkiem.
+        projects.Save(Freeze(ProjectStore.WithSpend(meta, spent)));
 
         if (gate.Verdict != GateVerdict.Ok)
         {
