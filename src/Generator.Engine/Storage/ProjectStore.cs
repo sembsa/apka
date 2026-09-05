@@ -19,6 +19,9 @@ public class ProjectStore(string projectDir)
 
     private string MetaPath => Path.Combine(projectDir, "project.json");
 
+    /// Katalog projektu. Potrzebny silnikowi na katalogi obok work/ (propozycje).
+    public string Dir => projectDir;
+
     public ProjectMeta Create(SourceKind source)
     {
         Directory.CreateDirectory(projectDir);

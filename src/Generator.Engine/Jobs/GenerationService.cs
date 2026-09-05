@@ -22,7 +22,15 @@ public record GenerationOutcome(
     IReadOnlyList<CommentResult> CommentResults,
     decimal SpentUsd);
 
+/// Szkic kierunku z §3 planu produktu. Name pochodzi z <title> szkicu (ruling 4),
+/// Html to caly jednoplikowy szkic — klient wybiera obrazkiem, nie opisem.
+public record Proposal(string Id, string Name, string Html);
+
+public record ProposalsOutcome(bool Succeeded, IReadOnlyList<Proposal> Proposals,
+    JobFailure? Failure, decimal SpentUsd);
+
 public partial class GenerationService(IClaudeRunner runner, ProjectStore projects, VersionStore versions)
+    : IRoundRunner
 {
     /// Kontrakt 4.3: jedna automatyczna powtorka, potem halted.
     public const int RunRetryLimit = 1;
@@ -41,10 +49,12 @@ public partial class GenerationService(IClaudeRunner runner, ProjectStore projec
     /// Parametr zostaje dla zgodnosci sygnatury (i bo caller zwykle i tak ma "meta"
     /// pod reka po Load/Create) — Twoj wybor byl mozliwy takze przez usuniecie go,
     /// patrz raport.
-    public async Task<GenerationOutcome> RunRoundAsync(
+    private async Task<GenerationOutcome> RunAsync(
         ProjectMeta meta,
         IReadOnlyList<Comment> comments,
-        CancellationToken ct = default)
+        Func<ProjectMeta, string> buildInstruction,
+        bool consumesRound,
+        CancellationToken ct)
     {
         meta = projects.Load();
 
@@ -63,8 +73,13 @@ public partial class GenerationService(IClaudeRunner runner, ProjectStore projec
                 [], 0m);
         }
 
+        // previousAnchors ZOSTAJE w rdzeniu, mimo ze instrukcje buduje juz lambda:
+        // bramka miekka (petla naprawy kotwic, nizej) porownuje z nimi stan katalogu
+        // po przebiegu, wiec bez tej linii nie skompilowalaby sie. Dla RunRoundAsync
+        // liczymy je dwa razy (raz w lambdzie, raz tutaj) — to idempotentny odczyt
+        // snapshotu rodzica, ktory w trakcie przebiegu sie nie zmienia.
         var previousAnchors = PreviousAnchors(meta);
-        var instruction = PromptBuilder.BuildRound(comments, previousAnchors);
+        var instruction = buildInstruction(meta);
 
         // Sesja jest jedna na projekt, ale TYLKO dopoki historia jest liniowa.
         // Po powrocie (CurrentVersion != najnowsza) --resume podalby modelowi
@@ -250,7 +265,11 @@ public partial class GenerationService(IClaudeRunner runner, ProjectStore projec
             var version = versions.Commit(number, sessionId, spent, orphaned,
                 basedOn: meta.Current?.Number, changedAnchors: changed);
 
-            var updated = ProjectStore.WithRoundConsumed(ProjectStore.WithSpend(meta, spent)) with
+            // Ruling 7 + kontrakt 4.1: rundy klienta zuzywa WYLACZNIE runda
+            // komentarzy. Wersja pierwsza i propozycje kosztuja budzet, ale nie
+            // sa poprawkami, wiec nie zabieraja klientowi zadnej z 15.
+            var zBudzetem = ProjectStore.WithSpend(meta, spent);
+            var updated = (consumesRound ? ProjectStore.WithRoundConsumed(zBudzetem) : zBudzetem) with
             {
                 Status = ProjectStatus.Active,
                 Versions = [.. meta.Versions, version],
@@ -273,6 +292,92 @@ public partial class GenerationService(IClaudeRunner runner, ProjectStore projec
                 try { projects.Save(Freeze(ProjectStore.WithSpend(meta, spent))); } catch (Exception) { }
         }
     }
+
+    public Task<GenerationOutcome> RunRoundAsync(
+        ProjectMeta meta, IReadOnlyList<Comment> comments, CancellationToken ct = default) =>
+        RunAsync(meta, comments,
+            m => PromptBuilder.BuildRound(comments, PreviousAnchors(m)),
+            consumesRound: true, ct);
+
+    /// Wersja 1 z wybranego szkicu. Zamiast uwag idzie brief; cala reszta —
+    /// piec warunkow z sekcji 2, bramka twarda, naprawa kotwic, snapshot, Freeze —
+    /// jest ta sama sciezka co runda i celowo nie jest tu duplikowana.
+    public Task<GenerationOutcome> RunFirstVersionAsync(
+        ProjectMeta meta, CancellationToken ct = default) =>
+        RunAsync(meta, [], m => PromptBuilder.BuildBrief(m.Description, ReadChosenSketch(m)),
+            consumesRound: false, ct);
+
+    private string? ReadChosenSketch(ProjectMeta meta)
+    {
+        if (meta.ChosenProposal is null) return null;
+        var plik = Path.Combine(ProposalsDir, $"{meta.ChosenProposal}.html");
+        return File.Exists(plik) ? File.ReadAllText(plik) : null;
+    }
+
+    /// Katalog szkicow, OBOK work/ — trzy konkurencyjne pliki HTML w katalogu
+    /// roboczym zepsulyby wersje pierwsza.
+    private string ProposalsDir => Path.Combine(projects.Dir, "proposals");
+
+    public async Task<ProposalsOutcome> RunProposalsAsync(ProjectMeta meta, CancellationToken ct = default)
+    {
+        meta = projects.Load();
+        if (meta.Status == ProjectStatus.Frozen)
+        {
+            return new ProposalsOutcome(false, [],
+                new JobFailure(FailureHandling.Halted,
+                    "projekt jest zamrozony (Frozen) — propozycje odrzucone bez wywolania modelu", 0),
+                0m);
+        }
+
+        if (Directory.Exists(ProposalsDir)) Directory.Delete(ProposalsDir, recursive: true);
+        Directory.CreateDirectory(ProposalsDir);
+
+        var outcome = await runner.RunAsync(new ClaudeRunRequest(
+            ProposalsDir, PromptBuilder.BuildProposals(meta.Description),
+            SessionId: Guid.NewGuid().ToString(), IsFirstRun: true), ct);
+
+        var gate = RunGate.Evaluate(outcome);
+        var spent = gate.Parsed?.TotalCostUsd ?? 0m;
+        projects.Save(ProjectStore.WithSpend(meta, spent));
+
+        if (gate.Verdict != GateVerdict.Ok)
+        {
+            // Bez powtorki (ruling 3): RunGate juz rozstrzygnal, czy to sytuacja
+            // deterministyczna, a kolejka i tak nie ponawia.
+            return new ProposalsOutcome(false, [],
+                new JobFailure(FailureHandling.Halted, gate.Cause, 1), spent);
+        }
+
+        var propozycje = await CzytajSzkice();
+        if (propozycje.Count < 3)
+        {
+            return new ProposalsOutcome(false, [],
+                new JobFailure(FailureHandling.Halted,
+                    $"model zapisal {propozycje.Count} z 3 szkicow", 1), spent);
+        }
+
+        return new ProposalsOutcome(true, propozycje, null, spent);
+    }
+
+    /// Nazwa kierunku to <title> szkicu. Plik bez <title> dostaje nazwe zastepcza —
+    /// klient ma wybrac obrazkiem, wiec brak podpisu nie moze wywalac calej sciezki.
+    private async Task<IReadOnlyList<Proposal>> CzytajSzkice()
+    {
+        var wynik = new List<Proposal>();
+        foreach (var id in new[] { "a", "b", "c" })
+        {
+            var plik = Path.Combine(ProposalsDir, $"{id}.html");
+            if (!File.Exists(plik)) continue;
+
+            var html = await File.ReadAllTextAsync(plik);
+            var m = TitleRegex().Match(html);
+            wynik.Add(new Proposal(id, m.Success ? m.Groups[1].Value.Trim() : $"Kierunek {id.ToUpperInvariant()}", html));
+        }
+        return wynik;
+    }
+
+    [GeneratedRegex(@"<title[^>]*>(.*?)</title>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
+    private static partial Regex TitleRegex();
 
     /// Kontrakt 4.1: projekt zatrzymuje PIERWSZY wyczerpany licznik (rundy albo budzet).
     private static ProjectMeta Freeze(ProjectMeta m) =>
