@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using Generator.Engine.ClaudeCli;
 using Generator.Engine.Gates;
+using Generator.Engine.IO;
 using Generator.Engine.Model;
 using Generator.Engine.Prompts;
 using Generator.Engine.Storage;
@@ -32,11 +33,36 @@ public partial class GenerationService(IClaudeRunner runner, ProjectStore projec
     [GeneratedRegex(@"^RAPORT\s+(\S+)\s+(applied|rejected)\s+(.*)$", RegexOptions.Multiline)]
     private static partial Regex ReportRegex();
 
+    /// UWAGA (raport, punkt 8): parametr "meta" jest ignorowany poza sygnatura —
+    /// pierwsza linia metody nadpisuje go swiezym odczytem z dysku. Kolejka moze
+    /// trzymac obiekt "meta" przez cala dlugosc przebiegu (realnie kilka minut);
+    /// gdyby ktos w tym czasie zapisal projekt (inny watek, recznie), praca na
+    /// przekazanej-a-nieswiezej kopii cicho zgubilaby wersje albo cofnela SpentUsd.
+    /// Parametr zostaje dla zgodnosci sygnatury (i bo caller zwykle i tak ma "meta"
+    /// pod reka po Load/Create) — Twoj wybor byl mozliwy takze przez usuniecie go,
+    /// patrz raport.
     public async Task<GenerationOutcome> RunRoundAsync(
         ProjectMeta meta,
         IReadOnlyList<Comment> comments,
         CancellationToken ct = default)
     {
+        meta = projects.Load();
+
+        // Punkt 7 raportu: Freeze() dziala dopiero PO przebiegu, wiec bez tej
+        // straznicy na WEJSCIU runda na projekcie Frozen uruchomilaby claude -p
+        // (wydajac budzet POZA limitem), a udana sciezka ustawilaby na koncu
+        // Status = Active — czyli PO CICHU odmrazalaby projekt. Odrzucamy przed
+        // dotknieciem WorkDir i przed jakimkolwiek wywolaniem modelu; zero kosztu.
+        if (meta.Status == ProjectStatus.Frozen)
+        {
+            return new GenerationOutcome(false, null,
+                new JobFailure(
+                    FailureHandling.Halted,
+                    "projekt jest zamrozony (Frozen) — runda odrzucona bez wywolania modelu",
+                    Attempts: 0),
+                [], 0m);
+        }
+
         var previousAnchors = PreviousAnchors(meta);
         var instruction = PromptBuilder.BuildRound(comments, previousAnchors);
 
@@ -52,132 +78,192 @@ public partial class GenerationService(IClaudeRunner runner, ProjectStore projec
         var attempts = 0;
         ClaudeResult? lastParsed = null;
 
-        // --- przebieg + bramka 5.1 + bramka twarda 5.2, z jedna powtorka ---
-        // Kolejnosc: bramka wykonania (RunGate) NAJPIERW — nie ma sensu sprawdzac
-        // renderowalnosci pliku po przebiegu, ktory sam w sobie sie nie powiodl.
-        while (true)
+        // Punkt 1 raportu (KRYTYCZNE): pieniadze wydane przed anulowaniem nie moga
+        // zniknac. IClaudeRunner.RunAsync przy anulowaniu rzuca OperationCanceledException
+        // zamiast wracac normalnie — bez tego "finally" wyjatek lecialby przez cala
+        // reszte metody i ANI Failed(), ANI sciezka sukcesu nigdy by sie nie wykonaly,
+        // wiec zaden dotychczasowy zapis "spent" nigdy by nie nastapil.
+        // "persisted" pilnuje, zeby SUMA wydanych dotad pieniedzy trafila na dysk,
+        // niezaleznie od tego, w ktorym miejscu ponizej metoda zostanie przerwana.
+        // OperationCanceledException NIE jest tu lapany — ma lecieć dalej nietkniety,
+        // zgodnie z kontraktem CancellationToken w .NET (patrz ClaudeRunner.RunAsync).
+        var persisted = false;
+        try
         {
-            attempts++;
-            var outcome = await runner.RunAsync(
-                new ClaudeRunRequest(versions.WorkDir, instruction, sessionId, isFirstRun), ct);
-
-            var gate = RunGate.Evaluate(outcome);
-            // Kontrakt: Parsed niesie TotalCostUsd takze przy werdykcie negatywnym —
-            // pieniadze zostaly wydane niezaleznie od tego, czy przebieg sie udal.
-            spent += gate.Parsed?.TotalCostUsd ?? 0m;
-            lastParsed = gate.Parsed ?? lastParsed;
-
-            if (gate.Verdict == GateVerdict.Halt)
-                return Failed(meta, FailureHandling.Halted, gate.Cause, attempts, spent);
-
-            if (gate.Verdict == GateVerdict.Retry)
+            // --- przebieg + bramka 5.1 + bramka twarda 5.2, z jedna powtorka ---
+            // Kolejnosc: bramka wykonania (RunGate) NAJPIERW — nie ma sensu sprawdzac
+            // renderowalnosci pliku po przebiegu, ktory sam w sobie sie nie powiodl.
+            while (true)
             {
-                if (attempts > RunRetryLimit)
-                    return Failed(meta, FailureHandling.Halted, gate.Cause, attempts, spent);
+                attempts++;
 
-                // Sesja istnieje dopiero, gdy CLI zdazylo zwrocic sparsowalny JSON
-                // (gate.Parsed niepuste) — to na tym opiera sie caly --resume.
-                // Przy pustym/niesparsowalnym stdout (np. przebieg padl zanim
-                // model cokolwiek zwrocil) sesja mogla nigdy nie powstac; empirycznie
-                // sprawdzone na prawdziwym `claude -p --resume <nieistniejacy-id>`:
-                // exit 1, pusty stdout, stderr "No conversation found with session
-                // ID: ...". Bezwarunkowe przestawienie na --resume zamienialoby
-                // KAZDA taka usterke w gwarantowany Halted (powtorka od razu pada
-                // na zlym --resume), mimo ze powtorka z --session-id mialaby szanse.
-                if (gate.Parsed is not null)
-                    isFirstRun = false;
-                continue;
-            }
+                // Punkt 6 raportu: sygnatura WorkDir PRZED tym konkretnym przebiegiem —
+                // porownywana z sygnatura PO, zeby odroznic "ten przebieg cokolwiek
+                // zrobil" od "katalog akurat sie renderuje, bo tak zostawila go
+                // POPRZEDNIA runda".
+                var before = DirectorySignature(versions.WorkDir);
 
-            var render = RenderValidator.Check(versions.WorkDir);
-            if (render.Ok) break;
+                var outcome = await runner.RunAsync(
+                    new ClaudeRunRequest(versions.WorkDir, instruction, sessionId, isFirstRun), ct);
 
-            var cause = $"wersja sie nie renderuje: {string.Join("; ", render.Problems)}";
-            if (attempts > RunRetryLimit)
-                return Failed(meta, FailureHandling.Halted, cause, attempts, spent);
+                var gate = RunGate.Evaluate(outcome);
+                // Kontrakt: Parsed niesie TotalCostUsd takze przy werdykcie negatywnym —
+                // pieniadze zostaly wydane niezaleznie od tego, czy przebieg sie udal.
+                spent += gate.Parsed?.TotalCostUsd ?? 0m;
+                lastParsed = gate.Parsed ?? lastParsed;
 
-            isFirstRun = false;
-            instruction = $"{instruction}\n\nPOPRAW: {cause}";
-        }
-
-        // --- bramka miekka: kotwice. Po wyczerpaniu prob wersja IDZIE do klienta,
-        // ale KAZDA proba naprawy dotyka realny WorkDir na dysku (efekt runnera
-        // pisze pliki bezposrednio) — proba, ktora zepsuje renderowalnosc, nie
-        // moze zostac wpisana do snapshotu (bramka twarda ma pierwszenstwo nad
-        // kazda wersja, nie tylko nad pierwszym przebiegiem). Dlatego trzymamy
-        // kopie zapasowa ostatniego znanego DOBREGO stanu i przywracamy ja, gdy
-        // proba naprawy cokolwiek popsuje.
-        var current = AnchorExtractor.Extract(versions.WorkDir);
-        var orphaned = AnchorExtractor.Orphaned(previousAnchors, current);
-
-        if (orphaned.Count > 0)
-        {
-            var backupDir = Directory.CreateTempSubdirectory("gen-svc-anchor-backup-").FullName;
-            try
-            {
-                ReplaceDirectory(versions.WorkDir, backupDir);
-
-                var anchorTries = 0;
-                while (orphaned.Count > 0 && anchorTries < AnchorRetryLimit)
+                if (gate.Verdict == GateVerdict.Halt)
                 {
-                    anchorTries++;
-                    var repair = await runner.RunAsync(
-                        new ClaudeRunRequest(versions.WorkDir, PromptBuilder.BuildAnchorRepair(orphaned), sessionId, false),
-                        ct);
+                    var failure = Failed(meta, FailureHandling.Halted, gate.Cause, attempts, spent);
+                    persisted = true;
+                    return failure;
+                }
 
-                    var gate = RunGate.Evaluate(repair);
-                    spent += gate.Parsed?.TotalCostUsd ?? 0m;
-
-                    var repaired = gate.Verdict == GateVerdict.Ok && RenderValidator.Check(versions.WorkDir).Ok;
-                    if (!repaired)
+                if (gate.Verdict == GateVerdict.Retry)
+                {
+                    if (attempts > RunRetryLimit)
                     {
-                        // Nie walczymy dalej — przywracamy ostatni dobry stan (ta
-                        // proba mogla go nadpisac zepsutym HTML-em) i dostarczamy
-                        // z lista osieroconych sprzed tej proby.
-                        ReplaceDirectory(backupDir, versions.WorkDir);
-                        break;
+                        var failure = Failed(meta, FailureHandling.Halted, gate.Cause, attempts, spent);
+                        persisted = true;
+                        return failure;
                     }
 
-                    current = AnchorExtractor.Extract(versions.WorkDir);
-                    orphaned = AnchorExtractor.Orphaned(previousAnchors, current);
-                    ReplaceDirectory(versions.WorkDir, backupDir);   // ten stan tez jest dobry — odswiez kopie
+                    // Sesja istnieje dopiero, gdy CLI zdazylo zwrocic sparsowalny JSON
+                    // (gate.Parsed niepuste) — to na tym opiera sie caly --resume.
+                    // Przy pustym/niesparsowalnym stdout (np. przebieg padl zanim
+                    // model cokolwiek zwrocil) sesja mogla nigdy nie powstac; empirycznie
+                    // sprawdzone na prawdziwym `claude -p --resume <nieistniejacy-id>`:
+                    // exit 1, pusty stdout, stderr "No conversation found with session
+                    // ID: ...". Bezwarunkowe przestawienie na --resume zamienialoby
+                    // KAZDA taka usterke w gwarantowany Halted (powtorka od razu pada
+                    // na zlym --resume), mimo ze powtorka z --session-id mialaby szanse.
+                    if (gate.Parsed is not null)
+                        isFirstRun = false;
+                    continue;
                 }
+
+                var render = RenderValidator.Check(versions.WorkDir);
+                var after = DirectorySignature(versions.WorkDir);
+                var unchanged = before == after;
+
+                if (render.Ok && !unchanged) break;
+
+                // Punkt 6 raportu: warunek 5 z 5.1 sprawdzal renderowalnosc STANU
+                // katalogu, nie tego, czy TEN przebieg cokolwiek zapisal. Od rundy 2
+                // WorkDir juz ma tresc poprzedniej wersji, wiec model, ktory nic nie
+                // zrobil (ale zglosil subtype:success i puste permission_denials),
+                // przechodzilby czysto przez przypadek — klient dostalby wersje N+1
+                // identyczna z N i strate jednej z limitowanych rund. Renderowalnosc
+                // ma pierwszenstwo w komunikacie: to ONA jest prawdziwym powodem, gdy
+                // oba warunki zawioda naraz (zachowuje istniejacy test na komunikat
+                // "wersja sie nie renderuje").
+                var cause = !render.Ok
+                    ? $"wersja sie nie renderuje: {string.Join("; ", render.Problems)}"
+                    : "przebieg zakonczyl sie zglaszanym sukcesem, ale nie zmienil zadnego pliku w katalogu roboczym";
+
+                if (attempts > RunRetryLimit)
+                {
+                    var failure = Failed(meta, FailureHandling.Halted, cause, attempts, spent);
+                    persisted = true;
+                    return failure;
+                }
+
+                isFirstRun = false;
+                instruction = render.Ok
+                    ? $"{instruction}\n\nPOPRAW: katalog roboczy nie zmienil sie mimo zglaszanego sukcesu — wprowadz realna zmiane."
+                    : $"{instruction}\n\nPOPRAW: {cause}";
             }
-            finally
+
+            // --- bramka miekka: kotwice. Po wyczerpaniu prob wersja IDZIE do klienta,
+            // ale KAZDA proba naprawy dotyka realny WorkDir na dysku (efekt runnera
+            // pisze pliki bezposrednio) — proba, ktora zepsuje renderowalnosc, nie
+            // moze zostac wpisana do snapshotu (bramka twarda ma pierwszenstwo nad
+            // kazda wersja, nie tylko nad pierwszym przebiegiem). Dlatego trzymamy
+            // kopie zapasowa ostatniego znanego DOBREGO stanu i przywracamy ja, gdy
+            // proba naprawy cokolwiek popsuje.
+            var current = AnchorExtractor.Extract(versions.WorkDir);
+            var orphaned = AnchorExtractor.Orphaned(previousAnchors, current);
+
+            if (orphaned.Count > 0)
             {
-                // Sprzatanie w finally moze samo rzucic (uchwyt pliku wciaz
-                // otwarty, wyscig z systemem plikow) — dokladnie tak samo jak przy
-                // Process.Kill w ClaudeRunner.cs. Gdyby anulowanie przyszlo w
-                // trakcie petli naprawy kotwic, OperationCanceledException lecialby
-                // przez ten finally; goly Directory.Delete, ktory akurat wtedy
-                // rzuci (bo proba naprawy trzyma otwarty plik / trwa jeszcze zapis),
-                // ZASTAPILBY je swoim wyjatkiem (np. IOException) i wywolujacy
-                // zapisalby to jako zwykla awarie zamiast uszanowac anulowanie.
-                // Ten catch (Exception) jest wiec celowo szeroki: zaden blad ze
-                // sprzatania nie jest wazniejszy od wyjatku, ktory to sprzatanie
-                // przerwalo — NIE zawezaj do konkretnych typow.
+                var backupDir = Directory.CreateTempSubdirectory("gen-svc-anchor-backup-").FullName;
                 try
                 {
-                    Directory.Delete(backupDir, recursive: true);
+                    DirectoryOps.SafeReplace(versions.WorkDir, backupDir);
+
+                    var anchorTries = 0;
+                    while (orphaned.Count > 0 && anchorTries < AnchorRetryLimit)
+                    {
+                        anchorTries++;
+                        var repair = await runner.RunAsync(
+                            new ClaudeRunRequest(versions.WorkDir, PromptBuilder.BuildAnchorRepair(orphaned), sessionId, false),
+                            ct);
+
+                        var gate = RunGate.Evaluate(repair);
+                        spent += gate.Parsed?.TotalCostUsd ?? 0m;
+
+                        var repaired = gate.Verdict == GateVerdict.Ok && RenderValidator.Check(versions.WorkDir).Ok;
+                        if (!repaired)
+                        {
+                            // Nie walczymy dalej — przywracamy ostatni dobry stan (ta
+                            // proba mogla go nadpisac zepsutym HTML-em) i dostarczamy
+                            // z lista osieroconych sprzed tej proby.
+                            DirectoryOps.SafeReplace(backupDir, versions.WorkDir);
+                            break;
+                        }
+
+                        current = AnchorExtractor.Extract(versions.WorkDir);
+                        orphaned = AnchorExtractor.Orphaned(previousAnchors, current);
+                        DirectoryOps.SafeReplace(versions.WorkDir, backupDir);   // ten stan tez jest dobry — odswiez kopie
+                    }
                 }
-                catch (Exception)
+                finally
                 {
+                    // Sprzatanie w finally moze samo rzucic (uchwyt pliku wciaz
+                    // otwarty, wyscig z systemem plikow) — dokladnie tak samo jak przy
+                    // Process.Kill w ClaudeRunner.cs. Gdyby anulowanie przyszlo w
+                    // trakcie petli naprawy kotwic, OperationCanceledException lecialby
+                    // przez ten finally; goly Directory.Delete, ktory akurat wtedy
+                    // rzuci (bo proba naprawy trzyma otwarty plik / trwa jeszcze zapis),
+                    // ZASTAPILBY je swoim wyjatkiem (np. IOException) i wywolujacy
+                    // zapisalby to jako zwykla awarie zamiast uszanowac anulowanie.
+                    // Ten catch (Exception) jest wiec celowo szeroki: zaden blad ze
+                    // sprzatania nie jest wazniejszy od wyjatku, ktory to sprzatanie
+                    // przerwalo — NIE zawezaj do konkretnych typow.
+                    try
+                    {
+                        Directory.Delete(backupDir, recursive: true);
+                    }
+                    catch (Exception)
+                    {
+                    }
                 }
             }
+
+            var number = meta.Versions.Count + 1;
+            var version = versions.Commit(number, sessionId, spent, orphaned);
+
+            var updated = ProjectStore.WithRoundConsumed(ProjectStore.WithSpend(meta, spent)) with
+            {
+                Status = ProjectStatus.Active,
+                Versions = [.. meta.Versions, version],
+            };
+            // Punkt 1 raportu, druga droga tej samej luki: versions.Commit() (wyzej)
+            // jest PRZED tym Save. Jesli Save rzuci, snapshot juz lezy na dysku, ale
+            // bez tego "finally" runda i jej koszt przepadalyby razem z wyjatkiem —
+            // "persisted" ponizej zostaje false, wiec finally i tak zapisze chociaz
+            // sam koszt (bez wersji, bo "updated" nigdy nie trafil do dysku).
+            projects.Save(Freeze(updated));
+            persisted = true;
+
+            var results = ParseReport(lastParsed?.ResultText ?? string.Empty, comments);
+            return new GenerationOutcome(true, version, null, results, spent);
         }
-
-        var number = meta.Versions.Count + 1;
-        var version = versions.Commit(number, sessionId, spent, orphaned);
-
-        var updated = ProjectStore.WithRoundConsumed(ProjectStore.WithSpend(meta, spent)) with
+        finally
         {
-            Status = ProjectStatus.Active,
-            Versions = [.. meta.Versions, version],
-        };
-        projects.Save(Freeze(updated));
-
-        var results = ParseReport(lastParsed?.ResultText ?? string.Empty, comments);
-        return new GenerationOutcome(true, version, null, results, spent);
+            if (!persisted)
+                try { projects.Save(Freeze(ProjectStore.WithSpend(meta, spent))); } catch (Exception) { }
+        }
     }
 
     /// Kontrakt 4.1: projekt zatrzymuje PIERWSZY wyczerpany licznik (rundy albo budzet).
@@ -218,7 +304,40 @@ public partial class GenerationService(IClaudeRunner runner, ProjectStore projec
     private GenerationOutcome Failed(ProjectMeta meta, FailureHandling handling, string cause, int attempts, decimal spent)
     {
         projects.Save(Freeze(ProjectStore.WithSpend(meta, spent)));
+        RestoreWorkDirAfterFailure(meta);
         return new GenerationOutcome(false, null, new JobFailure(handling, cause, attempts), [], spent);
+    }
+
+    /// Punkt 4 raportu: petla naprawy kotwic ma kopie zapasowa, petla bramki
+    /// TWARDEJ nie miala zadnej — po nieudanej rundzie WorkDir zostawal w stanie,
+    /// w jakim akurat przerwal go ostatni przebieg (np. urwany HTML), a NASTEPNA
+    /// runda szla --resume po zepsutej stronie. Asymetria byla odwrotna do ryzyka:
+    /// chroniona byla rzadka sciezka (naprawa kotwic), niechroniona rutynowa
+    /// (kazda nieudana runda). Przywracamy do ostatniej udanej wersji — a gdy
+    /// zadna jeszcze nie istnieje, po prostu czyscimy WorkDir do pusta (nie ma do
+    /// czego wracac).
+    private void RestoreWorkDirAfterFailure(ProjectMeta meta)
+    {
+        try
+        {
+            if (meta.Versions.Count == 0)
+            {
+                if (Directory.Exists(versions.WorkDir))
+                    Directory.Delete(versions.WorkDir, recursive: true);
+                Directory.CreateDirectory(versions.WorkDir);
+            }
+            else
+            {
+                versions.Restore(meta.Versions[^1].Number);
+            }
+        }
+        catch (Exception)
+        {
+            // Sprzatanie WorkDir po awarii nie moze przesloniec PRAWDZIWEJ przyczyny
+            // awarii (JobFailure, ktory Failed() i tak juz zwraca) — to samo
+            // uzasadnienie co przy catch (Exception) wokol kasowania backupDir w
+            // petli naprawy kotwic, kilkadziesiat linii wyzej. NIE zawezaj.
+        }
     }
 
     private IReadOnlyList<string> PreviousAnchors(ProjectMeta meta) =>
@@ -226,24 +345,20 @@ public partial class GenerationService(IClaudeRunner runner, ProjectStore projec
             ? []
             : [.. AnchorExtractor.Extract(meta.Versions[^1].SnapshotDir)];
 
-    private static void CopyDirectory(string from, string to)
+    /// Punkt 6 raportu: sygnatura stanu katalogu (sciezki wzgledne + rozmiary +
+    /// czasy modyfikacji, posortowane deterministycznie). Rownosc sygnatury PRZED
+    /// i PO przebiegu oznacza "ten przebieg nie zmienil ani jednego pliku" —
+    /// odrozniamy to od "katalog akurat sie renderuje" (co samo w sobie nie
+    /// dowodzi, ze cokolwiek sie wydarzylo w TEJ probie).
+    private static string DirectorySignature(string dir)
     {
-        Directory.CreateDirectory(to);
-        if (!Directory.Exists(from)) return;
+        if (!Directory.Exists(dir)) return string.Empty;
 
-        foreach (var file in Directory.EnumerateFiles(from))
-            File.Copy(file, Path.Combine(to, Path.GetFileName(file)), overwrite: true);
+        var entries = Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories)
+            .Select(f => (Rel: Path.GetRelativePath(dir, f), Info: new FileInfo(f)))
+            .OrderBy(e => e.Rel, StringComparer.Ordinal)
+            .Select(e => $"{e.Rel}:{e.Info.Length}:{e.Info.LastWriteTimeUtc.Ticks}");
 
-        foreach (var dir in Directory.EnumerateDirectories(from))
-            CopyDirectory(dir, Path.Combine(to, Path.GetFileName(dir)));
-    }
-
-    /// Uzywane jednakowo do robienia kopii zapasowej (WorkDir -> backup) i do
-    /// przywracania z niej (backup -> WorkDir): kierunek okresla kolejnosc
-    /// argumentow u wywolujacego. "to" jest zawsze CALKOWICIE zastepowany.
-    private static void ReplaceDirectory(string from, string to)
-    {
-        if (Directory.Exists(to)) Directory.Delete(to, recursive: true);
-        CopyDirectory(from, to);
+        return string.Join("|", entries);
     }
 }

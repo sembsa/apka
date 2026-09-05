@@ -53,6 +53,27 @@ internal class CancellingRunner : IClaudeRunner
     }
 }
 
+/// Punkt 1 raportu: runner ktory NAJPIERW zwraca zwykly (kosztowny) wynik, i
+/// DOPIERO PRZY KOLEJNYM wywolaniu rzuca OperationCanceledException — tak jak
+/// realny scenariusz z recenzji ("po przebiegu kosztujacym $0.37 i anulowaniu
+/// powtorki"). Runner rzucajacy juz przy PIERWSZYM wywolaniu (jak stary
+/// CancellingRunner uzywany ponizej) czyni asercje "SpentUsd == 0" prawdziwa
+/// TRYWIALNIE — zaden koszt nigdy nie zdazyl powstac, wiec test nie sprawdza w
+/// ogole tego, co mial sprawdzac.
+internal class RetryThenCancellingRunner(string firstJson) : IClaudeRunner
+{
+    public int Calls { get; private set; }
+
+    public Task<ClaudeRunOutcome> RunAsync(ClaudeRunRequest request, CancellationToken ct = default)
+    {
+        Calls++;
+        if (Calls == 1)
+            return Task.FromResult(new ClaudeRunOutcome(true, 0, firstJson, "", TimeSpan.FromSeconds(1)));
+
+        return Task.FromException<ClaudeRunOutcome>(new OperationCanceledException());
+    }
+}
+
 public class GenerationServiceTests : IDisposable
 {
     private readonly string _project = Directory.CreateTempSubdirectory("gen-svc-").FullName;
@@ -85,11 +106,18 @@ public class GenerationServiceTests : IDisposable
         File.WriteAllText(Path.Combine(dir, "index.html"), "<html><body>bez domkniecia");
     };
 
+    /// Punkt 8 raportu: RunRoundAsync ignoruje wartosc parametru "meta" i zawsze
+    /// czyta swiezy stan przez projects.Load(). Kazdy test, ktory chce ustawic
+    /// stan inny niz swiezo utworzony (Status, RoundsLimit, BudgetUsd, Versions),
+    /// MUSI go jawnie zapisac przez store.Save() — inaczej silnik go po prostu nie
+    /// zobaczy (to jest wlasnie dowod, ze fix dziala: "meta" przekazywane dalej
+    /// bez zapisu przestaje miec jakikolwiek wplyw).
     private (ProjectMeta meta, ProjectStore store, VersionStore versions) Setup()
     {
         var store = new ProjectStore(_project);
-        var meta = store.Create(SourceKind.Idea);
-        return (meta with { Status = ProjectStatus.Active }, store, new VersionStore(_project));
+        var meta = store.Create(SourceKind.Idea) with { Status = ProjectStatus.Active };
+        store.Save(meta);
+        return (meta, store, new VersionStore(_project));
     }
 
     private static Comment C(string id, string? anchor, string text) =>
@@ -180,6 +208,7 @@ public class GenerationServiceTests : IDisposable
         // zuzywa ostatnia dostepna runde.
         var (meta, store, versions) = Setup();
         meta = meta with { RoundsLimit = 1 };
+        store.Save(meta);
         var runner = new ScriptedRunner((
             Json("s-1", 0.05m, "RAPORT c1 applied ok"),
             WritePage("""<h1 data-cmt-id="hero">x</h1>""")));
@@ -200,6 +229,7 @@ public class GenerationServiceTests : IDisposable
         // mimo ze runda w ogole sie nie powiodla i licznik rund stoi w miejscu.
         var (meta, store, versions) = Setup();
         meta = meta with { BudgetUsd = 0.01m };
+        store.Save(meta);
         var denials = """[{"tool_name":"Write","tool_input":{"file_path":"/tmp/index.html"}}]""";
         var runner = new ScriptedRunner((Json("s-1", 0.02m, "brak uprawnien", denials), _ => { }));
 
@@ -274,6 +304,7 @@ public class GenerationServiceTests : IDisposable
         {
             Versions = [new VersionMeta(1, "s-0", versions.SnapshotPath(1), 0.5m, [])],
         };
+        store.Save(metaV1);   // punkt 8: RunRoundAsync czyta z dysku, nie z argumentu
         Directory.CreateDirectory(versions.SnapshotPath(1));
         File.WriteAllText(Path.Combine(versions.SnapshotPath(1), "index.html"),
             """<html><body><h1 data-cmt-id="hero">x</h1><p data-cmt-id="cennik">y</p></body></html>""");
@@ -316,6 +347,7 @@ public class GenerationServiceTests : IDisposable
         {
             Versions = [new VersionMeta(1, "s-0", versions.SnapshotPath(1), 0.5m, [])],
         };
+        store.Save(metaV1);   // punkt 8: RunRoundAsync czyta z dysku, nie z argumentu
         Directory.CreateDirectory(versions.SnapshotPath(1));
         File.WriteAllText(Path.Combine(versions.SnapshotPath(1), "index.html"),
             """<html><body><h1 data-cmt-id="hero">x</h1><p data-cmt-id="cennik">y</p></body></html>""");
@@ -355,6 +387,7 @@ public class GenerationServiceTests : IDisposable
         {
             Versions = [new VersionMeta(1, "s-0", versions.SnapshotPath(1), 0.5m, [])],
         };
+        store.Save(metaV1);   // punkt 8: RunRoundAsync czyta z dysku, nie z argumentu
         Directory.CreateDirectory(versions.SnapshotPath(1));
         File.WriteAllText(Path.Combine(versions.SnapshotPath(1), "index.html"),
             """<html><body><h1 data-cmt-id="hero">x</h1><p data-cmt-id="cennik">y</p></body></html>""");
@@ -378,6 +411,48 @@ public class GenerationServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Naprawa_kotwic_ktora_sie_udaje_daje_puste_osierocone_i_snapshot_z_kotwica()
+    {
+        // Punkt 2 raportu: wszystkie trzy testy petli kotwic powyzej uzywaja
+        // napraw, ktore PADAJA albo NIC NIE ZMIENIAJA — zaden nie sprawdza jedynej
+        // nieobserwowalnej galezi: udanej naprawy. Zamiana argumentow w wywolaniu
+        // DirectoryOps.SafeReplace, ktore odswieza kopie zapasowa po udanej
+        // probie ("ten stan tez jest dobry — odswiez kopie"), daje 109/109
+        // zielonych na kodzie SPRZED tego testu (potwierdzone empirycznie) — a w
+        // produkcji oznaczaloby to, ze klient dostaje wersje BEZ kotwicy i PUSTA
+        // liste osieroconych, czyli §3.4 "nigdy po cichu" zlamane w ciszy.
+        var (meta, store, versions) = Setup();
+        var metaV1 = meta with
+        {
+            Versions = [new VersionMeta(1, "s-0", versions.SnapshotPath(1), 0.5m, [])],
+        };
+        store.Save(metaV1);   // punkt 8: RunRoundAsync czyta z dysku, nie z argumentu
+        Directory.CreateDirectory(versions.SnapshotPath(1));
+        File.WriteAllText(Path.Combine(versions.SnapshotPath(1), "index.html"),
+            """<html><body><h1 data-cmt-id="hero">x</h1><p data-cmt-id="cennik">y</p></body></html>""");
+
+        var runner = new ScriptedRunner(
+            (Json("s-1", 0.1m, "RAPORT c1 applied ok"), WritePage("""<h1 data-cmt-id="hero">x</h1>""")),   // gubi cennik
+            (Json("s-1", 0.1m, "RAPORT c1 applied ok"),
+                WritePage("""<h1 data-cmt-id="hero">x</h1><p data-cmt-id="cennik">y</p>""")));              // naprawia naprawde
+
+        var outcome = await new GenerationService(runner, store, versions)
+            .RunRoundAsync(metaV1, [C("c1", "hero", "x")]);
+
+        Assert.True(outcome.Succeeded);
+        Assert.Equal(2, runner.Calls);   // proba + JEDNA udana naprawa (petla wychodzi od razu)
+        Assert.Empty(outcome.Version!.OrphanedAnchors);
+
+        // Nie wystarczy sprawdzic pustej listy osieroconych (ta akurat jest
+        // liczona PRZED odswiezeniem kopii zapasowej i przetrwalaby nawet
+        // zamiane argumentow) — kluczowe jest to, co NAPRAWDE trafilo do
+        // snapshotu klienta.
+        var html = File.ReadAllText(Path.Combine(outcome.Version!.SnapshotDir, "index.html"));
+        Assert.Contains("data-cmt-id=\"cennik\"", html);
+        Assert.True(RenderValidator.Check(outcome.Version!.SnapshotDir).Ok);
+    }
+
+    [Fact]
     public async Task Komentarz_bez_wpisu_w_raporcie_zostaje_open()
     {
         var (meta, store, versions) = Setup();
@@ -393,13 +468,16 @@ public class GenerationServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Anulowanie_propaguje_sie_i_nie_zostawia_sladu()
+    public async Task Anulowanie_propaguje_sie_bez_zuzycia_rundy_ani_wersji()
     {
         // Kontrakt ClaudeCli: IClaudeRunner.RunAsync przy anulowaniu rzuca
         // OperationCanceledException i NIGDY nie zwraca ClaudeRunOutcome. Petla
         // GenerationService nie moze tego zlapac i zamienic na Failed/Halted —
-        // musi przepuscic wyjatek. Sprawdza tez, ze nic po drodze nie zdazylo
-        // zmienic trwalego stanu projektu.
+        // musi przepuscic wyjatek. Runner rzuca juz przy PIERWSZYM wywolaniu, wiec
+        // zaden koszt jeszcze nie powstal — to jest test na "anulowanie NIE
+        // wymysla wersji/kosztu z powietrza", NIE na "koszt przetrwa anulowanie"
+        // (to sprawdza osobny test ponizej, ktory naprawia dokladnie ten przeoczony
+        // przypadek — patrz punkt 1 raportu).
         var (meta, store, versions) = Setup();
         var runner = new CancellingRunner();
 
@@ -411,6 +489,187 @@ public class GenerationServiceTests : IDisposable
         Assert.Equal(0, persisted.RoundsUsed);
         Assert.Equal(0m, persisted.SpentUsd);
         Assert.Empty(persisted.Versions);
+    }
+
+    [Fact]
+    public async Task Anulowanie_po_oplaconej_probie_nie_gubi_wydanych_pieniedzy()
+    {
+        // Punkt 1 raportu (KRYTYCZNE): "spent" trafial do trwalego stanu tylko w
+        // Failed() i na sciezce sukcesu. Anulowanie omijalo OBIE, bo
+        // OperationCanceledException lecial przez cala metode BEZ "finally" — po
+        // przebiegu kosztujacym realne pieniadze i anulowaniu KOLEJNEJ proby,
+        // project.json pokazywal SpentUsd: 0. Runner: pierwsza proba wraca z
+        // bledem wykonania (GateVerdict.Retry — ale Parsed niesie koszt, zgodnie z
+        // kontraktem "pieniadze wydane niezaleznie od werdyktu"), DOPIERO DRUGA
+        // rzuca OperationCanceledException, tak jak kosztowna powtorka, ktora pada
+        // w trakcie limitu czasu kolejki.
+        var (meta, store, versions) = Setup();
+        var runner = new RetryThenCancellingRunner(ErrorJson("s-1", 0.37m));
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            new GenerationService(runner, store, versions).RunRoundAsync(meta, [C("c1", null, "x")]));
+
+        Assert.Equal(2, runner.Calls);   // pierwsza (oplacona) proba + druga, ktora anuluje
+        var persisted = store.Load();
+
+        // Kluczowa asercja: koszt PIERWSZEJ, zakonczonej proby MUSI przetrwac
+        // anulowanie DRUGIEJ — na kodzie z briefu (bez "finally") tu bylo 0.
+        Assert.Equal(0.37m, persisted.SpentUsd);
+        Assert.Equal(0, persisted.RoundsUsed);   // anulowanie/awaria nie zuzywa rundy klienta
+        Assert.Empty(persisted.Versions);        // i nie tworzy zadnej wersji
+    }
+
+    [Fact]
+    public async Task RunRoundAsync_ignoruje_nieswiezy_argument_meta_i_uzywa_stanu_z_dysku()
+    {
+        // Punkt 8 raportu: RunRoundAsync budowal nowy stan z ARGUMENTU "meta", nie z
+        // biezacej zawartosci pliku — kolejka trzymajaca "meta" przez cala dlugosc
+        // przebiegu (realnie kilka minut) moglaby cicho zgubic wersje albo cofnac
+        // SpentUsd, gdyby ktos w tym czasie zapisal projekt. Tu przekazujemy
+        // CELOWO nieaktualny obiekt "meta" (RoundsLimit=1, jakby zaraz mial zamrozic
+        // projekt) — a na dysku lezy inny, swiezy stan (RoundsLimit=15, domyslny).
+        // Silnik MUSI zachowac sie zgodnie z dyskiem, nie z argumentem.
+        var (meta, store, versions) = Setup();
+        var staleMeta = meta with { RoundsLimit = 1, BudgetUsd = 0.01m };   // NIGDY nie zapisany na dysk
+
+        var runner = new ScriptedRunner((
+            Json("s-1", 0.05m, "RAPORT c1 applied ok"),
+            WritePage("""<h1 data-cmt-id="hero">x</h1>""")));
+
+        var outcome = await new GenerationService(runner, store, versions)
+            .RunRoundAsync(staleMeta, [C("c1", "hero", "x")]);
+
+        Assert.True(outcome.Succeeded);
+        var persisted = store.Load();
+        // Gdyby silnik uzyl przekazanego "staleMeta" (RoundsLimit=1, BudgetUsd=0.01),
+        // projekt zamrozilby sie natychmiast. Prawdziwy stan z dysku (domyslne
+        // RoundsLimit=15, BudgetUsd=8.00) nie ma powodu zamrazac po jednej rundzie
+        // za $0.05.
+        Assert.Equal(ProjectStatus.Active, persisted.Status);
+        Assert.Equal(ProjectStore.DefaultRoundsLimit, persisted.RoundsLimit);
+    }
+
+    [Fact]
+    public async Task Zamrozony_projekt_odrzuca_runde_bez_wywolania_modelu_i_bez_dotykania_workdir()
+    {
+        // Punkt 7 raportu: Freeze() dziala dopiero PO przebiegu, wiec bez straznicy
+        // na wejsciu RunRoundAsync na projekcie Frozen uruchomiloby claude -p (budzet
+        // POZA limitem), a udana sciezka ustawilaby na koncu Status = Active — czyli
+        // PO CICHU odmrozilaby projekt. Sprawdzamy tez, ze WorkDir NIE jest ruszany —
+        // straznica musi zwracac wprost, a nie przechodzic przez Failed()/Restore
+        // (to zepsuloby WorkDir projektu, ktory nigdy nie poprosil o runde).
+        var (meta, store, versions) = Setup();
+        File.WriteAllText(Path.Combine(versions.WorkDir, "index.html"), "biezaca zamrozona strona");
+        store.Save(meta with { Status = ProjectStatus.Frozen });
+
+        var runner = new ScriptedRunner((Json("s-1", 0.5m, "gotowe"), WritePage("nie powinno sie wykonac")));
+
+        var outcome = await new GenerationService(runner, store, versions)
+            .RunRoundAsync(meta, [C("c1", null, "x")]);
+
+        Assert.False(outcome.Succeeded);
+        Assert.Equal(FailureHandling.Halted, outcome.Failure!.Handling);
+        Assert.Equal(0, runner.Calls);      // model NIGDY nie wywolany
+        Assert.Equal(0m, outcome.SpentUsd);
+
+        var persisted = store.Load();
+        Assert.Equal(ProjectStatus.Frozen, persisted.Status);   // NIE odmrozony
+        Assert.Equal(
+            "biezaca zamrozona strona",
+            File.ReadAllText(Path.Combine(versions.WorkDir, "index.html")));   // WorkDir nietkniety
+    }
+
+    [Fact]
+    public async Task Nieudana_runda_przywraca_workdir_do_ostatniej_udanej_wersji()
+    {
+        // Punkt 4 raportu: petla naprawy kotwic ma kopie zapasowa, petla bramki
+        // TWARDEJ nie miala zadnej, a Failed() nic nie przywracal. Po nieudanej
+        // rundzie WorkDir zostawal w stanie, w jakim przerwal go ostatni przebieg
+        // (tu: urwany HTML), a nastepna runda szlaby --resume po zepsutej stronie.
+        var (meta, store, versions) = Setup();
+        var goodPage = """<html><body><h1 data-cmt-id="hero">x</h1></body></html>""";
+        Directory.CreateDirectory(versions.SnapshotPath(1));
+        File.WriteAllText(Path.Combine(versions.SnapshotPath(1), "index.html"), goodPage);
+        // Symulujemy, ze WorkDir ma tresc wersji 1 (tak zostawilby prawdziwy Commit
+        // — WorkDir i snapshot sa zgodne zaraz po udanej rundzie).
+        File.WriteAllText(Path.Combine(versions.WorkDir, "index.html"), goodPage);
+
+        var metaV1 = meta with
+        {
+            Versions = [new VersionMeta(1, "s-0", versions.SnapshotPath(1), 0.5m, [])],
+        };
+        store.Save(metaV1);
+
+        // Obie proby (przebieg + jedna powtorka) psuja render.
+        var runner = new ScriptedRunner((Json("s-1", 0.1m, "gotowe"), WriteBrokenPage()));
+
+        var outcome = await new GenerationService(runner, store, versions)
+            .RunRoundAsync(metaV1, [C("c1", "hero", "x")]);
+
+        Assert.False(outcome.Succeeded);
+        Assert.Equal(2, runner.Calls);
+
+        // Kluczowa asercja: WorkDir musi zawierac strone z wersji 1, NIE urwany
+        // HTML z ostatniej nieudanej proby.
+        var restored = File.ReadAllText(Path.Combine(versions.WorkDir, "index.html"));
+        Assert.Equal(goodPage, restored);
+        Assert.True(RenderValidator.Check(versions.WorkDir).Ok);
+    }
+
+    [Fact]
+    public async Task Nieudana_pierwsza_runda_bez_wczesniejszej_wersji_czysci_workdir()
+    {
+        // Wariant punktu 4 dla projektu bez ANI JEDNEJ udanej wersji: nie ma do
+        // czego wracac (Restore nie ma czego kopiowac), wiec WorkDir jest po
+        // prostu czyszczony do pusta zamiast zostawiac urwany HTML.
+        var (meta, store, versions) = Setup();
+        var runner = new ScriptedRunner((Json("s-1", 0.1m, "gotowe"), WriteBrokenPage()));
+
+        var outcome = await new GenerationService(runner, store, versions)
+            .RunRoundAsync(meta, [C("c1", null, "x")]);
+
+        Assert.False(outcome.Succeeded);
+        Assert.False(File.Exists(Path.Combine(versions.WorkDir, "index.html")),
+            "WorkDir powinien byc pusty po nieudanej pierwszej rundzie, nie zawierac urwany HTML");
+    }
+
+    [Fact]
+    public async Task Przebieg_bez_zmian_w_katalogu_roboczym_jest_traktowany_jak_niepowodzenie()
+    {
+        // Punkt 6 raportu: bramka renderowalnosci sprawdzala stan KATALOGU, nie to,
+        // czy TEN przebieg cokolwiek zrobil. Od rundy 2 katalog roboczy juz ma
+        // tresc poprzedniej wersji, wiec model, ktory nic nie zrobil (ale zwrocil
+        // subtype:success i puste permission_denials), przechodzilby bramke czysto
+        // przez przypadek i dawal wersje 2 identyczna z wersja 1 — klient traci
+        // jedna z limitowanych poprawek za pokazanie mu tej samej strony.
+        var (meta, store, versions) = Setup();
+        var page = """<html><body><h1 data-cmt-id="hero">x</h1></body></html>""";
+        Directory.CreateDirectory(versions.SnapshotPath(1));
+        File.WriteAllText(Path.Combine(versions.SnapshotPath(1), "index.html"), page);
+        File.WriteAllText(Path.Combine(versions.WorkDir, "index.html"), page);   // "poprzednia runda" to zostawila
+
+        var metaV1 = meta with
+        {
+            Versions = [new VersionMeta(1, "s-0", versions.SnapshotPath(1), 0.5m, [])],
+        };
+        store.Save(metaV1);
+
+        // Zwraca sukces (subtype:success, permission_denials puste), ale NIC nie
+        // dotyka w katalogu roboczym — oba wywolania (proba + powtorka).
+        var runner = new ScriptedRunner((Json("s-1", 0.1m, "gotowe"), _ => { }));
+
+        var outcome = await new GenerationService(runner, store, versions)
+            .RunRoundAsync(metaV1, [C("c1", "hero", "x")]);
+
+        Assert.False(outcome.Succeeded);
+        Assert.Equal(FailureHandling.Halted, outcome.Failure!.Handling);
+        Assert.Contains("nie zmieni", outcome.Failure.Cause);
+        Assert.Equal(2, runner.Calls);   // proba + jedna powtorka, jak przy zlym renderze
+
+        var persisted = store.Load();
+        Assert.Equal(0, persisted.RoundsUsed);   // awaria po naszej stronie nie zuzywa rundy
+        Assert.Single(persisted.Versions);       // nadal tylko wersja 1 — zadnej nowej
+        Assert.Equal(0.2m, persisted.SpentUsd);  // ale koszt obu prob jest widoczny w budzecie
     }
 
     [Fact]
