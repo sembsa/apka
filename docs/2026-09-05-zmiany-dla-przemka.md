@@ -274,3 +274,29 @@ uruchamiania rundy, czyli tej samej decyzji co trwałość szkiców uwag.
   nie zobaczy — przenieś albo ustaw `Projects:Root`.
 - **`ProjectApi` i `JobQueue` mają logger.** `Job.failure.cause` (§4.3: „szczegół dla
   naszych logów, NIE do UI") ginął — logów nie było w ogóle. Do klienta nadal nie idzie.
+
+
+## F. Ostatnia zmiana w `Proposals.razor` — powrót do edytora
+
+Recenzja końcowa znalazła ślepy zaułek i był realny: klient, który ma już gotową stronę
+i wraca strzałką „wstecz" na `/proposals/{id}`, widział wybór kierunku (szkice nadal leżą
+na dysku). Kliknięcie po cichu nadpisywało `ChosenProposal`, `CreateFirstVersionAsync`
+odmawiała, a klient zostawał z czerwonym zdaniem i **bez żadnej drogi powrotu** — nie ma
+nawigacji w `MainLayout`, nie ma linku na tej stronie. Miał tylko F5.
+
+Teraz strona najpierw pyta `GetAsync` i przy `Versions.Count > 0` przekierowuje do
+edytora, nie zamawiając niczego.
+
+**To jest dokładnie ten scenariusz, który atrapa zielenila.** Jej `ChooseProposalAsync`
+i `CreateFirstVersionAsync` nie mają straży, więc ten sam przepływ kończył się w edytorze
+i test przechodził. Recenzent odtworzył to dwoma jednorazowymi testami: pod wierną atrapą
+— czerwone zdanie i brak `/editor/` w URL-u; pod `MockProjectApi` — zielono.
+
+Dołożyłem dwa testy komponentu, oba z Twoim `Szpieg`iem. Drugi (`Niepelny_komplet_...`)
+napisałem najpierw źle: nie zasiałem szkiców w atrapie, więc pierwszy odczyt oddawał zero,
+oba warunki były fałszywe i test przechodził niezależnie od tego, który z nich jest
+w kodzie. Mutacja to pokazała.
+
+Kontrakt: dopisałem §6.4 — `POST .../proposals` odmawia teraz 409 przy komplecie szkiców
+i przy projekcie z wersją. Oznaczyłem jako **odnotowane**, nie sporne, bo 409 z powodu
+`frozen` na tej trasie i tak wynikał z §4.5.
