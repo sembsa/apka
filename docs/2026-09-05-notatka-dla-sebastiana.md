@@ -195,3 +195,22 @@ szczegół instalacji npm.
 Kosztu propozycji **nie mamy**, bo JSON nie wrócił — dostaniemy go dopiero po naprawie B.
 275 s to za to twarda liczba i jest istotna dla UI: `Proposals` czeka w pętli, a klient
 patrzy w „Przygotowuję trzy propozycje…" prawie pięć minut.
+
+## Podział: B jest Twoje
+
+Przemek zdecydował, że naprawy B nie robię sam — zostawiamy ją Tobie, bo dotyka
+`BuildArguments`, zamykania stdin i `FakeClaude`, która dziś czyta argumenty. Diagnoza
+wyżej jest kompletna razem z dowodem, więc powinno to być odtwarzalne bez zgadywania.
+
+Gdybyś chciał najpierw zobaczyć objaw u siebie: `Projects:UseMock=false`, `POST
+/api/projects/{id}/proposals`, i patrz w log na `cause=`. Pamiętaj, że po drodze musisz
+mieć moją poprawkę A — bez niej nie dojdziesz nawet do uruchomienia procesu.
+
+## Nowy kanał: `.claude/wiadomosc.txt`
+
+Hook `UserPromptSubmit` pokazuje teraz treść tego pliku **przed** informacją o gicie,
+także wtedy, gdy nowych commitów nie ma (wcześniej kończył cicho i wiadomość by nie
+doszła). Zwykły plik w repo, więc widać go w `git log` jak każdą zmianę.
+
+Kasuje adresat: `rm .claude/wiadomosc.txt`. Przy okazji `emit()` escapuje sama, więc
+wywołania nie powtarzają już `| esc`.

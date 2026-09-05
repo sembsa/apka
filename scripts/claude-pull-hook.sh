@@ -13,15 +13,33 @@ set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)" || exit 0
 cd "$REPO" || exit 0
 
-quiet() { printf '{"suppressOutput":true}\n'; exit 0; }
+# Wiadomość od drugiej osoby. Zwykły plik, więc widać ją w `git log` jak każdą inną
+# zmianę, a adresat kasuje ją jednym `rm` — nic nie siedzi zaszyte w skrypcie.
+# Pokazujemy ją TAKŻE wtedy, gdy nie ma nowych commitów: inaczej hook kończy przez
+# `quiet` i wiadomość nigdy by nie doszła.
+WIADOMOSC="$(cat "$REPO/.claude/wiadomosc.txt" 2>/dev/null || true)"
+
+quiet() {
+  if [ -n "$WIADOMOSC" ]; then
+    emit "$WIADOMOSC"
+    exit 0
+  fi
+  printf '{"suppressOutput":true}\n'
+  exit 0
+}
 
 # Escape do stringa JSON: backslash, cudzysłów, taby, potem nowe linie na \n.
 esc() {
   sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\t/\\t/g' | awk '{ printf "%s\\n", $0 }'
 }
 
+# Escapuje sama, żeby wywołania nie powtarzały `| esc` — i dokleja wiadomość na górze,
+# zanim pójdzie cokolwiek o gicie.
 emit() {
-  printf '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"%s"}}\n' "$1"
+  tresc="$1"
+  [ -n "$WIADOMOSC" ] && tresc="$(printf '%s\n\n%s' "$WIADOMOSC" "$tresc")"
+  printf '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"%s"}}\n' \
+    "$(printf '%s' "$tresc" | esc)"
 }
 
 git rev-parse --git-dir >/dev/null 2>&1 || exit 0
@@ -52,7 +70,7 @@ if [ -n "$(git status --porcelain --untracked-files=no 2>/dev/null)" ]; then
   # Brudne drzewo — nie tykamy go automatycznie.
   MSG="$(printf 'GIT: %s nowych commitów na %s, ale NIE pobrano — masz niezacommitowane zmiany.\nZróbcie to ręcznie, świadomie (CLAUDE.md: pull --rebase --autostash, potem git stash list i grep na markery).\n\nCzeka:\n%s\n\nPliki:\n%s' \
     "$BEHIND" "$UPSTREAM" "$LOG" "$FILES")"
-  emit "$(printf '%s' "$MSG" | esc)"
+  emit "$MSG"
   exit 0
 fi
 
@@ -60,7 +78,7 @@ if [ "${AHEAD:-0}" -gt 0 ]; then
   # Rozjechane: mamy własne niepushnięte commity, fast-forward niemożliwy.
   MSG="$(printf 'GIT: historia rozjechana — %s commitów u nas niepushniętych, %s nowych na %s. Fast-forward niemożliwy, potrzebny świadomy rebase.\n\nCzeka:\n%s' \
     "$AHEAD" "$BEHIND" "$UPSTREAM" "$LOG")"
-  emit "$(printf '%s' "$MSG" | esc)"
+  emit "$MSG"
   exit 0
 fi
 
@@ -72,4 +90,4 @@ else
   MSG="$(printf 'GIT: %s nowych commitów na %s, ale fast-forward się nie udał. Do sprawdzenia ręcznie.\n\nCzeka:\n%s' \
     "$BEHIND" "$UPSTREAM" "$LOG")"
 fi
-emit "$(printf '%s' "$MSG" | esc)"
+emit "$MSG"

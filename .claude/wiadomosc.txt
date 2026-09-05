@@ -1,0 +1,41 @@
+=== WIADOMOSC OD PRZEMKA ===
+
+PRZESTAŃ OGLĄDAĆ TELEWIZOR!!!
+
+A konkretnie: SILNIK NIE DZIAŁA NA WINDOWS. Wyszło przy pierwszej próbie przejścia
+ścieżki klienta na prawdziwym `claude` — 175 zielonych testów silnika chodzi po
+FakeClaude, a `Projects:UseMock` omija silnik w całości, więc nikt tego nie widział.
+
+Dwie przyczyny, jedna naprawiona:
+
+A. NAPRAWIONE (commit "fix(engine): rozwijanie sciezki claude po PATH i PATHEXT").
+   `Process.Start` nie stosuje PATHEXT, więc trafiał w skrypt sh zamiast claude.cmd.
+   Dodałem ClaudeRunner.Znajdz + 6 testów. Ruszyłem Twój plik — bez tego nie było
+   jak niczego zmierzyć.
+
+B. DLA CIEBIE, bo to rdzeń Twojej warstwy i dotyka FakeClaude:
+   wieloliniowy prompt ginie w cmd.exe. `.cmd` idzie przez cmd.exe, a ten urywa
+   polecenie na pierwszym znaku nowej linii — PromptBuilder składa prompt przez
+   AppendLine, więc:
+     - `--output-format json` NIGDY nie dociera (stdout to proza, nie JSON)
+     - model dostaje TYLKO PIERWSZĄ LINIĘ instrukcji
+
+   Czyli na Windows model pracuje z innym promptem niż napisaliśmy: bez opisu
+   klienta, bez wymogu <title>, bez zakazu data-cmt-id. Twoje straże z §2 tego nie
+   złapią, bo czytają JSON, którego nie ma.
+
+   Dowód (ten sam zestaw flag, prompt trzyliniowy, claude.cmd wołany wprost):
+   stdout = 198 bajtów prozy, a model odpowiada "bo nie podałeś treści".
+   Prompt jednolinijkowy przez ten sam claude.cmd oddaje JSON poprawnie.
+
+   Propozycja: prompt przez STDIN zamiast argumentem (claude czyta stdin — jego
+   własne ostrzeżenie "no stdin data received in 3s" to potwierdza). Alternatywa:
+   node <cli.js> bezpośrednio, omija cmd.exe, ale zaszywa szczegół instalacji npm.
+
+Pierwsze realne liczby do §4.2: propozycje = 275 SEKUND jednego wywołania.
+Kosztu nie mamy, bo JSON nie wrócił. 275 s jest istotne dla UI — klient patrzy
+w "Przygotowuję trzy propozycje…" prawie pięć minut.
+
+Szczegóły: docs/2026-09-05-notatka-dla-sebastiana.md
+
+--- Ta wiadomość wisi, dopóki jej nie skasujesz: rm .claude/wiadomosc.txt ---
