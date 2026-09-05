@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Generator.Engine.IO;
 using Generator.Engine.Model;
 
 namespace Generator.Engine.Storage;
@@ -82,12 +83,14 @@ public class ProjectStore(string projectDir)
             : meta with { CurrentVersion = meta.Versions.Max(v => v.Number) };
     }
 
-    public void Save(ProjectMeta meta)
+    /// `virtual` wylacznie dla testu „Restore przeszlo, Save padlo" (kompensacja
+    /// w ProjectApi.RollbackAsync). Wczesniej test wymuszal awarie, tworzac katalog
+    /// o nazwie `project.json.tmp` — czyli wiazal sie z nazwa pliku tymczasowego,
+    /// ktora jest szczegolem implementacji i zmienila sie razem z ZapisAtomowy.
+    /// Podstawienie store'a mowi wprost, o co w tym tescie chodzi.
+    public virtual void Save(ProjectMeta meta)
     {
-        var json = JsonSerializer.Serialize(meta, Options);
-        var tmpPath = MetaPath + ".tmp";
-        File.WriteAllText(tmpPath, json);
-        File.Move(tmpPath, MetaPath, overwrite: true);
+        ZapisAtomowy.Zapisz(MetaPath, JsonSerializer.Serialize(meta, Options));
     }
 
     /// Runda klienta. Powtorki po awarii jej NIE zuzywaja (kontrakt 4.1).

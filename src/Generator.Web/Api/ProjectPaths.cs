@@ -21,7 +21,8 @@ public class ProjectPaths(string root, Func<string, IRoundRunner> runnerFactory)
     public string Dir(string id) => Path.Combine(root, id);
     public bool Exists(string id) => File.Exists(Path.Combine(Dir(id), "project.json"));
 
-    public ProjectStore Store(string id) => new(Dir(id));
+    /// `virtual` z tego samego powodu co ProjectStore.Save — patrz tam.
+    public virtual ProjectStore Store(string id) => new(Dir(id));
     public VersionStore Versions(string id) => new(Dir(id));
     public CommentStore Comments(string id) => new(Dir(id));
     public IRoundRunner Engine(string id) => runnerFactory(id);

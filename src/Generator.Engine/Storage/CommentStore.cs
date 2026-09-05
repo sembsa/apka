@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Generator.Engine.Model;
+using Generator.Engine.IO;
 
 namespace Generator.Engine.Storage;
 
@@ -127,12 +128,9 @@ public class CommentStore(string projectDir)
         }
     }
 
-    /// Ten sam zapis atomowy co ProjectStore.Save: tmp + Move(overwrite). Przerwany
-    /// zapis nie moze zostawic polowy pliku tam, gdzie stal komplet uwag klienta.
-    private void Write(Dictionary<int, List<StoredComment>> dane)
-    {
-        var tmp = Path_ + ".tmp";
-        File.WriteAllText(tmp, JsonSerializer.Serialize(dane, Options));
-        File.Move(tmp, Path_, overwrite: true);
-    }
+    /// Ten sam zapis atomowy co ProjectStore.Save — dosłownie ten sam kod (ZapisAtomowy),
+    /// nie drugi taki sam. Przerwany zapis nie moze zostawic polowy pliku tam, gdzie
+    /// stal komplet uwag klienta.
+    private void Write(Dictionary<int, List<StoredComment>> dane) =>
+        ZapisAtomowy.Zapisz(Path_, JsonSerializer.Serialize(dane, Options));
 }

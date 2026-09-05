@@ -589,20 +589,49 @@ public class ProjectApiTests : IDisposable
         // zobaczy „zmienilo sie wszystko" i poprawki naniesione na tresc, ktorej
         // nie ogladal. Obie kolejnosci zostawiaja niespojnosc, wiec rozstrzyga
         // tylko cofniecie.
-        var (api, _) = Zbuduj();
+        var (api, paths) = ZbudujZLamliwymZapisem();
         var p = await Gotowy(api);
         await Poczekaj(api, await api.ApplyCommentsAsync(p.Id, 1, [Uwaga("k1")]));
 
-        // `ProjectStore.Save` pisze najpierw project.json.tmp, potem Move. Katalog
-        // o tej nazwie sprawia, ze WriteAllText rzuca, a Move nigdy nie leci —
-        // czyli dokladnie „Restore przeszlo, Save padlo".
-        Directory.CreateDirectory(Path.Combine(_root, p.Id, "project.json.tmp"));
+        // Awarie zapisu wymusza podstawiony store, nie sztuczka na plikach. Poprzednia
+        // wersja tworzyla katalog o nazwie `project.json.tmp`, zeby WriteAllText padlo
+        // — czyli wiazala test z nazwa pliku tymczasowego. Ta nazwa jest szczegolem
+        // implementacji (ZapisAtomowy nadaje ja losowo, zeby rownolegle zapisy nie
+        // deptaly sobie po tym samym pliku) i test cicho przestal cokolwiek wymuszac.
+        paths.Psuj = true;
 
-        await Assert.ThrowsAnyAsync<Exception>(() => api.RollbackAsync(p.Id, 1));
+        await Assert.ThrowsAnyAsync<IOException>(() => api.RollbackAsync(p.Id, 1));
 
         var work = new VersionStore(Path.Combine(_root, p.Id)).WorkDir;
         Assert.Contains("v2", File.ReadAllText(Path.Combine(work, "index.html")));
         Assert.Equal(2, new ProjectStore(Path.Combine(_root, p.Id)).Load().CurrentVersion);
+    }
+
+    /// Store, ktoremu zapis pada zawsze. Odczyt zostaje prawdziwy — test dotyczy
+    /// tego, co dzieje sie MIEDZY udanym Restore a nieudanym Save.
+    private sealed class NieudanyZapis(string dir) : ProjectStore(dir)
+    {
+        public override void Save(ProjectMeta meta) =>
+            throw new IOException("dysk pelny");
+    }
+
+    private sealed class LamliwyZapis(string root, Func<string, IRoundRunner> fabryka)
+        : ProjectPaths(root, fabryka)
+    {
+        /// Wlaczane dopiero po przygotowaniu projektu: gdyby zapis padal od poczatku,
+        /// nie powstalaby nawet wersja, ktora test chce cofac.
+        public bool Psuj { get; set; }
+
+        public override ProjectStore Store(string id) =>
+            Psuj ? new NieudanyZapis(Dir(id)) : base.Store(id);
+    }
+
+    private (ProjectApi api, LamliwyZapis paths) ZbudujZLamliwymZapisem()
+    {
+        var paths = new LamliwyZapis(_root, id => new FakeRunner(
+            new ProjectStore(Path.Combine(_root, id)),
+            new VersionStore(Path.Combine(_root, id))));
+        return (new ProjectApi(paths, _queue, _log), paths);
     }
 
     private static CommentDto Uwaga(string id) =>
