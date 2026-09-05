@@ -23,7 +23,7 @@ public class HistoriaWersjiTests : BunitContext, IDisposable
         var api = new MockProjectApi { SimulatedDelay = TimeSpan.Zero, SnapshotRoot = _root };
         Services.AddSingleton<IProjectApi>(api);
         var p = await api.CreateAsync("idea", "Fryzjer");
-        await api.ChooseProposalAsync(p.Id, "p-1");
+        await api.ChooseProposalAsync(p.Id, "a");
         await api.ApplyCommentsAsync(p.Id, 1, [C("hero", "nazwa większa")]);
         return (api, p.Id);
     }
@@ -68,7 +68,7 @@ public class HistoriaWersjiTests : BunitContext, IDisposable
         var api = new MockProjectApi { SimulatedDelay = TimeSpan.Zero, SnapshotRoot = _root };
         Services.AddSingleton<IProjectApi>(api);
         var p = await api.CreateAsync("idea", "Fryzjer");
-        await api.ChooseProposalAsync(p.Id, "p-1");
+        await api.ChooseProposalAsync(p.Id, "a");
 
         var cut = Render<Editor>(ps => ps.Add(x => x.ProjectId, p.Id));
 
@@ -196,7 +196,7 @@ public class HistoriaWersjiTests : BunitContext, IDisposable
         var api = new MockProjectApi { SimulatedDelay = TimeSpan.Zero, SnapshotRoot = _root };
         Services.AddSingleton<IProjectApi>(api);
         var p = await api.CreateAsync("idea", "Fryzjer");
-        await api.ChooseProposalAsync(p.Id, "p-1");
+        await api.ChooseProposalAsync(p.Id, "a");
 
         var cut = Render<Editor>(ps => ps.Add(x => x.ProjectId, p.Id));
 

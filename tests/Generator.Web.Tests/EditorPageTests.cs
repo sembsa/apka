@@ -21,7 +21,7 @@ public class EditorPageTests : BunitContext
         var api = new MockProjectApi { SimulatedDelay = TimeSpan.Zero };
         Services.AddSingleton<IProjectApi>(api);
         var p = await api.CreateAsync("idea", "Fryzjer");
-        await api.ChooseProposalAsync(p.Id, "p-1");
+        await api.ChooseProposalAsync(p.Id, "a");
         await api.ApplyCommentsAsync(p.Id, 1, []);      // wersja 1 istnieje
         api.NextJobOutcome = dalsze;
         return (api, p.Id);
@@ -222,7 +222,7 @@ public class EditorPageTests : BunitContext
         JSInterop.Mode = JSRuntimeMode.Loose;
         Services.AddSingleton<IProjectApi>(api);
         var p = await api.CreateAsync("idea", "Fryzjer");
-        await api.ChooseProposalAsync(p.Id, "p-1");
+        await api.ChooseProposalAsync(p.Id, "a");
 
         var cut = Render<Editor>(ps => ps.Add(x => x.ProjectId, p.Id));
 

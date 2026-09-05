@@ -22,7 +22,7 @@ public class RollbackTests : IDisposable
     {
         var api = Api();
         var p = await api.CreateAsync("idea", "Fryzjer");
-        await api.ChooseProposalAsync(p.Id, "p-1");
+        await api.ChooseProposalAsync(p.Id, "a");
         await api.ApplyCommentsAsync(p.Id, 1, [C("hero", "nazwa większa")]);
 
         await api.RollbackAsync(p.Id, 1);
@@ -39,7 +39,7 @@ public class RollbackTests : IDisposable
         // Nie uruchamia modelu, wiec nie ma za co pobierac oplaty (5.1, logika 4.4).
         var api = Api();
         var p = await api.CreateAsync("idea", "Fryzjer");
-        await api.ChooseProposalAsync(p.Id, "p-1");
+        await api.ChooseProposalAsync(p.Id, "a");
         await api.ApplyCommentsAsync(p.Id, 1, [C("hero", "nazwa większa")]);
         var rundyPrzed = (await api.GetAsync(p.Id)).RoundsUsed;
 
@@ -54,7 +54,7 @@ public class RollbackTests : IDisposable
         // 4.5 blokuje NOWE rundy, nie ogladanie tego, co klient juz ma.
         var api = Api();
         var p = await api.CreateAsync("idea", "Fryzjer");
-        await api.ChooseProposalAsync(p.Id, "p-1");
+        await api.ChooseProposalAsync(p.Id, "a");
         await api.ApplyCommentsAsync(p.Id, 1, [C("hero", "nazwa większa")]);
         api.ForceFrozen(p.Id);
 
@@ -68,7 +68,7 @@ public class RollbackTests : IDisposable
     {
         var api = Api();
         var p = await api.CreateAsync("idea", "Fryzjer");
-        await api.ChooseProposalAsync(p.Id, "p-1");
+        await api.ChooseProposalAsync(p.Id, "a");
 
         await Assert.ThrowsAnyAsync<Exception>(() => api.RollbackAsync(p.Id, 7));
     }
@@ -83,7 +83,7 @@ public class RollbackTests : IDisposable
     {
         var api = Api();
         var p = await api.CreateAsync("idea", "Fryzjer");
-        await api.ChooseProposalAsync(p.Id, "p-1");
+        await api.ChooseProposalAsync(p.Id, "a");
         await api.ApplyCommentsAsync(p.Id, 1, [C("hero", "nazwa większa")]);   // v2
         await api.RollbackAsync(p.Id, 1);
         await api.ApplyCommentsAsync(p.Id, 1, [C("kontakt", "telefon większy")]);   // v3
@@ -101,7 +101,7 @@ public class RollbackTests : IDisposable
         // v3 powstaje z v1, wiec zmiany sa v3-vs-v1. Snapshot v2 nie ma tu nic do rzeczy.
         var api = Api();
         var p = await api.CreateAsync("idea", "Fryzjer");
-        await api.ChooseProposalAsync(p.Id, "p-1");
+        await api.ChooseProposalAsync(p.Id, "a");
         await api.ApplyCommentsAsync(p.Id, 1, [C("hero", "nazwa większa")]);
         await api.RollbackAsync(p.Id, 1);
         await api.ApplyCommentsAsync(p.Id, 1, [C("kontakt", "telefon większy")]);
@@ -126,7 +126,7 @@ public class RollbackTests : IDisposable
     {
         var api = Api();
         var p = await api.CreateAsync("idea", "Fryzjer");
-        await api.ChooseProposalAsync(p.Id, "p-1");
+        await api.ChooseProposalAsync(p.Id, "a");
 
         var v1 = (await api.GetAsync(p.Id)).Versions.Single();
         Assert.Null(v1.BasedOn);

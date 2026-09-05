@@ -21,6 +21,7 @@ public class MockSnapshotTests : IDisposable
     {
         var api = new MockProjectApi { SimulatedDelay = TimeSpan.Zero, SnapshotRoot = _root };
         var p = await api.CreateAsync("idea", "Fryzjer");
+        await api.ChooseProposalAsync(p.Id, "a");   // runda potrzebuje wersji biezacej (5.1)
 
         await api.ApplyCommentsAsync(p.Id, 1, []);
 
@@ -35,6 +36,7 @@ public class MockSnapshotTests : IDisposable
         // Bez data-cmt-id nie ma w co kliknac, a format musi przejsc AnchorFormat z 3.1.
         var api = new MockProjectApi { SimulatedDelay = TimeSpan.Zero, SnapshotRoot = _root };
         var p = await api.CreateAsync("idea", "Fryzjer");
+        await api.ChooseProposalAsync(p.Id, "a");   // runda potrzebuje wersji biezacej (5.1)
         await api.ApplyCommentsAsync(p.Id, 1, []);
 
         var wersja = (await api.GetAsync(p.Id)).Versions[^1].Number;
@@ -52,6 +54,7 @@ public class MockSnapshotTests : IDisposable
         // Snapshot i ZIP klienta zostaja czyste.
         var api = new MockProjectApi { SimulatedDelay = TimeSpan.Zero, SnapshotRoot = _root };
         var p = await api.CreateAsync("idea", "Fryzjer");
+        await api.ChooseProposalAsync(p.Id, "a");   // runda potrzebuje wersji biezacej (5.1)
         await api.ApplyCommentsAsync(p.Id, 1, []);
 
         var wersja = (await api.GetAsync(p.Id)).Versions[^1].Number;
@@ -71,7 +74,7 @@ public class MockSnapshotTests : IDisposable
         var api = new MockProjectApi { SimulatedDelay = TimeSpan.Zero, SnapshotRoot = _root };
         var p = await api.CreateAsync("idea", "Fryzjer");
 
-        await api.ChooseProposalAsync(p.Id, "p-1");
+        await api.ChooseProposalAsync(p.Id, "a");
 
         var po = await api.GetAsync(p.Id);
         var wersja = Assert.Single(po.Versions);
@@ -93,7 +96,7 @@ public class MockSnapshotTests : IDisposable
     {
         var api = new MockProjectApi { SimulatedDelay = TimeSpan.Zero, SnapshotRoot = _root };
         var p = await api.CreateAsync("idea", "Fryzjer");
-        await api.ChooseProposalAsync(p.Id, "p-1");
+        await api.ChooseProposalAsync(p.Id, "a");
         await api.ApplyCommentsAsync(p.Id, 1, []);
 
         var projekt = await api.GetAsync(p.Id);

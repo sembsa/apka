@@ -1,3 +1,4 @@
+using Generator.Web.Api;
 using Generator.Web.Contracts;
 using Generator.Web.Mock;
 using Xunit;
@@ -28,6 +29,7 @@ public class MockProjectApiTests
         // Kontrakt 1: wszystko, co uruchamia model, jest zadaniem.
         var api = Api();
         var p = await api.CreateAsync("idea", "x");
+        await api.ChooseProposalAsync(p.Id, "a");   // runda potrzebuje wersji biezacej (5.1)
 
         var jobId = await api.ApplyCommentsAsync(p.Id, 1, [C("c1", "hero", "telefon za maly")]);
 
@@ -41,8 +43,9 @@ public class MockProjectApiTests
     {
         // Kontrakt 4.3: cause NIE idzie do UI.
         var api = Api();
-        api.NextJobOutcome = MockJobOutcome.Halted;
         var p = await api.CreateAsync("idea", "x");
+        await api.ChooseProposalAsync(p.Id, "a");   // runda potrzebuje wersji biezacej (5.1)
+        api.NextJobOutcome = MockJobOutcome.Halted;
 
         var jobId = await api.ApplyCommentsAsync(p.Id, 1, [C("c1", null, "x")]);
         var job = await api.GetJobAsync(jobId);
@@ -56,8 +59,9 @@ public class MockProjectApiTests
     {
         // Kontrakt 4.4: z punktu widzenia klienta to BRAK ZDARZENIA.
         var api = Api();
-        api.NextJobOutcome = MockJobOutcome.Halted;
         var p = await api.CreateAsync("idea", "x");
+        await api.ChooseProposalAsync(p.Id, "a");   // runda potrzebuje wersji biezacej (5.1)
+        api.NextJobOutcome = MockJobOutcome.Halted;
         await api.ApplyCommentsAsync(p.Id, 1, [C("c1", null, "x")]);
 
         var after = await api.GetAsync(p.Id);
@@ -78,7 +82,10 @@ public class MockProjectApiTests
         var frozen = await api.GetAsync(p.Id);
         Assert.Equal("frozen", frozen.Status);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(
+        // Konkretny typ, nie InvalidOperationException: `Editor.Kolizja` wymienia
+        // typy po nazwie, wiec goly wyjatek bazowy przez nia NIE przechodzil
+        // i pod atrapa zamrozenie zrywalo obwod zamiast pokazac zdanie.
+        await Assert.ThrowsAsync<ProjectFrozenException>(
             () => api.ApplyCommentsAsync(p.Id, 1, [C("c1", null, "x")]));
     }
 
@@ -87,6 +94,7 @@ public class MockProjectApiTests
     {
         var api = Api();
         var p = await api.CreateAsync("idea", "x");
+        await api.ChooseProposalAsync(p.Id, "a");   // runda potrzebuje wersji biezacej (5.1)
         var jobId = await api.ApplyCommentsAsync(p.Id, 1, [C("c1", "hero", "telefon za maly")]);
         await api.GetJobAsync(jobId);
 
@@ -94,5 +102,53 @@ public class MockProjectApiTests
         var c = Assert.Single(comments);
         Assert.Equal("applied", c.Status);
         Assert.False(string.IsNullOrWhiteSpace(c.Note));
+    }
+
+    [Fact]
+    public async Task Atrapa_odmawia_tymi_samymi_typami_wyjatkow_co_prawdziwe_API()
+    {
+        // `Editor.Kolizja` i `Proposals.Kolizja` rozpoznaja odmowe PO TYPIE. Atrapa
+        // rzucala ArgumentOutOfRangeException i goly InvalidOperationException albo
+        // nie rzucala wcale, wiec pod nia te same klikniecia zrywaly obwod, a dwie
+        // z czterech galezi obslugi odmowy nie mialy jak zostac dotkniete.
+        var api = Api();
+        var p = await api.CreateAsync("idea", "x");
+        await api.ChooseProposalAsync(p.Id, "a");
+
+        // Szkic spoza bialej listy silnika (a|b|c) — glosno, nie cicho.
+        await Assert.ThrowsAsync<KeyNotFoundException>(() => api.ChooseProposalAsync(p.Id, "p-1"));
+
+        // Wersja, ktorej nie ma: KeyNotFoundException, nie ArgumentOutOfRangeException.
+        await Assert.ThrowsAsync<KeyNotFoundException>(() => api.RollbackAsync(p.Id, 7));
+
+        // Uwagi do wersji innej niz biezaca (kontrakt 5.1).
+        await Assert.ThrowsAsync<StaleVersionException>(
+            () => api.ApplyCommentsAsync(p.Id, 99, [C("c1", null, "x")]));
+
+        // Zamrozenie blokuje takze zamowienie szkicow (4.5).
+        api.ForceFrozen(p.Id);
+        await Assert.ThrowsAsync<ProjectFrozenException>(() => api.RequestProposalsAsync(p.Id));
+    }
+
+    [Fact]
+    public async Task Atrapa_umie_powiedziec_ze_zadanie_juz_trwa()
+    {
+        // Czwarty typ odmowy. Bez niego dwuklik „Popraw to" na atrapie przechodzil
+        // obojetnie, a na prawdziwym API konczyl sie JobRunningException — czyli
+        // zachowanie, ktorego nie dalo sie ani przeklikac, ani przetestowac.
+        var api = new MockProjectApi { SimulatedDelay = TimeSpan.FromMilliseconds(200) };
+        var p = await api.CreateAsync("idea", "x");
+        await api.ChooseProposalAsync(p.Id, "a");
+
+        var pierwsza = api.ApplyCommentsAsync(p.Id, 1, [C("c1", null, "raz")]);
+
+        await Assert.ThrowsAsync<JobRunningException>(
+            () => api.ApplyCommentsAsync(p.Id, 1, [C("c2", null, "dwa")]));
+        await Assert.ThrowsAsync<JobRunningException>(() => api.RollbackAsync(p.Id, 1));
+
+        await pierwsza;
+
+        // Po zakonczeniu rezerwacja znika — inaczej projekt odmawialby juz na zawsze.
+        await api.RollbackAsync(p.Id, 1);
     }
 }

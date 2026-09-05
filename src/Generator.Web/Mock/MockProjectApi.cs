@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Generator.Engine.Versioning;
+using Generator.Web.Api;
 using Generator.Web.Contracts;
 using Generator.Web.Preview;
 
@@ -33,6 +34,30 @@ public class MockProjectApi : IProjectApi
     /// na „pokaz, co jest" kontra „zamow komplet".
     /// </summary>
     private readonly ConcurrentDictionary<string, byte> _zamowione = new();
+
+    /// <summary>
+    /// projectId -> jobId zadania, ktore wlasnie trwa. Atrapa nie ma kolejki, wiec
+    /// jej „zadanie" to samo wywolanie metody: rezerwacja zyje od wejscia do wyjscia
+    /// (prawdziwa `JobQueue` trzyma ja do konca pracy w tle). To wystarcza, zeby
+    /// odtworzyc jedyna sytuacje, w ktorej klient to widzi — drugi klik albo druga
+    /// karta w trakcie generacji — i nie grozi zawieszeniem rezerwacji na zawsze.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, string> _aktywne = new();
+
+    /// Straz „jedno zadanie na projekt" (plan, sekcja 7). Prawdziwe `ProjectApi`
+    /// pyta o to `queue.MaAktywne(id)` w Choose, Rollback i Apply.
+    private void Wolne(string id)
+    {
+        if (_aktywne.ContainsKey(id)) throw new JobRunningException(id);
+    }
+
+    private void Zajmij(string id, string jobId)
+    {
+        if (!_aktywne.TryAdd(id, jobId)) throw new JobRunningException(id);
+    }
+
+    private void Zwolnij(string id, string jobId) =>
+        _aktywne.TryRemove(new KeyValuePair<string, string>(id, jobId));
 
     public MockJobOutcome NextJobOutcome { get; set; } = MockJobOutcome.Success;
     public TimeSpan SimulatedDelay { get; set; } = TimeSpan.FromSeconds(2);
@@ -137,19 +162,34 @@ public class MockProjectApi : IProjectApi
 
     public async Task<string> RequestProposalsAsync(string id)
     {
-        await Task.Delay(SimulatedDelay);
-        _zamowione[id] = 0;
+        if (_projects[id].Status == "frozen") throw new ProjectFrozenException(id);   // kontrakt 4.5
+
         var jobId = Guid.NewGuid().ToString();
-        _jobs[jobId] = new JobView(jobId, "succeeded", null);
-        return jobId;
+        Zajmij(id, jobId);
+        try
+        {
+            await Task.Delay(SimulatedDelay);
+            _zamowione[id] = 0;
+            _jobs[jobId] = new JobView(jobId, "succeeded", null);
+            return jobId;
+        }
+        finally
+        {
+            Zwolnij(id, jobId);
+        }
     }
+
+    /// Te same trzy identyfikatory co `GenerationService.SketchIds` i `ProjectApi`.
+    /// Atrapa uzywala „p-1/p-2/p-3", wiec kazdy wybor przeklikany na niej byl
+    /// wyborem, ktory prawdziwe API odrzuca jako nieistniejacy.
+    private static readonly string[] DozwoloneId = ["a", "b", "c"];
 
     public Task<IReadOnlyList<ProposalView>> GetProposalsAsync(string id) =>
         Task.FromResult<IReadOnlyList<ProposalView>>(_zamowione.ContainsKey(id) ?
         [
-            new("p-1", "Ciepły i prosty", "<html><body style='font-family:system-ui'><h1 data-cmt-id=\"hero\">Fryzjer</h1></body></html>"),
-            new("p-2", "Nowoczesny, ciemny", "<html><body style='background:#111;color:#eee'><h1 data-cmt-id=\"hero\">Fryzjer</h1></body></html>"),
-            new("p-3", "Klasyczny z cennikiem", "<html><body><h1 data-cmt-id=\"hero\">Fryzjer</h1><ul data-cmt-id=\"cennik\"><li>Strzyżenie 60 zł</li></ul></body></html>"),
+            new("a", "Ciepły i prosty", "<html><body style='font-family:system-ui'><h1 data-cmt-id=\"hero\">Fryzjer</h1></body></html>"),
+            new("b", "Nowoczesny, ciemny", "<html><body style='background:#111;color:#eee'><h1 data-cmt-id=\"hero\">Fryzjer</h1></body></html>"),
+            new("c", "Klasyczny z cennikiem", "<html><body><h1 data-cmt-id=\"hero\">Fryzjer</h1><ul data-cmt-id=\"cennik\"><li>Strzyżenie 60 zł</li></ul></body></html>"),
         ] : []);
 
     /// <summary>
@@ -160,7 +200,15 @@ public class MockProjectApi : IProjectApi
     /// </summary>
     public async Task ChooseProposalAsync(string id, string proposalId)
     {
+        Wolne(id);
         var project = _projects[id];
+
+        // Ta sama biala lista i ten sam typ wyjatku co w `ProjectApi`. Atrapa
+        // przyjmowala dotad kazdy tekst, wiec galezi „szkicu juz nie ma" nie dalo
+        // sie przejsc ani przeklikac.
+        if (!DozwoloneId.Contains(proposalId))
+            throw new KeyNotFoundException($"nie ma propozycji {proposalId} w projekcie {id}");
+
         if (project.Versions.Count > 0) return;
 
         await ZapiszSnapshot(id, 1, [], rodzic: null);
@@ -179,6 +227,7 @@ public class MockProjectApi : IProjectApi
     /// </summary>
     public Task<string> CreateFirstVersionAsync(string id)
     {
+        Wolne(id);
         var jobId = Guid.NewGuid().ToString();
         _jobs[jobId] = new JobView(jobId, "succeeded", null);
         return Task.FromResult(jobId);
@@ -190,9 +239,16 @@ public class MockProjectApi : IProjectApi
     /// </summary>
     public Task RollbackAsync(string id, int version)
     {
+        // Kontrakt 5.1: powrotu nie wolno wykonac w trakcie zadania — konczaca sie
+        // runda przestawilaby wskaznik i cicho uniewaznila powrot.
+        Wolne(id);
         var project = _projects[id];
+
+        // KeyNotFoundException, nie ArgumentOutOfRangeException: `Editor.Kolizja`
+        // rozpoznaje ten pierwszy i pokazuje zdanie, a drugiego nie — wiec pod atrapa
+        // ten sam klik ZRYWAL OBWOD, choc pod prawdziwym API konczy sie komunikatem.
         if (project.Versions.All(v => v.Number != version))
-            throw new ArgumentOutOfRangeException(nameof(version), $"nie ma wersji {version}");
+            throw new KeyNotFoundException($"projekt {id} nie ma wersji {version}");
 
         _projects[id] = project with { CurrentVersion = version };
         return Task.CompletedTask;
@@ -227,14 +283,38 @@ public class MockProjectApi : IProjectApi
 
     public async Task<string> ApplyCommentsAsync(string id, int version, IReadOnlyList<CommentDto> comments)
     {
-        if (_projects[id].Status == "frozen")
-            throw new InvalidOperationException("projekt zamrozony (409)");   // kontrakt 4.5
+        var stan = _projects[id];
+
+        // ProjectFrozenException, nie goly InvalidOperationException: `Editor.Kolizja`
+        // wymienia typy, a goly wyjatek przez nia nie przechodzil — zamrozenie po
+        // pietnastej rundzie trafia w KAZDEGO klienta, wiec pod atrapa kazdy z nich
+        // dostawalby zerwany obwod zamiast zdania o wyczerpanym pakiecie.
+        if (stan.Status == "frozen") throw new ProjectFrozenException(id);   // kontrakt 4.5
+
+        // Kontrakt 5.1: uwagi ida do wersji, ktora klient WIDZI. Stara karta wysyla
+        // je do v1, gdy biezaca jest juz v2 — atrapa przyjmowala to obojetnie, wiec
+        // galezi „strona zmienila sie w miedzyczasie" nie dalo sie przejsc.
+        // Zero wersji tez jest nieaktualnoscia: runda nie ma czego poprawiac.
+        if (stan.CurrentVersion == 0 || version != stan.CurrentVersion)
+            throw new StaleVersionException(version, stan.CurrentVersion);
+
+        var jobId = Guid.NewGuid().ToString();
+        Zajmij(id, jobId);
 
         Scal(id, version, comments);
 
-        var jobId = Guid.NewGuid().ToString();
         _jobs[jobId] = new JobView(jobId, "running", null);
-        await Task.Delay(SimulatedDelay);
+        try
+        {
+            await Task.Delay(SimulatedDelay);
+        }
+        finally
+        {
+            // Rezerwacja konczy sie razem z wywolaniem: `DokonczPowtorke` chodzi
+            // w tle i moze nigdy sie nie skonczyc (RetryResolvesAfter = null),
+            // wiec trzymanie jej dluzej zamykaloby projekt na zawsze.
+            Zwolnij(id, jobId);
+        }
 
         // Projekt czytamy PO opoznieniu: przez te 2 sekundy stan mogl sie zmienic
         // (np. ForceFrozen z testu), a zapis ze starej kopii cicho by to skasowal.
