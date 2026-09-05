@@ -1,6 +1,7 @@
 @page "/editor/{ProjectId}"
 @inject IProjectApi Api
 @inject IJSRuntime JS
+@inject NavigationManager Nav
 @using Generator.Web.Api
 @using Generator.Web.Contracts
 @implements IAsyncDisposable
@@ -132,6 +133,54 @@ else
     <JobStatus Job="_job" />
 
     <HistoriaWersji Project="_project" Job="_job" OnRollback="Wroc" />
+
+    @* Koniec drogi klienta: to, za co zaplacil, ma dac sie ZABRAC. Endpoint ZIP istnial
+       od dawna, ale pod `/api` i za naglowkiem `X-Project-Token`, ktorego zwykly link
+       nie wysle — wiec z UI byl nieosiagalny i decyzja 2 („podglad + ZIP") konczyla sie
+       na papierze.
+
+       CELOWO POZA warunkiem na `frozen`: kontrakt mowi wprost, ze po zamrozeniu podglad
+       i ZIP dzialaja dalej. Klient, ktory wyczerpal poprawki, ma najwiecej powodow, zeby
+       zabrac swoja strone — odcinanie mu wtedy pobierania bylo by karaniem za to, ze
+       skorzystal z pakietu. *@
+    @if (wersja is not null)
+    {
+        <section class="odbior" data-test="odbior">
+            <h2>Odbierz swoją stronę</h2>
+
+            @* Numer Z `Aktualna()`, nie z konca listy: po powrocie do starszej wersji
+               klient pobiera TO, NA CO PATRZY. Kontrakt 5.1. *@
+            <p>
+                <a class="pobierz" data-test="pobierz" href="/pobierz/@ProjectId/@wersja.Number">
+                    Pobierz stronę (wersja @wersja.Number)
+                </a>
+                <span class="odbior-opis">
+                    Paczka ZIP z kompletem plików — po rozpakowaniu działa gdziekolwiek,
+                    bez nas.
+                </span>
+            </p>
+
+            @* Bez kont (decyzja 3) ten adres jest JEDYNA droga powrotna. Czytamy go
+               z `NavigationManager`, a nie sklejamy z `ProjectId` — sklejony bylby drugim
+               zrodlem prawdy o tym samym ciagu i mogl sie rozjechac po zmianie trasy.
+               Pole jest widoczne i zaznaczalne nawet wtedy, gdy kopiowanie skryptem
+               zawiedzie: przycisk, ktory po cichu nie dziala, byloby gorszy niz brak
+               przycisku. *@
+            <p class="odbior-link">
+                <label for="twoj-link">
+                    Twój link do tej strony — zapisz go sobie, bez niego tu nie wrócisz:
+                </label>
+                <span class="odbior-link-pole">
+                    <input id="twoj-link" data-test="twoj-link" readonly value="@Nav.Uri" />
+                    <button data-test="kopiuj" @onclick="Kopiuj">Skopiuj</button>
+                </span>
+                @if (_kopiowanie is not null)
+                {
+                    <span role="status" data-test="kopiowanie">@_kopiowanie</span>
+                }
+            </p>
+        </section>
+    }
 }
 
 @code {
@@ -149,6 +198,29 @@ else
     private string _draftText = string.Empty;
     private JobView? _job;
     private string? _kolizja;
+
+    /// Komunikat po probie skopiowania linku. `null` = jeszcze nie probowano.
+    private string? _kopiowanie;
+
+    /// <summary>
+    /// Kopiowanie linku do schowka. Schowek bywa niedostepny (brak zgody uzytkownika,
+    /// http spoza localhosta, starsza przegladarka) i `writeText` wtedy RZUCA — a wyjatek
+    /// z uchwytu zdarzenia Blazora konczy obwod, wiec klient dostalby pasek „polaczenie
+    /// zerwane" zamiast linku, po ktory tu przyszedl. Pole obok pokazuje adres w calosci,
+    /// wiec niepowodzenie kosztuje jedno zdanie, a nie utrate drogi powrotnej.
+    /// </summary>
+    private async Task Kopiuj()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", Nav.Uri);
+            _kopiowanie = "Skopiowane.";
+        }
+        catch (Exception)
+        {
+            _kopiowanie = "Nie udało się skopiować — zaznacz adres w polu obok i skopiuj ręcznie.";
+        }
+    }
 
     /// Cztery wyjatki, ktorymi `ProjectApi` mowi „nie teraz" albo „juz nie" — wszystkie
     /// sa normalnymi odpowiedziami na klikniecie, nie awariami aplikacji.

@@ -265,3 +265,15 @@ się, że panel na tym wdrożeniu jest skonfigurowany. Nie ukrywamy tego, bo `GE
 /panel` i tak pokazuje formularz każdemu, kto zgadnie adres — ukrywanie samego
 POST-a nic by nie zamknęło. Granica, która liczy się naprawdę, jest wcześniej:
 bez `Admin:Token` trasy nie ma w ogóle.
+
+### Uzupełnienie po `/pobierz`: co jeszcze stoi za GUID-em
+
+Dopisałem trasę `/pobierz/{id}/{n}` (bez tokenu, jak `/preview`), bo Twój endpoint
+`/api/.../zip` jest `Chroniony`, a przeglądarka nie wyśle `X-Project-Token` ze zwykłego
+`<a href>` — więc z UI był nieosiągalny i klient nie miał jak odebrać swojej strony.
+Budowanie paczki wyciągnąłem do `Paczka` (jedno miejsce, oba wejścia). Twój fix
+z separatorem `/` w nazwach wpisów ma teraz test, który bez niego pada.
+
+To dokłada jedną rzecz do akapitu wyżej o panelu: zrzut ekranu panelu daje dziś
+podgląd, edytor **i pobranie kopii** strony każdego widocznego projektu. Wszystko za
+tym samym GUID-em.

@@ -92,6 +92,13 @@ app.MapRazorComponents<App>()
 app.MapPreview((projectId, version) =>
     new VersionStore(Path.Combine(snapshotRoot, projectId)).SnapshotPath(version));
 
+// Pobranie strony kliknieciem w link. Ten sam katalog co podglad i ta sama straz
+// (GUID projektu). Osobna trasa, bo endpoint ZIP pod /api wymaga naglowka
+// X-Project-Token, ktorego zwykly <a href> nie wysle — czyli z UI byl nieosiagalny
+// i klient nie mial jak odebrac tego, za co zaplacil.
+app.MapPobierz((projectId, version) =>
+    new VersionStore(Path.Combine(snapshotRoot, projectId)).SnapshotPath(version));
+
 // Kontrakt 1. Nasze Blazorowe UI chodzi po IProjectApi w procesie — te trasy sa dla
 // klientow spoza niego.
 app.MapApi();

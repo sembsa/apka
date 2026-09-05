@@ -3,6 +3,7 @@ using Generator.Web.Components.Pages;
 using Generator.Web.Api;
 using Generator.Web.Contracts;
 using Generator.Web.Mock;
+using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -466,5 +467,74 @@ public class EditorPageTests : BunitContext
         cut.WaitForAssertion(() => Assert.NotNull(cut.Find("iframe")));
         var iframeId = cut.Find("iframe").GetAttribute("id");
         Assert.False(string.IsNullOrWhiteSpace(iframeId));
+    }
+
+    // ── Odbior strony (decyzja 2: podglad + ZIP) ──────────────────────────────
+
+    [Fact]
+    public async Task Klient_ma_skad_pobrac_swoja_strone()
+    {
+        // Do tej pory NIE MIAL. Endpoint ZIP istnial pod `/api`, ale za naglowkiem
+        // `X-Project-Token`, ktorego zwykly link nie wysle — wiec produkt nie umial
+        // wydac tego, za co klient zaplacil.
+        var (api, id) = await Setup();
+        // Numer bierzemy z API, nie z palca: Setup() robi wybor propozycji (v1)
+        // i jedna runde (v2), wiec wpisane „1" testowaloby cos innego, niz sadzi nazwa.
+        var biezaca = (await api.GetAsync(id)).NumerAktualnej();
+        var cut = Render<Editor>(ps => ps.Add(p => p.ProjectId, id));
+
+        cut.WaitForAssertion(() => Assert.NotNull(cut.Find("[data-test='pobierz']")));
+        Assert.Equal($"/pobierz/{id}/{biezaca}", cut.Find("[data-test='pobierz']").GetAttribute("href"));
+    }
+
+    [Fact]
+    public async Task Po_powrocie_do_starszej_wersji_pobiera_sie_TO_NA_CO_KLIENT_PATRZY()
+    {
+        // Kontrakt 5.1: „aktualna" przestaje znaczyc „ostatnia". Link zbudowany
+        // z konca listy dalby klientowi wersje, ktorej wlasnie sie pozbyl — i to bez
+        // zadnego bledu, wiec zauwazylby dopiero po rozpakowaniu.
+        var (api, id) = await Setup();
+        // Uwagi ida do wersji BIEZACEJ (straz 5.1 odrzuca numer starszy), a Setup()
+        // zostawia projekt na wersji 2.
+        await api.ApplyCommentsAsync(id, (await api.GetAsync(id)).NumerAktualnej(), []);
+        await api.RollbackAsync(id, 1);            // klient wraca do PIERWSZEJ wersji
+
+        var cut = Render<Editor>(ps => ps.Add(p => p.ProjectId, id));
+
+        cut.WaitForAssertion(() => Assert.NotNull(cut.Find("[data-test='pobierz']")));
+        Assert.Equal($"/pobierz/{id}/1", cut.Find("[data-test='pobierz']").GetAttribute("href"));
+    }
+
+    [Fact]
+    public async Task Po_zamrozeniu_klient_NADAL_moze_zabrac_swoja_strone()
+    {
+        // Kontrakt: po zamrozeniu podglad i ZIP dzialaja dalej. Klient, ktory wyczerpal
+        // poprawki, ma najwiecej powodow, zeby pobrac strone — odciecie mu wtedy
+        // pobierania byloby karaniem za skorzystanie z pakietu.
+        var (api, id) = await Setup();
+        api.ForceFrozen(id);
+
+        var cut = Render<Editor>(ps => ps.Add(p => p.ProjectId, id));
+
+        cut.WaitForAssertion(() => Assert.NotNull(cut.Find("[data-test='zamrozone']")));
+        Assert.NotNull(cut.Find("[data-test='pobierz']"));
+    }
+
+    [Fact]
+    public async Task Klient_widzi_swoj_link_bo_bez_niego_nie_wroci()
+    {
+        // Model „bez kont, token w linku" (decyzja 3) znaczy, ze ten adres jest JEDYNA
+        // droga powrotna do oplaconej strony. Ekran czekania obiecuje „wroc linkiem" —
+        // edytor musi ten link pokazac, i to w polu, ktore da sie zaznaczyc takze wtedy,
+        // gdy kopiowanie do schowka zawiedzie.
+        var (_, id) = await Setup();
+        Services.GetRequiredService<NavigationManager>().NavigateTo($"/editor/{id}");
+
+        var cut = Render<Editor>(ps => ps.Add(p => p.ProjectId, id));
+
+        cut.WaitForAssertion(() => Assert.NotNull(cut.Find("[data-test='twoj-link']")));
+        var pole = cut.Find("[data-test='twoj-link']");
+        Assert.EndsWith($"/editor/{id}", pole.GetAttribute("value"));
+        Assert.True(pole.HasAttribute("readonly"));
     }
 }

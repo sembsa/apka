@@ -504,3 +504,49 @@ label { display: block; margin-bottom: 0.35rem; color: var(--tresc-cicha); }
     .panel-lista { display: block; overflow-x: auto; white-space: nowrap; }
     .panel-opis { white-space: normal; }
 }
+
+/* ── Odbior strony ───────────────────────────────────────────────────────────
+   Koniec drogi klienta: pobranie paczki i wlasny link. Wyrozniony blok, bo to
+   jedyne miejsce, w ktorym klient dostaje cos NA WLASNOSC — reszta edytora sluzy
+   do zamawiania zmian. */
+
+.odbior {
+    margin: 2rem 0 0;
+    padding: 1.25rem;
+    background: var(--akcent-tlo);
+    border: 1px solid var(--linia);
+    border-radius: var(--promien);
+}
+
+.odbior h2 { margin: 0 0 0.75rem; font-size: 1.15rem; }
+.odbior p { margin: 0 0 0.75rem; }
+.odbior p:last-child { margin-bottom: 0; }
+
+.pobierz {
+    display: inline-block;
+    padding: 0.6rem 1.1rem;
+    font-weight: 600;
+    color: #fff;
+    text-decoration: none;
+    background: var(--akcent);
+    border-radius: 6px;
+}
+
+.pobierz:hover { filter: brightness(1.1); }
+.odbior-opis { display: block; margin-top: 0.4rem; color: var(--tresc-cicha); font-size: 0.9rem; }
+
+.odbior-link label { display: block; margin-bottom: 0.35rem; }
+
+/* Adres jest dlugi, a klient ma go SKOPIOWAC — pole rosnie, przycisk nie. */
+.odbior-link-pole { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.odbior-link-pole input {
+    flex: 1 1 20rem;
+    min-width: 0;
+    padding: 0.5rem 0.6rem;
+    font: inherit;
+    font-size: 0.9rem;
+    color: var(--tresc-cicha);
+    background: var(--karta);
+    border: 1px solid var(--linia);
+    border-radius: 6px;
+}

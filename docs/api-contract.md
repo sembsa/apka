@@ -33,7 +33,8 @@ a `GET /api/jobs/{id}` zostaje dla klientów poza naszym UI.
 | `PUT` | `/api/projects/{id}/versions/{n}/comments` | `200` — zapisuje uwagi klienta **bez uruchamiania modelu** (6.1) |
 | `GET` | `/api/projects/{id}/versions` | lista wersji (numer, data powstania, `basedOn`, `changedAnchors`) — **bez kosztu** (4.1, 6.2) |
 | `GET` | `/preview/{id}/{n}/` | statyczne pliki wersji do iframe (koncowy ukosnik obowiazkowy — 5.4) |
-| `GET` | `/api/projects/{id}/versions/{n}/zip` | ZIP (decyzja 2) |
+| `GET` | `/api/projects/{id}/versions/{n}/zip` | ZIP (decyzja 2) — dla integracji spoza naszego UI, z tokenem |
+| `GET` | `/pobierz/{id}/{n}` | ten sam ZIP, dla przycisku w edytorze — **bez tokenu**, jak `/preview` (patrz niżej) |
 | `POST` | `/api/projects/{id}/rollback/{n}` | `200` — przestawia `currentVersion` (5.1); `409` w trakcie zadania |
 | `GET` | `/api/projects/{id}/versions/{n}/comments` | uwagi tej wersji ze statusem z raportu silnika (3.3) |
 | `GET` | `/api/jobs/{id}` | status zadania + `failure {handling, attempts}` — **bez `cause`** (4.3, 6.3) |
@@ -46,9 +47,15 @@ nie idzie do UI; frontend rozgałęzia się po `handling` (4.3).
 jest dla klienta, budżet tylko dla nas.
 
 **Token (decyzja 3).** `/api/*` wymaga tokenu projektu: `?token=` na `GET`,
-nagłówek `X-Project-Token` na `POST`. `/preview/*` w v1 tokenu **nie** wymaga —
+nagłówek `X-Project-Token` na `POST`. `/preview/*` i `/pobierz/*` w v1 tokenu **nie** wymagają —
 podgląd ładuje przeglądarka w `iframe`, więc token wylądowałby w pasku adresu
-i w nagłówku `Referer`. Chroni go wyłącznie nieodgadywalny GUID projektu.
+i w nagłówku `Referer`. Chroni je wyłącznie nieodgadywalny GUID projektu.
+
+`/pobierz` musi istnieć osobno od `/api/.../zip`, bo przeglądarka nie wyśle nagłówka
+`X-Project-Token` ze zwykłego `<a href>` — endpoint ZIP był więc dla klienta
+nieosiągalny i decyzja 2 („podgląd + ZIP") kończyła się na papierze. Nowej klasy
+dostępu to nie otwiera: `/preview/*` już dziś wydaje każdy plik tej samej strony,
+więc GUID jest poświadczeniem do wszystkiego poza `/api/*`.
 To znane ograniczenie, do zamknięcia razem z kontami (poza v1).
 
 ## 2. Kontrakt silnika (Sebastian — wypełniony)

@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
 using Generator.Web.Contracts;
+using Generator.Web.Preview;
 
 namespace Generator.Web.Api;
 
@@ -91,25 +92,10 @@ public static class ApiEndpoints
                     if (!Directory.Exists(katalog))
                         return Task.FromResult(Results.NotFound());
 
-                    // Do pamieci, nie do pliku tymczasowego: strona z decyzji 4 to
-                    // kilka plikow tekstowych, a plik tymczasowy trzeba by sprzatac
-                    // takze wtedy, gdy klient zerwie polaczenie w polowie pobierania.
-                    var bufor = new MemoryStream();
-                    using (var zip = new ZipArchive(bufor, ZipArchiveMode.Create, leaveOpen: true))
-                    {
-                        foreach (var plik in Directory.EnumerateFiles(katalog, "*", SearchOption.AllDirectories))
-                        {
-                            // Nazwy wpisow zawsze z ukosnikiem w przod. `GetRelativePath`
-                            // oddaje separator SYSTEMU, wiec ZIP zbudowany na Windows
-                            // (druga osoba pracuje na Windows) mialby wpisy „css\styl.css"
-                            // — jeden plik o dziwnej nazwie zamiast katalogu.
-                            var wpis = Path.GetRelativePath(katalog, plik)
-                                .Replace(Path.DirectorySeparatorChar, '/');
-                            zip.CreateEntryFromFile(plik, wpis);
-                        }
-                    }
-                    bufor.Position = 0;
-                    return Task.FromResult(Results.File(bufor, "application/zip", $"strona-v{n}.zip"));
+                    // Budowanie paczki siedzi w `Paczka` — te same bajty musi oddawac
+                    // trasa `/pobierz` dla przycisku w edytorze. Patrz komentarz tam.
+                    return Task.FromResult(Results.File(
+                        Paczka.Zbuduj(katalog), "application/zip", Paczka.Nazwa(n)));
                 }));
 
         // §1: „`/api/*` wymaga tokenu projektu". Ta trasa byla JEDYNA, ktora szla
