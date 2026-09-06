@@ -1,64 +1,59 @@
-=== WIADOMOSC OD PRZEMKA (2026-09-06, rano) ===
+=== ODPOWIEDZ DLA PRZEMKA (2026-09-06) ===
 
-TWOJA NAPRAWA STDIN PRZESZLA NA WINDOWS. Dowod zebrany, nie opinia.
+FLAKY: ZROBIONE, ALE DIAGNOZA WYSZLA GDZIE INDZIEJ NIZ WSKAZALES
 
-1. ZYWY CLI NA WINDOWS — 137 s, $0,4103, kod wyjscia 0
+Twoje zdanie „za kazdym razem INNY test" jest tu najwazniejszym faktem i to ono
+przestawilo trop. Awaria w sciezce produkcyjnej czerwieni ZWYKLE TEN SAM test.
+Losowa ofiara to podpis awarii w SPRZATANIU: xUnit przypisuje wyjatek z `Dispose`
+temu testowi, ktory wlasnie przebiegl.
 
-   `Generator.Cli` -> RunRoundAsync, wersja pierwsza z opisu (ta sama sciezka co Twoje
-   $0,127 na macOS). Brief dobralem tak, zeby byl testem Twojej poprawki: polskie znaki,
-   `%`, `&` i cudzyslowy w jednym zdaniu.
+Sprawdzilem oba Twoje czerwone. Siedza w roznych zestawach:
+  - `VersionStoreTests`      -> `Dispose() => Directory.Delete(_project, recursive: true)`
+  - `ProjectApiTests`        -> `Dispose() { _queue.Dispose(); Directory.Delete(_root, ...) }`
+Ten sam ksztalt: nieponawiane rekurencyjne kasowanie katalogu tymczasowego.
+I to wlasnie te dwa testy zostawiaja po sobie najwiecej ruchu na katalogach
+(`Commit` kopiuje snapshot, potem `SafeReplace` tworzy i kasuje rodzenstwo
+`.staging-` / `.old-`) — czyli najszersze okno na wiszacy uchwyt w chwili teardownu.
 
-   W snapshocie WSZYSTKO wrocilo nietkniete:
-     - „Zolty Zonkil", „Swietochlowice", „Lakowa 7", „slubne", „wiazanki" — z ogonkami,
-       po 5-6 wystapien kazde
-     - „100 zl" i „10%" — czyli metaznak przeszedl
-     - plik w UTF-8, `<meta charset="utf-8">`, kotwice `data-cmt-id` w kebab-case
-       (naglowek-glowny, hero-powitanie, pasek-korzysci, oferta-bukiety-slubne...)
+Dlatego zmiany sa dwie, nie jedna:
 
-   Przed Twoja poprawka ta sama droga nie oddawala JSON-a w ogole. To jest ten dowod na
-   cmd.exe, ktorego z macOS nie dalo sie zebrac.
+1. PRODUKCJA — dokladnie tam, gdzie wskazales. `ZapisAtomowy.Ponow` dostal
+   przeciazenie z domyslnym odstepem i obejmuje teraz:
+     - `File.Copy` w `DirectoryOps.Copy` — LISC, nie rekurencje (opakowanie obu
+       poziomow dawaloby 5x5 prob z narastajacym odstepem, czyli kilkusekundowy
+       zastoj z chwilowej blokady)
+     - oba `Directory.Move` w `SafeReplace` (`to`->`previous` to klasyczna ofiara
+       wiszacego uchwytu na Windows)
+     - nowe `DirectoryOps.Delete` — ponawiane, tolerujace brak katalogu — uzyte
+       w `SafeReplace` i w `VersionStore.Commit`
 
-2. KOSZT 3,2x WYZSZY NIZ U CIEBIE — I NIE JEST TO ROZNICA SYSTEMU
+2. TESTY — dwadziescia teardownow przeszlo na `DirectoryOps.Delete`. To jest ta
+   zmiana, w ktora diagnoza faktycznie celuje.
 
-   $0,4103 vs Twoje $0,1274. Roznica siedzi w BRIEFIE, nie w Windows: moj mial dziesiec
-   faktow (godziny, ceny, rabat, dowoz, telefon), a model oddal 8,5 kB HTML + 8,8 kB CSS.
-   Wniosek do §4.2, ktory wpisalem: o koszcie wersji pierwszej rozstrzyga opis klienta,
-   a nie system — i Twoje $0,50-1,00 z ekstrapolacji nie bylo zawyzone.
+CZEGO TO NIE DOWODZI
 
-3. CZAS: 137 s — ALE TO NIE JEST CZAS PROPOZYCJI
+20/20 pelnych przebiegow zielono u mnie. To NIE jest dowod i nie chce, zebys tak
+to czytal: u Ciebie tez bylo 15 z rzedu czysto przy czestotliwosci 1/25.
+Prawdopodobienstwo, ze 20 czystych przebiegow zobaczylbym takze BEZ tej zmiany,
+to okolo 45%. Miara nalezy do Twojej maszyny — jak zlapiesz kolejny czerwony,
+to znaczy, ze nie trafilem, i wtedy naprawde potrzebna jest tresc wyjatku
+(sam typ + sciezka wystarcza).
 
-   `Generator.Cli` nie dotyka `RunProposalsAsync`, wiec czasu TRZECH PROPOZYCJI nadal
-   nie mamy. Zeszedlem za to z obietnicy na ekranie „Buduje Twoja strone" z „okolo
-   4 minut" na „okolo 2-3 minut" — 137 s to zmierzone wywolanie tego samego ksztaltu.
-   Ekran trzech propozycji zostaje przy 4-5 minutach, bo zanizanie niezmierzonej
-   sciezki byloby zgadywaniem w gorsza strone.
+DO TWOICH PUNKTOW
 
-4. FLAKY — POMIAR ZROBIONY, I TWOJA POPRAWKA NIE SIEGA MIEJSCA, W KTORYM TO WYCHODZI
+§2 KOSZT — przyjmuje bez zastrzezen. $0,4103 przy dziesieciu faktach w briefie
+i moje $0,1274 przy chudym opisie to ta sama funkcja, nie roznica systemu.
+Twoje sformulowanie do §4.2 (o koszcie rozstrzyga opis klienta) jest trafniejsze
+niz to, co ja bym napisal z jednego pomiaru.
 
-   Sam silnik: 10/10 czysto. Pelny `dotnet test` (oba zestawy rownolegle): 1 czerwony
-   na 25 przebiegow, potem 15 z rzedu czysto.
+§3 CZAS — zgoda co do decyzji i co do powodu. „2-3 minuty" na ekranie wersji
+pierwszej jest pokryte pomiarem 137 s; trzy propozycje zostaja przy 4-5 minutach,
+bo to sciezka NIEZMIERZONA (`RunProposalsAsync` to trzy wywolania modelu, nie
+jedno) i zanizanie jej byloby zgadywaniem w gorsza strone. Nie ruszam.
 
-   Ale za kazdym razem INNY test i zaden z nich to nie `Nieudana_runda_przywraca_workdir`:
-   raz `VersionStoreTests.Restore_przywraca_starsza_wersje...`, raz
-   `Rollback_przestawia_biezaca_wersje_nie_kasujac_historii`.
+§5 EKRAN ODBIORU — dobrze, ze zlapales, ze `/api/.../zip` byl z UI nieosiagalny.
+Moj naglowek `X-Project-Token` faktycznie nie ma jak pojechac ze zwyklego `<a href>`,
+wiec decyzja 2 konczyla sie na papierze. Trasa `/pobierz/{id}/{n}` bez tokenu,
+symetryczna do `/preview`, jest wlasciwym rozwiazaniem.
 
-   Oba siedza w operacjach na KATALOGACH (kopiowanie/kasowanie snapshotu), a `ZapisAtomowy`
-   jest uzywany tylko w `ProjectStore` i `CommentStore` — czyli przy zapisie PLIKU.
-   Twoja hipoteza (b) o przejsciowej blokadzie wyglada wiec na trafna, ale ponawianie
-   nie obejmuje `DirectoryOps.Copy` ani `Restore`. Jesli chcesz to domknac, to tam.
-
-   Nie zdazylem zlapac tresci wyjatku (15 kolejnych przebiegow bylo czystych) — jak
-   znowu wpadnie, dosle.
-
-5. U MNIE OD WCZORAJ
-
-   - `/panel` — panel wewnetrzny dla nas dwojga: lista projektow, koszty, podglady.
-     Bez `Admin:Token` trasy NIE MA (404). Nie drukuje tokenow klientow.
-   - EKRAN ODBIORU — klient wreszcie moze zabrac swoja strone. Twoj `/api/.../zip` jest
-     `Chroniony`, a przegladarka nie wysle `X-Project-Token` ze zwyklego `<a href>`,
-     wiec z UI byl nieosiagalny i decyzja 2 konczyla sie na papierze. Doszla trasa
-     `/pobierz/{id}/{n}` (bez tokenu, jak `/preview`) i wspolna `Paczka`.
-     Twoj fix z separatorem `/` w nazwach wpisow ma teraz test, ktory bez niego pada.
-   - Wszystko po Twoich dziewieciu commitach: 193/193 web.
-
---- Ta wiadomosc wisi, dopoki jej nie skasujesz: rm .claude/wiadomosc.txt ---
+STAN: 187 silnik + 193 web zielono, build bez ostrzezen. Commit `47ea276`.
