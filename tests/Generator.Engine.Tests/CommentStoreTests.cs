@@ -1,3 +1,4 @@
+using Generator.Engine.IO;
 using Generator.Engine.Model;
 using Generator.Engine.Storage;
 using Xunit;
@@ -13,7 +14,7 @@ public class CommentStoreTests : IDisposable
 
     public void Dispose()
     {
-        if (Directory.Exists(_project)) Directory.Delete(_project, recursive: true);
+        DirectoryOps.Delete(_project);
         GC.SuppressFinalize(this);
     }
 

@@ -1,3 +1,4 @@
+using Generator.Engine.IO;
 using Generator.Engine.Gates;
 using Generator.Engine.Jobs;
 using Generator.Engine.Model;
@@ -83,7 +84,7 @@ public class ProjectApiTests : IDisposable
     public void Dispose()
     {
         _queue.Dispose();
-        if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
+        DirectoryOps.Delete(_root);
         GC.SuppressFinalize(this);
     }
 

@@ -1,3 +1,4 @@
+using Generator.Engine.IO;
 using System.Globalization;
 using Bunit;
 using Generator.Web.Components;
@@ -261,6 +262,6 @@ public class HistoriaWersjiTests : BunitContext, IDisposable
     public new void Dispose()
     {
         base.Dispose();
-        if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
+        DirectoryOps.Delete(_root);
     }
 }

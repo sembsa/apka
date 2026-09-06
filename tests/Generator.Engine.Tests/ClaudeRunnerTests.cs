@@ -1,3 +1,4 @@
+using Generator.Engine.IO;
 using System.Diagnostics;
 using System.Text.Json;
 using Generator.Engine.ClaudeCli;
@@ -8,7 +9,7 @@ namespace Generator.Engine.Tests;
 public class ClaudeRunnerTests : IDisposable
 {
     private readonly string _work = Directory.CreateTempSubdirectory("gen-run-").FullName;
-    public void Dispose() => Directory.Delete(_work, recursive: true);
+    public void Dispose() => DirectoryOps.Delete(_work);
 
     private static ClaudeRunner ForScenario(string scenario) =>
         new("dotnet", [FakeClaude.DllPath, "--scenario", scenario]);

@@ -1,3 +1,4 @@
+using Generator.Engine.IO;
 using Generator.Engine.Model;
 using Generator.Engine.Storage;
 using Generator.Web.Api;
@@ -155,7 +156,7 @@ public class PanelDaneTests : IDisposable
 
     public void Dispose()
     {
-        if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
+        DirectoryOps.Delete(_root);
         GC.SuppressFinalize(this);
     }
 }

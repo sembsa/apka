@@ -1,3 +1,4 @@
+using Generator.Engine.IO;
 using Generator.Engine.Gates;
 using Xunit;
 
@@ -6,7 +7,7 @@ namespace Generator.Engine.Tests;
 public class AnchorExtractorTests : IDisposable
 {
     private readonly string _dir = Directory.CreateTempSubdirectory("gen-anchor-").FullName;
-    public void Dispose() => Directory.Delete(_dir, recursive: true);
+    public void Dispose() => DirectoryOps.Delete(_dir);
 
     [Fact]
     public void Wyciaga_id_zgodne_z_formatem_kontraktu()

@@ -1,3 +1,4 @@
+using Generator.Engine.IO;
 using System.Text.Json;
 using Generator.Engine.Model;
 using Generator.Engine.Storage;
@@ -12,7 +13,7 @@ public class WersjonowanieTests : IDisposable
 
     public void Dispose()
     {
-        if (Directory.Exists(_project)) Directory.Delete(_project, recursive: true);
+        DirectoryOps.Delete(_project);
         GC.SuppressFinalize(this);
     }
 

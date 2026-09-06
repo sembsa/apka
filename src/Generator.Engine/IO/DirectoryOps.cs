@@ -18,7 +18,16 @@ public static class DirectoryOps
         if (!Directory.Exists(from)) return;
 
         foreach (var file in Directory.EnumerateFiles(from))
-            File.Copy(file, Path.Combine(to, Path.GetFileName(file)), overwrite: true);
+        {
+            var cel = Path.Combine(to, Path.GetFileName(file));
+            // Ponawiane z tego samego powodu co podmiana w ZapisAtomowy: na Windows
+            // swiezo zamkniety plik potrafi byc przez chwile zajety (antywirus,
+            // indeksator), a `File.Copy` konczy sie wtedy `IOException` albo
+            // `UnauthorizedAccessException` — przejsciowo, nie na stale. Ponawiamy
+            // TYLKO ten lisc, nie rekurencje: dwa poziomy ponawiania mnozylyby proby
+            // (5x5) i zamienialy chwilowa blokade w kilkusekundowy zastoj.
+            ZapisAtomowy.Ponow(() => File.Copy(file, cel, overwrite: true));
+        }
 
         foreach (var dir in Directory.EnumerateDirectories(from))
             Copy(dir, Path.Combine(to, Path.GetFileName(dir)));
@@ -42,7 +51,7 @@ public static class DirectoryOps
     public static void SafeReplace(string from, string to)
     {
         var staging = to + ".staging-" + Guid.NewGuid().ToString("N");
-        if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true);
+        Delete(staging);
 
         try
         {
@@ -54,7 +63,7 @@ public static class DirectoryOps
             // czesciowo skopiowany staging, zanim wyjatek poleci dalej (to jest
             // wlasnie ta sciezka, ktora ma zostawic "to" NIETKNIETYM, wiec sam
             // staging tez nie powinien przetrwac).
-            try { Directory.Delete(staging, recursive: true); } catch (Exception) { }
+            try { Delete(staging); } catch (Exception) { }
             throw;
         }
 
@@ -62,12 +71,13 @@ public static class DirectoryOps
         if (Directory.Exists(to))
         {
             previous = to + ".old-" + Guid.NewGuid().ToString("N");
-            Directory.Move(to, previous);
+            var zrodlo = to;
+            ZapisAtomowy.Ponow(() => Directory.Move(zrodlo, previous));
         }
 
         try
         {
-            Directory.Move(staging, to);
+            ZapisAtomowy.Ponow(() => Directory.Move(staging, to));
         }
         catch (Exception)
         {
@@ -78,11 +88,29 @@ public static class DirectoryOps
             // zostawia zrodlo nietkniete).
             if (previous is not null && !Directory.Exists(to))
                 Directory.Move(previous, to);
-            try { if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true); } catch (Exception) { }
+            try { Delete(staging); } catch (Exception) { }
             throw;
         }
 
         if (previous is not null)
-            Directory.Delete(previous, recursive: true);
+            Delete(previous);
+    }
+
+    /// Kasowanie katalogu z rekurencja, ponawiane i odporne na brak katalogu.
+    /// Powstalo z pomiaru Przemka: pelny `dotnet test` dawal 1 czerwony na 25
+    /// przebiegow, ZA KAZDYM RAZEM w innym tescie — a to podpis awarii w SPRZATANIU,
+    /// nie w scieżce produkcyjnej (xUnit przypisuje wyjatek z teardownu temu testowi,
+    /// ktory wlasnie przebiegl). Ta sama chwilowa blokada, ktora psuje `File.Move`
+    /// w ZapisAtomowy, trafia tu w `Directory.Delete`.
+    ///
+    /// Tolerowanie braku katalogu jest tu wlasciwe, a nie wygodne: kazde wywolanie
+    /// w tym pliku kasuje katalog, ktorego nieistnienie JEST oczekiwanym stanem
+    /// koncowym (staging po nieudanej kopii, poprzednia zawartosc po podmianie).
+    public static void Delete(string path)
+    {
+        ZapisAtomowy.Ponow(() =>
+        {
+            if (Directory.Exists(path)) Directory.Delete(path, recursive: true);
+        });
     }
 }

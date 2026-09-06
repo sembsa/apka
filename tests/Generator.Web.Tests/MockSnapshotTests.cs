@@ -1,3 +1,4 @@
+using Generator.Engine.IO;
 using Generator.Engine.Versioning;
 using Generator.Web.Contracts;
 using Generator.Web.Mock;
@@ -121,6 +122,6 @@ public class MockSnapshotTests : IDisposable
 
     public void Dispose()
     {
-        if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
+        DirectoryOps.Delete(_root);
     }
 }

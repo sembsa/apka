@@ -1,3 +1,4 @@
+using Generator.Engine.IO;
 using Generator.Engine.ClaudeCli;
 using Generator.Engine.Gates;
 using Generator.Engine.Jobs;
@@ -77,7 +78,7 @@ internal class RetryThenCancellingRunner(string firstJson) : IClaudeRunner
 public class GenerationServiceTests : IDisposable
 {
     private readonly string _project = Directory.CreateTempSubdirectory("gen-svc-").FullName;
-    public void Dispose() => Directory.Delete(_project, recursive: true);
+    public void Dispose() => DirectoryOps.Delete(_project);
 
     /// JSON pisze sie ZAWSZE z kropka. Interpolacja `{{cost}}` uzywa kultury systemu,
     /// wiec na polskim Windows dawala "total_cost_usd":0,05 — niepoprawny JSON i 32

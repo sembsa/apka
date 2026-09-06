@@ -15,7 +15,7 @@ public class VersionStore(string projectDir)
         IReadOnlyList<string> changedAnchors)
     {
         var target = SnapshotPath(number);
-        if (Directory.Exists(target)) Directory.Delete(target, recursive: true);
+        DirectoryOps.Delete(target);
         DirectoryOps.Copy(WorkDir, target);
 
         // Data stemplowana TUTAJ, nie przekazywana parametrem: chwila powstania wersji

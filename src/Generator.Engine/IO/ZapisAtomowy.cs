@@ -51,6 +51,15 @@ public static class ZapisAtomowy
     }
 
     /// <summary>
+    /// Domyslne ponawianie: piec prob z narastajacym odstepem. Wolane tez z
+    /// `DirectoryOps` — ta sama chwilowa blokada na Windows trafia w operacje na
+    /// katalogach (kopiowanie, przenoszenie, kasowanie snapshotu), a nie tylko
+    /// w podmiane pliku. Helper zostaje TUTAJ, bo tu powstal i tu jest opisany,
+    /// czym jest ten blad przejsciowy.
+    /// </summary>
+    public static void Ponow(Action akcja) => Ponow(akcja, Proby, Odczekaj);
+
+    /// <summary>
     /// Ponawia akcje, dopoki pada przejsciowym bledem wejscia-wyjscia. `odczekaj`
     /// jest parametrem, zeby test mogl sprawdzic sama logike ponawiania bez czekania
     /// i bez blokowania pliku — czyli tak samo na kazdym systemie.

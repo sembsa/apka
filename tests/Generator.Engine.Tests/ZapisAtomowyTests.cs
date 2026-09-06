@@ -13,7 +13,7 @@ namespace Generator.Engine.Tests;
 public class ZapisAtomowyTests : IDisposable
 {
     private readonly string _dir = Directory.CreateTempSubdirectory("gen-atom-").FullName;
-    public void Dispose() => Directory.Delete(_dir, recursive: true);
+    public void Dispose() => DirectoryOps.Delete(_dir);
 
     [Fact]
     public void Przejsciowa_blokada_konczy_sie_sukcesem_po_ponowieniu()

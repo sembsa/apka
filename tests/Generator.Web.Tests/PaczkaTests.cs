@@ -1,3 +1,4 @@
+using Generator.Engine.IO;
 using System.IO.Compression;
 using System.Text;
 using Generator.Web.Preview;
@@ -83,7 +84,7 @@ public class PaczkaTests : IDisposable
 
     public void Dispose()
     {
-        if (Directory.Exists(_katalog)) Directory.Delete(_katalog, recursive: true);
+        DirectoryOps.Delete(_katalog);
         GC.SuppressFinalize(this);
     }
 }

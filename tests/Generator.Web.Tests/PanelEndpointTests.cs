@@ -1,3 +1,4 @@
+using Generator.Engine.IO;
 using System.Net;
 using Generator.Engine.Model;
 using Generator.Engine.Storage;
@@ -132,7 +133,7 @@ public class PanelEndpointTests : IClassFixture<WebApplicationFactory<Program>>,
 
     public void Dispose()
     {
-        if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
+        DirectoryOps.Delete(_root);
         GC.SuppressFinalize(this);
     }
 }

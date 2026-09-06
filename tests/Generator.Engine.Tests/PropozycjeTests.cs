@@ -1,3 +1,4 @@
+using Generator.Engine.IO;
 using Generator.Engine.ClaudeCli;
 using Generator.Engine.Gates;
 using Generator.Engine.Jobs;
@@ -15,7 +16,7 @@ public class PropozycjeTests : IDisposable
 
     public void Dispose()
     {
-        if (Directory.Exists(_project)) Directory.Delete(_project, recursive: true);
+        DirectoryOps.Delete(_project);
         GC.SuppressFinalize(this);
     }
 

@@ -1,3 +1,4 @@
+using Generator.Engine.IO;
 using System.IO.Compression;
 using System.Net;
 using Microsoft.AspNetCore.Hosting;
@@ -69,7 +70,7 @@ public class PobierzEndpointTests : IClassFixture<WebApplicationFactory<Program>
     public void Dispose()
     {
         _klient.Dispose();
-        if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
+        DirectoryOps.Delete(_root);
         GC.SuppressFinalize(this);
     }
 }

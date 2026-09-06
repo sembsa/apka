@@ -1,3 +1,4 @@
+using Generator.Engine.IO;
 using System.Text.Json.Nodes;
 using Generator.Engine.Model;
 using Generator.Engine.Storage;
@@ -8,7 +9,7 @@ namespace Generator.Engine.Tests;
 public class ProjectStoreTests : IDisposable
 {
     private readonly string _dir = Directory.CreateTempSubdirectory("gen-proj-").FullName;
-    public void Dispose() => Directory.Delete(_dir, recursive: true);
+    public void Dispose() => DirectoryOps.Delete(_dir);
 
     [Fact]
     public void Data_wersji_przezywa_zapis_i_odczyt_a_stary_plik_wraca_bez_daty()

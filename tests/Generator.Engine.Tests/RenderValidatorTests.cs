@@ -1,3 +1,4 @@
+using Generator.Engine.IO;
 using Generator.Engine.Gates;
 using Xunit;
 
@@ -6,7 +7,7 @@ namespace Generator.Engine.Tests;
 public class RenderValidatorTests : IDisposable
 {
     private readonly string _dir = Directory.CreateTempSubdirectory("gen-render-").FullName;
-    public void Dispose() => Directory.Delete(_dir, recursive: true);
+    public void Dispose() => DirectoryOps.Delete(_dir);
 
     private void Write(string name, string content) =>
         File.WriteAllText(Path.Combine(_dir, name), content);

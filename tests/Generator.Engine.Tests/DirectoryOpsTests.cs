@@ -16,7 +16,7 @@ public class DirectoryOpsTests : IDisposable
             if (!OperatingSystem.IsWindows())
                 foreach (var f in Directory.EnumerateFiles(_root, "*", SearchOption.AllDirectories))
                     File.SetUnixFileMode(f, UnixFileMode.UserRead | UnixFileMode.UserWrite);
-            Directory.Delete(_root, recursive: true);
+            DirectoryOps.Delete(_root);
         }
     }
 
@@ -79,5 +79,27 @@ public class DirectoryOpsTests : IDisposable
 
         Assert.True(File.Exists(Path.Combine(to, "nowy.txt")));
         Assert.False(File.Exists(Path.Combine(to, "stary.txt")));
+    }
+
+    [Fact]
+    public void Delete_kasuje_katalog_z_cala_zawartoscia()
+    {
+        var dir = Path.Combine(_root, "do-skasowania");
+        Directory.CreateDirectory(Path.Combine(dir, "pod"));
+        File.WriteAllText(Path.Combine(dir, "pod", "a.txt"), "x");
+
+        DirectoryOps.Delete(dir);
+
+        Assert.False(Directory.Exists(dir));
+    }
+
+    [Fact]
+    public void Delete_nieistniejacego_katalogu_nic_nie_robi()
+    {
+        // Nie wygoda, tylko kontrakt: kazdy wolajacy kasuje katalog, ktorego
+        // NIEISTNIENIE jest oczekiwanym stanem koncowym (staging po nieudanej
+        // kopii, poprzednia zawartosc po podmianie, snapshot przed nadpisaniem).
+        // Bez tego `Commit` nowej wersji musialby sprawdzac `Exists` u siebie.
+        DirectoryOps.Delete(Path.Combine(_root, "nigdy-nie-istnial"));
     }
 }

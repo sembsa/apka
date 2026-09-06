@@ -1,3 +1,4 @@
+using Generator.Engine.IO;
 using System.Net;
 using System.Net.Http.Json;
 using Generator.Web.Api;
@@ -58,7 +59,7 @@ public class ApiEndpointsTests : IClassFixture<WebApplicationFactory<Program>>, 
 
     public void Dispose()
     {
-        if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
+        DirectoryOps.Delete(_root);
         GC.SuppressFinalize(this);
     }
 

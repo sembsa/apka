@@ -1,3 +1,4 @@
+using Generator.Engine.IO;
 using Generator.Engine.Versioning;
 using Xunit;
 
@@ -6,7 +7,7 @@ namespace Generator.Engine.Tests;
 public class VersionStoreTests : IDisposable
 {
     private readonly string _project = Directory.CreateTempSubdirectory("gen-ver-").FullName;
-    public void Dispose() => Directory.Delete(_project, recursive: true);
+    public void Dispose() => DirectoryOps.Delete(_project);
 
     private VersionStore NewStore()
     {
