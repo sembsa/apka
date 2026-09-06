@@ -24,7 +24,11 @@
     else
     {
         <label for="url">Adres Twojej obecnej strony</label>
-        <input id="url" type="url" @bind="_text" placeholder="https://..." />
+        @* `text`, nie `url`: przegladarka odrzucilaby „mojafirma.pl" WLASNYM komunikatem,
+           zanim formularz dojdzie do nas — a nietechniczny klient wpisuje sama nazwe
+           rownie czesto jak pelny adres i `https://` doklejamy mu sami. `inputmode`
+           zostaje, bo na telefonie decyduje o klawiaturze. *@
+        <input id="url" type="text" inputmode="url" @bind="_text" placeholder="mojafirma.pl" />
     }
 
     @if (_error is not null)

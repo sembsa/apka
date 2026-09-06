@@ -48,8 +48,19 @@ public partial class PobieraczStrony : IDisposable
         _http.DefaultRequestHeaders.AcceptLanguage.ParseAdd("pl,en;q=0.5");
     }
 
-    private static SocketsHttpHandler StworzHandler() => new()
+    /// Publiczna, bo cztery ustawienia ponizej sa wlasnoscia BEZPIECZENSTWA, nie
+    /// strojeniem — maja wlasna asercje.
+    public static SocketsHttpHandler StworzHandler() => new()
     {
+        // BEZ PROXY, i to nie jest optymalizacja. `SocketsHttpHandler` domyslnie
+        // honoruje ustawienia systemowe i HTTP_PROXY, a wtedy `ConnectCallback`
+        // dostaje `DnsEndPoint` PROXY, nie strony klienta: sprawdzalibysmy adres
+        // proxy, laczyli sie z proxy, a proxy pobieraloby `http://10.0.0.1/` za nas.
+        // Cala polityka adresow bylaby wtedy teatrem — i to dokladnie w sieci firmowej,
+        // czyli tam, gdzie adresy wewnetrzne w ogole sa czego warte.
+        // Wdrozenie za proxy wychodzacym musialoby przeniesc te kontrole do proxy.
+        UseProxy = false,
+
         AllowAutoRedirect = true,
         MaxAutomaticRedirections = 5,
         AutomaticDecompression = DecompressionMethods.All,

@@ -12,6 +12,31 @@ namespace Generator.Engine.Tests;
 /// </summary>
 public class PobieraczStronyTests
 {
+    /// Dostawca stron kodowych rejestruje `PobieraczStrony` w swoim konstruktorze
+    /// STATYCZNYM, a ten odpala sie dopiero przy pierwszym uzyciu klasy. Testy kodowan
+    /// wolaja `Encoding.GetEncoding("windows-1250")` w fazie przygotowania — czyli
+    /// ZANIM cokolwiek dotknie pobieracza. W pelnym przebiegu ratowal je inny test,
+    /// ktory zdazyl utworzyc pobieracz wczesniej; uruchomione osobno (`--filter`)
+    /// padaly. Zmierzone: „'windows-1250' is not a supported encoding name".
+    /// Rejestracja jest idempotentna, wiec drugie wywolanie nic nie psuje.
+    static PobieraczStronyTests() =>
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+
+    [Fact]
+    public void Pobieranie_nie_idzie_przez_proxy_bo_to_omijaloby_polityke_adresow()
+    {
+        // Z proxy `ConnectCallback` dostaje adres PROXY, nie strony klienta: polityka
+        // sprawdzalaby proxy, a ono pobieraloby adres wewnetrzny za nas. Reszta asercji
+        // pilnuje pozostalych trzech ograniczen z tego samego powodu — to sa wlasnosci
+        // bezpieczenstwa, ktore latwo zgubic przy niewinnej zmianie ustawien.
+        using var handler = PobieraczStrony.StworzHandler();
+
+        Assert.False(handler.UseProxy);
+        Assert.NotNull(handler.ConnectCallback);
+        Assert.Equal(5, handler.MaxAutomaticRedirections);
+        Assert.True(handler.ConnectTimeout <= TimeSpan.FromSeconds(5));
+    }
+
     private sealed class Atrapa(Func<HttpRequestMessage, HttpResponseMessage> odpowiedz)
         : HttpMessageHandler
     {

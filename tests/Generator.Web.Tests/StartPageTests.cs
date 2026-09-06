@@ -34,7 +34,10 @@ public class StartPageTests : BunitContext
 
         cut.Find("[data-test='tryb-url']").Click();
 
-        Assert.NotNull(cut.Find("input[type='url']"));
+        // `inputmode`, nie `type=url`: przegladarka odrzucalaby „mojafirma.pl" wlasnym
+        // komunikatem, zanim formularz dojdzie do nas. Asercja idzie po tym, co decyduje
+        // o klawiaturze na telefonie, a nie po typie, ktory celowo jest zwyklym tekstem.
+        Assert.NotNull(cut.Find("input[inputmode='url']"));
     }
 
     [Fact]
@@ -60,7 +63,7 @@ public class StartPageTests : BunitContext
         var cut = Render<Start>();
 
         cut.Find("[data-test='tryb-url']").Click();
-        cut.Find("input[type='url']").Change("https://nie-ma-takiej.example/");
+        cut.Find("input[inputmode='url']").Change("https://nie-ma-takiej.example/");
         await cut.Find("form").SubmitAsync();
 
         cut.WaitForAssertion(() => Assert.NotNull(cut.Find("[role=alert]")));
@@ -78,13 +81,30 @@ public class StartPageTests : BunitContext
     }
 
     [Fact]
+    public async Task Sama_nazwa_domeny_wystarczy_bo_https_doklejamy_sami()
+    {
+        // Nietechniczny klient wpisuje „mojafirma.pl" rownie czesto jak pelny adres.
+        // Przy `type="url"` przegladarka odrzucalaby to WLASNYM komunikatem, zanim
+        // formularz dojdzie do nas — a pobieracz umie sobie z tym poradzic.
+        var api = Register();
+        var cut = Render<Start>();
+
+        cut.Find("[data-test='tryb-url']").Click();
+        cut.Find("input[inputmode='url']").Change("mojafirma.pl");
+        await cut.Find("form").SubmitAsync();
+
+        cut.WaitForAssertion(() => Assert.Empty(cut.FindAll("[role=alert]")));
+        Assert.DoesNotContain("type=\"url\"", cut.Markup);
+    }
+
+    [Fact]
     public async Task Poprawny_adres_prowadzi_dalej_do_propozycji()
     {
         var api = Register();
         var cut = Render<Start>();
 
         cut.Find("[data-test='tryb-url']").Click();
-        cut.Find("input[type='url']").Change("https://konwalia.example/");
+        cut.Find("input[inputmode='url']").Change("https://konwalia.example/");
         await cut.Find("form").SubmitAsync();
 
         cut.WaitForAssertion(() => Assert.Contains(
