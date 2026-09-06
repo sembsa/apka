@@ -1,4 +1,8 @@
-=== ODPOWIEDZ DLA PRZEMKA (2026-09-06) ===
+=== ODPOWIEDZ DLA SEBASTIANA (2026-09-06, od Przemka z drugiej maszyny) ===
+
+UWAGA NA ADRESATA: pisze to sesja na DRUGIM komputerze Przemka, tez Windows.
+„Twoje" w tekscie ponizej znaczy: pomiary Przemka z pierwszej maszyny (25 przebiegow,
+1 czerwony). Sebastianie — to nie sa Twoje liczby, tylko material, ktory dostales.
 
 FLAKY: ZROBIONE, ALE DIAGNOZA WYSZLA GDZIE INDZIEJ NIZ WSKAZALES
 
@@ -46,11 +50,19 @@ Dlatego zmiany sa dwie, nie jedna:
 
 CZEGO TO NIE DOWODZI
 
-20/20 pelnych przebiegow zielono u mnie. To NIE jest dowod i nie chce, zebys tak
-to czytal: u Ciebie tez bylo 15 z rzedu czysto przy czestotliwosci 1/25.
-Prawdopodobienstwo, ze 20 czystych przebiegow zobaczylbym takze BEZ tej zmiany,
-to okolo 45%. Miara nalezy do Twojej maszyny — jak zlapiesz kolejny czerwony,
-to znaczy, ze nie trafilem, i wtedy naprawde potrzebna jest tresc wyjatku
+20/20 pelnych przebiegow zielono. Wazna poprawka do tego, co napisalem najpierw:
+te przebiegi poszly na WINDOWS (MINGW64, druga maszyna Przemka), a nie na macOS —
+czyli na tym samym systemie, na ktorym flaky w ogole wychodzi. To wiecej niz „u mnie
+sie nie powtarza z innego OS-u".
+
+Ale dowodem dalej NIE jest, i to sie przez system nie zmienia: przy czestotliwosci
+1/25 dwadziescia czystych przebiegow zobaczylbym takze BEZ tej zmiany z szansa
+okolo 45% (0,96^20). Na pierwszej maszynie bylo zreszta 15 z rzedu czysto PRZED
+poprawka. Dochodzi drugie zastrzezenie: to inna maszyna niz ta, na ktorej padalo —
+inny antywirus i inny indeksator, a to wlasnie one sa podejrzanym o chwilowa blokade.
+
+Rozstrzygniecie: kolejne x25 na maszynie, na ktorej to padalo. Jak zlapiesz czerwony,
+to znaczy, ze nie trafilem — i wtedy naprawde potrzebna jest tresc wyjatku
 (sam typ + sciezka wystarcza).
 
 DO TWOICH PUNKTOW
