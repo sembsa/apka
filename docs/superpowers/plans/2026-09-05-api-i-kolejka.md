@@ -2806,6 +2806,12 @@ była ~4× za wysoka — jeśli znów jest, to trigger przestawienia z §4.2.
 Wszystkie są zmierzone albo wskazane przez recenzję, żadna nie jest domysłem.
 Kolejność mniej więcej według tego, co pęknie pierwsze.
 
+> **STAN NA 2026-09-06.** Długi 1, 2 i 9 są **zamknięte** (sprawdzone w kodzie):
+> 1 i 2 przez `PUT .../comments` + `Editor.Zapisz()`, 9 przez sprzątanie stagingu
+> w obu ścieżkach ratunkowych `SafeReplace`. Dług 4 jest zamknięty częściowo — patrz
+> dopisek przy nim. Dług 6 wziął Sebastian. Podział dalszej pracy:
+> `docs/plan/2026-09-06-co-dalej-podzial-pracy.md`.
+
 1. **Uwagi napisane, a niewysłane, żyją tylko w obwodzie Blazora.** F5, timeout obwodu
    (~3 min bez połączenia), zamknięty laptop — dziesięć przypiętych uwag znika. Gorzej:
    po kolizji `Reload` podmienia listę na uwagi nowej wersji, więc komunikat mówi
@@ -2823,6 +2829,13 @@ Kolejność mniej więcej według tego, co pęknie pierwsze.
 4. **Kolejka żyje w pamięci procesu i ma jednego konsumenta na wszystkie projekty.**
    Restart gubi zadania w locie (projekt na dysku zostaje), a N-ty klient czeka
    N × minuty na „pracuję nad tym". `_jobs` rośnie bez ograniczeń przez czas życia procesu.
+   > **CZĘŚCIOWO ZAMKNIĘTE 2026-09-06** (Przemek, `2beb294`). Przerwane zadanie nie znika:
+   > `ProjectMeta.ActiveJobId` zapisywany PRZED oddaniem identyfikatora klientowi,
+   > a `OdzyskiwaniePoStarcie` przy starcie oddaje je jako `failed`/`halted`, cofa `work/`
+   > do ostatniej udanej wersji i czyści znacznik. Zadanie **nie jest wznawiane** — proces
+   > `claude` zginął z aplikacją, więc wznowienie znaczyłoby drugi raz zapłaconą rundę.
+   > **Zostaje otwarte:** jeden konsument na wszystkie projekty (N-ty klient czeka)
+   > i nieograniczony wzrost `_jobs`.
 5. **TOCTOU między `MaAktywne` a `Restore`/`Save`** w powrocie i wyborze propozycji.
    Sprawdzenie nie jest zamkiem; między nim a zapisem inna karta może wejść do kolejki.
 6. **Tryb „istniejąca strona" niczego nie pobiera.** `ProjectMeta.SourceUrl` jest zapisywane
@@ -2834,6 +2847,8 @@ Kolejność mniej więcej według tego, co pęknie pierwsze.
    w §1 kontraktu; do zamknięcia razem z kontami.
 9. **Osierocony `work.staging-<guid>`** przy nieudanym `Directory.Move` w `DirectoryOps`
    (realne na Windows, czyli na maszynie drugiej osoby).
+   > **ZAMKNIĘTE.** `SafeReplace` kasuje staging w obu ścieżkach ratunkowych, a operacje
+   > na katalogach są ponawiane (`47ea276`, `1464c4f`).
 10. **`Kolizja` w `Proposals.razor` łapie każdy `InvalidOperationException`**, bo strażnicy
     zamawiania rzucają gołym typem. Każdy programistyczny błąd tej klasy pokaże się
     klientowi jako „Twoja strona jest już gotowa". Do zawężenia, gdy strażnicy dostaną
