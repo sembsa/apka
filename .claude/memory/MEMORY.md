@@ -11,3 +11,4 @@ Treść pamięci NIGDY nie trafia tutaj — tylko wskaźnik `- [Tytuł](plik.md)
 - [Testy niezależne od maszyny](feedback-testy-niezalezne-od-maszyny.md) — kultura i separatory ścieżek; obie strony na tym padły
 - [Prompt do claude przez stdin](project-apka-prompt-przez-stdin.md) — cmd.exe urywał wieloliniowy prompt; silnik nie działał na Windows
 - [Flaky: losowa ofiara to teardown](feedback-flaky-losowa-ofiara-to-teardown.md) — inny test za kazdym razem = awaria w Dispose, nie w produkcji
+- [Treść ze strony klienta](project-apka-tresc-ze-strony-klienta.md) — SSRF i wstrzyknięcie promptu; granica zaufania trybu „mam stronę”
