@@ -63,7 +63,7 @@ public static class DirectoryOps
             // czesciowo skopiowany staging, zanim wyjatek poleci dalej (to jest
             // wlasnie ta sciezka, ktora ma zostawic "to" NIETKNIETYM, wiec sam
             // staging tez nie powinien przetrwac).
-            try { Delete(staging); } catch (Exception) { }
+            try { if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true); } catch (Exception) { }
             throw;
         }
 
@@ -88,7 +88,7 @@ public static class DirectoryOps
             // zostawia zrodlo nietkniete).
             if (previous is not null && !Directory.Exists(to))
                 Directory.Move(previous, to);
-            try { Delete(staging); } catch (Exception) { }
+            try { if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true); } catch (Exception) { }
             throw;
         }
 

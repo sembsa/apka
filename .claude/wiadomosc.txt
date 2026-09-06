@@ -15,6 +15,20 @@ I to wlasnie te dwa testy zostawiaja po sobie najwiecej ruchu na katalogach
 (`Commit` kopiuje snapshot, potem `SafeReplace` tworzy i kasuje rodzenstwo
 `.staging-` / `.old-`) — czyli najszersze okno na wiszacy uchwyt w chwili teardownu.
 
+ZASTRZEZENIE DO TEJ DIAGNOZY (dopisane po ponownym przejrzeniu)
+
+Nie stawiaj na niej wiecej, niz uniesie: OBA Twoje czerwone przechodza przez
+`SafeReplace`. Przy n=2 to rownie dobrze pasuje do awarii w SCIEZCE PRODUKCYJNEJ,
+co w teardownie — dwa testy mielace katalogami w dwoch klasach to nie jest jeszcze
+„losowo po calej suite". Dlatego poprawka obejmuje OBA miejsca; nie wybieram
+miedzy nimi, bo dane nie wybieraja.
+
+Sprawdzilem tez trzecia mozliwosc, ktora byla najgrozniejsza: `JobQueue.Dispose`
+w `ProjectApiTests`. Gdyby tylko wolal `Cancel()` i wracal, teardown scigalby sie
+z ZYWYM zapisem do `work/`, a wtedy ponawianie jest zla forma poprawki — 100 ms
+odstepu nie przeczeka zadania w trakcie. Ale `Dispose` drenuje: `_stop.Cancel()`,
+`Writer.TryComplete()`, `_konsument.Wait(2 s)`. Czyli nie to.
+
 Dlatego zmiany sa dwie, nie jedna:
 
 1. PRODUKCJA — dokladnie tam, gdzie wskazales. `ZapisAtomowy.Ponow` dostal
