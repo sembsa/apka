@@ -131,30 +131,88 @@ if (app.Environment.IsDevelopment())
 // konfiguracji. Tu o istnieniu trasy decyduje „if".
 if (KluczPanelu.Ustawiony(builder.Configuration) is { } kluczPanelu)
 {
-    app.MapGet("/panel", () => new RazorComponentResult<Panel>(new { Odmowa = false }));
+    const string ciastkoSesji = "panel";
+    var sesje = new SesjePanelu();
+
+    // Ciastko trzyma IDENTYFIKATOR sesji, nigdy `Admin:Token`. Sekret otwierajacy
+    // dane wszystkich klientow nie ma prawa lezec na dysku przegladarki ani jechac
+    // w kazdym zadaniu — identyfikator mozna uniewaznic, tokena z appsettings nie.
+    CookieOptions Ciastko(HttpRequest zadanie) => new()
+    {
+        HttpOnly = true,
+        SameSite = SameSiteMode.Strict,
+        // Zadania klienta o /preview i /editor nie maja powodu wozic ze soba ciastka
+        // panelu — ograniczamy je do jednej sciezki.
+        Path = "/panel",
+        // Z zadania, nie na sztywno: `Secure` na http://localhost kazaloby przegladarce
+        // wyrzucic ciastko PO CICHU (panel „nie dziala bez powodu"), a pod HTTPS jest
+        // konieczne. Panel chodzi u nas lokalnie, ale ma nie zepsuc sie, jesli kiedys
+        // stanie za TLS-em.
+        Secure = zadanie.IsHttps,
+        IsEssential = true,
+        // Bez `Expires`: ciastko sesyjne ginie z zamknieciem przegladarki, a drugim,
+        // niezaleznym limitem jest `SesjePanelu.Zycie` po stronie serwera.
+    };
+
+    // `Results.SeeOther` nie istnieje, a `Results.Redirect` daje 302. Roznica jest
+    // realna: 302 pozwala przegladarce powtorzyc metode, 303 nakazuje GET — i to
+    // wlasnie 303 jest kodem opisujacym „formularz przyjety, wynik jest pod tym
+    // adresem" (POST/Redirect/GET).
+    IResult Przekieruj(HttpResponse odpowiedz, string dokad)
+    {
+        odpowiedz.Headers.Location = dokad;
+        return Results.StatusCode(StatusCodes.Status303SeeOther);
+    }
+
+    IResult Lista(ProjectPaths sciezki)
+    {
+        var dane = new PanelDane(sciezki);
+        var wiersze = dane.Wczytaj();
+        return new RazorComponentResult<Panel>(
+            new { Dane = wiersze, Suma = dane.Podsumuj(wiersze) });
+    }
+
+    app.MapGet("/panel", (HttpRequest zadanie, ProjectPaths sciezki) =>
+        sesje.Wazna(zadanie.Cookies[ciastkoSesji])
+            ? Lista(sciezki)
+            : (IResult)new RazorComponentResult<Panel>(new { Odmowa = false }));
 
     // Klucz idzie POSTem w ciele, nie w adresie: adres laduje w historii przegladarki,
     // w naglowku Referer i w logu dostepowym serwera, a to sekret otwierajacy
     // wszystkie projekty naraz.
-    app.MapPost("/panel", async (HttpRequest zadanie, ProjectPaths sciezki) =>
+    app.MapPost("/panel", async (HttpContext kontekst) =>
     {
-        var podany = (await zadanie.ReadFormAsync())["klucz"].ToString();
+        var podany = (await kontekst.Request.ReadFormAsync())["klucz"].ToString();
+        IResult Odmowa() => new RazorComponentResult<Panel>(new { Odmowa = true }) { StatusCode = 401 };
         // 401, a nie 404 — swiadomie. 404 ukrywaloby sam fakt, ze panel tu jest, ale
         // GET /panel i tak pokazuje formularz kazdemu, kto zgadnie adres, wiec ukrywanie
         // POSTa niczego by nie zamknelo. Bez klucza (przypadek wyzej) trasy nie ma
         // w ogole i wtedy ukryte jest wszystko — i to jest granica, ktora liczy sie
         // naprawde.
         if (!KluczPanelu.Zgadza(kluczPanelu, podany))
-            return new RazorComponentResult<Panel>(new { Odmowa = true }) { StatusCode = 401 };
+            return Odmowa();
 
-        var dane = new PanelDane(sciezki);
-        var wiersze = dane.Wczytaj();
-        return new RazorComponentResult<Panel>(
-            new { Dane = wiersze, Suma = dane.Podsumuj(wiersze) });
+        kontekst.Response.Cookies.Append(ciastkoSesji, sesje.Utworz(), Ciastko(kontekst.Request));
+
+        // Przekierowanie, a nie tresc. Gdyby POST odpowiadal lista, w pasku adresu
+        // zostawaloby zadanie POST i kazde F5 witaloby pytaniem „wyslac formularz
+        // ponownie?", a powrot Wstecz z podgladu ladowalby w tym samym miejscu.
+        // Po 303 stoi tam GET, ktory mozna powtarzac do woli.
+        return Przekieruj(kontekst.Response, "/panel");
     })
-    // Formularz jest bezsesyjny: nie ma ciasteczka logowania, ktore CSRF moglby
-    // wykorzystac, a bez znajomosci klucza cudze zadanie i tak nic nie pokaze.
+    // Zadne z zadan panelu nie zmienia stanu projektow, a samo ciastko sesji nie
+    // wystarcza do niczego bez znajomosci klucza przy wejsciu. Antyforgery dokladaloby
+    // token do formularza, ktory i tak nie ma czego zepsuc.
     .DisableAntiforgery();
+
+    app.MapPost("/panel/wyloguj", (HttpContext kontekst) =>
+    {
+        // Sesja ginie PO STRONIE SERWERA. Samo skasowanie ciastka zamykaloby panel
+        // tylko temu, kto grzecznie je oddaje — a nie temu, kto zdazyl je skopiowac.
+        sesje.Zakoncz(kontekst.Request.Cookies[ciastkoSesji]);
+        kontekst.Response.Cookies.Delete(ciastkoSesji, Ciastko(kontekst.Request));
+        return Przekieruj(kontekst.Response, "/panel");
+    }).DisableAntiforgery();
 }
 
 app.Run();

@@ -424,6 +424,32 @@ label { display: block; margin-bottom: 0.35rem; color: var(--tresc-cicha); }
 
 .panel { max-width: 76rem; margin: 0 auto; padding: 1.5rem 1.25rem 4rem; }
 
+/* Naglowek trzyma tytul i wylogowanie w jednej linii. `h1` ma tu wlasny margines
+   z reguly ogolnej, wiec zerujemy go — inaczej przycisk odjezdza w dol. */
+.panel-naglowek {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.panel-naglowek h1 { margin: 0; }
+
+/* Wylogowanie jest drugorzedne wzgledem tego, po co sie tu przyszlo — wyglada
+   jak odnosnik, nie jak glowne dzialanie ekranu. */
+.panel-wyloguj button {
+    padding: 0.3rem 0.6rem;
+    font: inherit;
+    font-size: 0.85rem;
+    color: var(--tresc-cicha);
+    background: none;
+    border: 1px solid var(--linia);
+    border-radius: var(--promien);
+    cursor: pointer;
+}
+
+.panel-wyloguj button:hover { background: var(--karta); }
+
 .panel-wejscie {
     display: grid;
     gap: 0.5rem;

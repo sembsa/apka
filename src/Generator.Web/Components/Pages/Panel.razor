@@ -22,7 +22,18 @@
 </head>
 <body class="panel-body">
 <main class="panel">
-    <h1>Panel</h1>
+    <header class="panel-naglowek">
+        <h1>Panel</h1>
+        @if (Dane is not null)
+        {
+            @* POST, nie link: wylogowanie ZMIENIA stan po stronie serwera (kasuje
+               sesje), a takich rzeczy nie robi sie GET-em, ktory przegladarka moze
+               wywolac sama przy podgladzie linku albo z historii. *@
+            <form method="post" action="/panel/wyloguj" class="panel-wyloguj">
+                <button type="submit">Wyloguj</button>
+            </form>
+        }
+    </header>
 
     @if (Dane is null)
     {
@@ -124,11 +135,15 @@
                             @* Ukosnik na koncu jest OBOWIAZKOWY (kontrakt 5.4): bez niego
                                przegladarka rozwiazuje `styl.css` wzgledem katalogu wyzej
                                i strona klienta pokazuje sie bez wlasnego stylu. *@
-                            <a href="/preview/@w.Id/@w.WersjaBiezaca/" data-test="podglad">
+                            @* Nowa karta: panel ma zostac tam, gdzie byl. `rel="noopener"`
+                               odcina otwartej stronie dostep do `window.opener`. *@
+                            <a href="/preview/@w.Id/@w.WersjaBiezaca/" target="_blank" rel="noopener"
+                               data-test="podglad">
                                 podgląd v@w.WersjaBiezaca
                             </a>
                             <span class="panel-brak">z @w.Wersji</span>
-                            <a href="/editor/@w.Id" data-test="edytor">edytor</a>
+                            <a href="/editor/@w.Id" target="_blank" rel="noopener"
+                               data-test="edytor">edytor</a>
                         }
                     </td>
                     <td>@w.OstatniZapis.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)</td>
