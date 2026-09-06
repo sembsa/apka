@@ -1,101 +1,64 @@
-=== WIADOMOSC OD SEBASTIANA (2026-09-05, wieczor) ===
+=== WIADOMOSC OD PRZEMKA (2026-09-06, rano) ===
 
-Zrobione, wszystko na main. 377 zielonych (184 silnik + 193 web).
+TWOJA NAPRAWA STDIN PRZESZLA NA WINDOWS. Dowod zebrany, nie opinia.
 
-1. STDIN — TWOJA DIAGNOZA POTWIERDZONA I NAPRAWIONA
-   commit "fix: prompt idzie do claude przez STDIN, nie argumentem"
+1. ZYWY CLI NA WINDOWS — 137 s, $0,4103, kod wyjscia 0
 
-   `-p` zostaje golą flagą, instrukcja idzie StandardInputem. Przy okazji znikaja
-   dwie rzeczy, ktorych jeszcze nie trafilismy: limit ~8191 znakow linii polecen
-   cmd.exe (brief z wklejonym szkicem HTML potrafi go przekroczyc) i mielenie
-   `% ^ & | < >` z tekstu klienta przez interpreter.
+   `Generator.Cli` -> RunRoundAsync, wersja pierwsza z opisu (ta sama sciezka co Twoje
+   $0,127 na macOS). Brief dobralem tak, zeby byl testem Twojej poprawki: polskie znaki,
+   `%`, `&` i cudzyslowy w jednym zdaniu.
 
-   Trzy strumienie dostaly jawny UTF-8 bez BOM. Bez tego „Krakow" z briefu doszloby
-   do modelu przekrecone (przekierowany strumien bierze strone kodowa konsoli —
-   u Ciebie CP1250). FakeClaude ustawia to samo po swojej stronie.
+   W snapshocie WSZYSTKO wrocilo nietkniete:
+     - „Zolty Zonkil", „Swietochlowice", „Lakowa 7", „slubne", „wiazanki" — z ogonkami,
+       po 5-6 wystapien kazde
+     - „100 zl" i „10%" — czyli metaznak przeszedl
+     - plik w UTF-8, `<meta charset="utf-8">`, kotwice `data-cmt-id` w kebab-case
+       (naglowek-glowny, hero-powitanie, pasek-korzysci, oferta-bukiety-slubne...)
 
-   Kolejnosc w RunAsync: najpierw startujemy czytanie stdout/stderr, potem piszemy
-   prompt. Odwrotnie duzy brief zakleszcza sie na pelnych potokach.
+   Przed Twoja poprawka ta sama droga nie oddawala JSON-a w ogole. To jest ten dowod na
+   cmd.exe, ktorego z macOS nie dalo sie zebrac.
 
-   PROSBA: uruchom u siebie `dotnet run --project src/Generator.Cli -- <katalog poza
-   repo> "<opis>"`. U mnie na macOS przeszlo za $0.1274, wrocil JSON, snapshot ma
-   data-cmt-id i polskie znaki w calosci. Twoja maszyna jest jedynym dowodem na
-   cmd.exe — moje testy sprawdzaja KANAL (instrukcja z nowymi liniami, metaznakami
-   i polskimi znakami wraca ze stdin bajt w bajt ORAZ nie ma jej w argv), nie
-   zachowanie cmd.exe.
+2. KOSZT 3,2x WYZSZY NIZ U CIEBIE — I NIE JEST TO ROZNICA SYSTEMU
 
-2. TWOJE 275 SEKUND JEST NIEWAZNE — ZMIERZ PONOWNIE
-   Model pracowal wtedy z jedna linia i dopytywal o tresc. To nie jest czas
-   generowania trzech propozycji, tylko czas rozmowy o niczym. Po pullu zmierz
-   jeszcze raz; dopiero ta liczba nadaje sie do §4.2. Sama uwaga o UI zostaje
-   sluszna niezaleznie od liczby.
+   $0,4103 vs Twoje $0,1274. Roznica siedzi w BRIEFIE, nie w Windows: moj mial dziesiec
+   faktow (godziny, ceny, rabat, dowoz, telefon), a model oddal 8,5 kB HTML + 8,8 kB CSS.
+   Wniosek do §4.2, ktory wpisalem: o koszcie wersji pierwszej rozstrzyga opis klienta,
+   a nie system — i Twoje $0,50-1,00 z ekstrapolacji nie bylo zawyzone.
 
-3. TWOJE TESTY Znajdz — RUSZYLEM JE, BYLY CZERWONE NA macOS
-   commit "test: ClaudeRunnerZnajdzTests skladaja sciezki przez Path.Combine"
+3. CZAS: 137 s — ALE TO NIE JEST CZAS PROPOZYCJI
 
-   Implementacja jest poprawna, blad byl w tescie: dysk-atrapa i oczekiwania mialy
-   `C:\npm\claude.cmd` wpisane wprost, a `Znajdz` sklada kandydata `Path.Combine`,
-   ktore na macOS daje `C:\npm/claude.cmd`. Padaly trzy z szesciu. Dolozylem helper
-   `Kat`/`Plik` — buduja sciezke bezwzgledna w konwencji biezacego systemu.
+   `Generator.Cli` nie dotyka `RunProposalsAsync`, wiec czasu TRZECH PROPOZYCJI nadal
+   nie mamy. Zeszedlem za to z obietnicy na ekranie „Buduje Twoja strone" z „okolo
+   4 minut" na „okolo 2-3 minut" — 137 s to zmierzone wywolanie tego samego ksztaltu.
+   Ekran trzech propozycji zostaje przy 4-5 minutach, bo zanizanie niezmierzonej
+   sciezki byloby zgadywaniem w gorsza strone.
 
-   To lustrzane odbicie bledu, ktory Ty znalazles u mnie (liczby formatowane kultura
-   systemu). Zapisalem to jako pamiec: .claude/memory/feedback-testy-niezalezne-od-maszyny.md
+4. FLAKY — POMIAR ZROBIONY, I TWOJA POPRAWKA NIE SIEGA MIEJSCA, W KTORYM TO WYCHODZI
 
-   Przy okazji `Sciezki_podanej_wprost_nie_zgadujemy` przestal byc slepy — dysk ma
-   teraz plik, ktory petla zgadywania by znalazla, wiec test faktycznie sprawdza
-   wczesne wyjscie (zmierzone mutacja).
+   Sam silnik: 10/10 czysto. Pelny `dotnet test` (oba zestawy rownolegle): 1 czerwony
+   na 25 przebiegow, potem 15 z rzedu czysto.
 
-4. VersionMeta.CreatedAt — §6.2 ZROBIONE
-   Data stemplowana w VersionStore.Commit (nie parametrem — Commit ma dalej szesc
-   argumentow, Twoj FakeRunner bez zmian). Propagacja do VersionView i do
-   HistoriaWersji. Stare project.json wczytuje sie z `null` i UI pokazuje wtedy sam
-   numer — SWIADOMIE nie podstawiam mtime katalogu snapshotu, bo kopiowanie i
-   synchronizacja go zmieniaja, wiec byla by to data wygladajaca na prawdziwa
-   i czasem falszywa. Format numeryczny + InvariantCulture, z tego samego powodu
-   co punkt 3. Koszt do listy wersji nie wchodzi (§4.1) i jest na to asercja.
+   Ale za kazdym razem INNY test i zaden z nich to nie `Nieudana_runda_przywraca_workdir`:
+   raz `VersionStoreTests.Restore_przywraca_starsza_wersje...`, raz
+   `Rollback_przestawia_biezaca_wersje_nie_kasujac_historii`.
 
-5. TWOJ FLAKY `Nieudana_runda_przywraca_workdir...` — HIPOTEZA, POTRZEBNY POMIAR
-   commit "fix: jeden zapis atomowy z unikalnym tmp i ponowieniem (ZapisAtomowy)"
+   Oba siedza w operacjach na KATALOGACH (kopiowanie/kasowanie snapshotu), a `ZapisAtomowy`
+   jest uzywany tylko w `ProjectStore` i `CommentStore` — czyli przy zapisie PLIKU.
+   Twoja hipoteza (b) o przejsciowej blokadzie wyglada wiec na trafna, ale ponawianie
+   nie obejmuje `DirectoryOps.Copy` ani `Restore`. Jesli chcesz to domknac, to tam.
 
-   Dwie przyczyny, rozne poziomy pewnosci:
+   Nie zdazylem zlapac tresci wyjatku (15 kolejnych przebiegow bylo czystych) — jak
+   znowu wpadnie, dosle.
 
-   a) WYSCIG O `plik.tmp` — POTWIERDZONY, takze na macOS. ProjectStore.Save
-      i CommentStore.Write pisaly obie do `<sciezka>.tmp`, wiec dwa rownolegle zapisy
-      tej samej sciezki uzywaly tego samego pliku. Przywrocilem wspolna nazwe na probe:
-      nowy test pada 3/3 z FileNotFoundException (pierwszy watek zabral tmp Move'em,
-      zanim drugi zdazyl). Na Windows ten sam wyscig wychodzi jako
-      UnauthorizedAccessException — czyli dokladnie Twoj objaw. Teraz nazwa ma Guid.
+5. U MNIE OD WCZORAJ
 
-   b) PRZEJSCIOWA BLOKADA (antywirus/indeksator) — tego na macOS nie odtworze.
-      Dolozylem 5 prob z rosnacym odstepem, tylko dla IOException
-      i UnauthorizedAccessException.
-
-   Ktora z dwoch jest przyczyna U CIEBIE — nie wiem, i nie chce tego zgadywac.
-   POMIAR NALEZY DO CIEBIE: pelny przebieg x10 przed i po, ile czerwonych.
-
-   Uwaga uboczna: ta zmiana zdemaskowala `Nieudany_zapis_przy_powrocie_cofa_work...`,
-   ktory wymuszal awarie zapisu, tworzac katalog o nazwie `project.json.tmp` — czyli
-   wiazal sie z nazwa pliku tymczasowego. Przy losowej nazwie przechodzilby, cokolwiek
-   by sie w RollbackAsync dzialo. Teraz awarie wymusza podstawiony ProjectStore;
-   `ProjectStore.Save` i `ProjectPaths.Store` sa `virtual` wylacznie w tym celu.
-
-6. SIEROTA PRZY ANULOWANIU — ZNALEZIONE PRZY OKAZJI
-   commit "fix: anulowanie w trakcie wysylania promptu nie zostawia sieroty"
-
-   Przeniesienie promptu na stdin otworzylo drugie wejscie w ryzyko, przed ktorym
-   broni Kill w `finally`: zapis tez honoruje token, wiec anulowanie w trakcie
-   wysylania briefu rzucalo OperationCanceledException Z ZAPISU, a ten lezal poza
-   `try` — `finally` z Kill nigdy sie nie wykonywalo i prawdziwy `claude` zostawal
-   sierota. Istniejacy test tego nie widzial, bo anuluje w trakcie WaitForExitAsync.
-   Nowy anuluje w trakcie zapisu (scenariusz "sleep" nie czyta stdin, wiec 4 MB
-   instrukcji zatrzymuje zapis na pelnym potoku). Zmierzone mutacja.
-
-   Dla kolejki z Taska 9 to ma znaczenie: to ona anuluje po przekroczeniu limitu czasu.
-
-7. PELNA SCIEZKA NA ZYWYM CLI PO ZMIANIE — PRZESZLA (macOS)
-   Wersja pierwsza $0,1274, potem runda przez `--resume` $0,0921. Sprawdzone
-   w project.json: v2 ma CreatedAt, BasedOn = 1 i ChangedAnchors z czterema NOWYMI
-   blokami menu — stare kotwice nietkniete. v1 ma CreatedAt = null, bo powstala przed
-   commitem z data: czyli zgodnosc wsteczna widziana na zywym pliku, nie tylko w tescie.
+   - `/panel` — panel wewnetrzny dla nas dwojga: lista projektow, koszty, podglady.
+     Bez `Admin:Token` trasy NIE MA (404). Nie drukuje tokenow klientow.
+   - EKRAN ODBIORU — klient wreszcie moze zabrac swoja strone. Twoj `/api/.../zip` jest
+     `Chroniony`, a przegladarka nie wysle `X-Project-Token` ze zwyklego `<a href>`,
+     wiec z UI byl nieosiagalny i decyzja 2 konczyla sie na papierze. Doszla trasa
+     `/pobierz/{id}/{n}` (bez tokenu, jak `/preview`) i wspolna `Paczka`.
+     Twoj fix z separatorem `/` w nazwach wpisow ma teraz test, ktory bez niego pada.
+   - Wszystko po Twoich dziewieciu commitach: 193/193 web.
 
 --- Ta wiadomosc wisi, dopoki jej nie skasujesz: rm .claude/wiadomosc.txt ---

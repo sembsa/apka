@@ -17,8 +17,13 @@
 }
 else if (_buduje)
 {
+    @* „Około 4 minut" bylo zgadywane. Zmierzone na Windows po naprawie stdin: jedno
+       wywolanie generujace strone = 137 s ($0,4103). Zawyzona obietnica tez kosztuje —
+       klient czeka dluzej, niz musi, i czesciej wychodzi w trakcie. Komentarz TU, nad
+       znacznikiem: w liscie atrybutow komponentu Razor czyta go jako nazwe parametru
+       i render wybucha „does not have a property matching the name". *@
     <Czekanie Naglowek="Buduję Twoją stronę z wybranego kierunku"
-              Szacunek="około 4 minut"
+              Szacunek="około 2–3 minut"
               Etapy="@(new[] { "Czytam Twój opis i wybrany szkic", "Układam sekcje strony", "Dopisuję treści i styl" })" />
 }
 else if (_proposals is not null)

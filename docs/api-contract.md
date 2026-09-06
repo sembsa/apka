@@ -318,10 +318,27 @@ dwa przebiegi: propozycje **$0,497**, wersja pierwsza **$0,244**, rundy **$0,173
 trafna, nie zawyżona. Osobne przejście `Generator.Cli` po naprawie stdin: **$0,127** za
 wersję pierwszą z opisu.
 
-Nie mamy jeszcze **czasu** jednego wywołania z wiarygodnego pomiaru: liczba 275 s
-zmierzona na Windows powstała, gdy do modelu docierała jedna linia promptu (patrz niżej),
-więc mierzyła rozmowę o niczym, nie generowanie. Czas jest istotny dla UI — klient patrzy
-w „Przygotowuję trzy propozycje…" — więc do przemierzenia po stronie Windows.
+**Przejście na Windows po naprawie stdin (2026-09-06, `claude-opus-5`).** Ta sama ścieżka
+co przebieg macOS wyżej (`Generator.Cli` → `RunRoundAsync`, wersja pierwsza z opisu):
+**137 s**, **$0,4103**, kod wyjścia 0. Brief zawierał polskie znaki, `%`, `&` i cudzysłowy —
+w snapshocie wszystko wróciło nietknięte (`Żółty Żonkil`, `Świętochłowice`, `Łąkowa 7`,
+`100 zł`, `10%`), plik w UTF-8, kotwice `data-cmt-id` na miejscu. To jest dowód na cmd.exe,
+którego nie dało się zebrać na macOS: przed naprawą ta sama droga nie oddawała JSON-a wcale.
+
+Koszt wyszedł **3,2× wyżej niż $0,127 z macOS** i nie jest to różnica systemu — brief był
+tu znacznie bogatszy (dziesięć faktów: godziny, ceny, rabat, dowóz), a model oddał 8,5 kB
+HTML i 8,8 kB CSS. Wniosek do §4.2 jest taki, że **to opis klienta, a nie system, rozstrzyga
+o koszcie wersji pierwszej** — i że $0,50–1,00 z ekstrapolacji wyżej nie było zawyżone.
+
+**Czas** jednego wywołania generującego stronę: **137 s** (jeden pomiar). Czasu TRZECH
+PROPOZYCJI nadal nie mamy — to inna ścieżka (`RunProposalsAsync`), a `Generator.Cli` jej nie
+dotyka. Poprzednia liczba 275 s jest nieważna — powstała, gdy do modelu docierała jedna
+linia promptu (patrz niżej), więc mierzyła rozmowę o niczym, nie generowanie.
+
+Czas jest istotny dla UI: ekran „Buduję Twoją stronę z wybranego kierunku" obiecywał
+„około 4 minut", a jedno wywołanie tego kształtu trwa 137 s — obietnicę zeszliśmy więc
+do „około 2–3 minut". Ekran trzech propozycji zostaje przy „około 4–5 minut", bo tej
+ścieżki nikt jeszcze nie zmierzył i zaniżanie jej byłoby zgadywaniem w gorszą stronę.
 
 **Kanał promptu (2026-09-05).** Instrukcja idzie do `claude` przez **stdin**, nie
 argumentem. Na Windows `claude` z npm to `claude.cmd`, który startuje przez cmd.exe, a ten
