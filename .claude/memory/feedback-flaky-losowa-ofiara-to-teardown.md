@@ -15,6 +15,9 @@ raz `VersionStoreTests.Restore_...`, raz `ProjectApiTests.Rollback_...` — dwa 
 zestawy. Wspolny mianownik nie byl w kodzie testowanym, tylko w `Directory.Delete(root,
 recursive: true)` w obu teardownach, bez ponawiania.
 
+Ale nie przeceniaj sygnalu przy malym n: oba te testy przechodza przez `SafeReplace`,
+wiec n=2 nie rozstrzyga miedzy teardownem a produkcja. Poprawka objela oba miejsca.
+
 **How to apply:** zanim opakujesz kolejna operacje produkcyjna w ponawianie, sprawdz
 ksztalt teardownu wszystkich klas, w ktorych flaky wychodzil. I pamietaj o mierze:
 przy czestotliwosci 1/25 dwadziescia zielonych przebiegow po poprawce to okolo 45%
