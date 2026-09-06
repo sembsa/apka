@@ -41,7 +41,15 @@ public class PanelEndpointTests : IClassFixture<WebApplicationFactory<Program>>,
         _fabryka.WithWebHostBuilder(b =>
         {
             b.UseSetting("Projects:Root", _root);
-            if (adminToken is not null) b.UseSetting("Admin:Token", adminToken);
+            // Pusty ciag, a NIE pominiecie ustawienia, gdy test chce aplikacji bez panelu.
+            // `WebApplicationFactory` uruchamia aplikacje jako Development, wiec wciaga
+            // magazyn user-secrets projektu Generator.Web — a tam kazde z nas trzyma swoj
+            // `Admin:Token`, zeby moc wejsc na panel lokalnie. Bez tej linii testy
+            // „bez klucza panelu nie ma" byly ZIELONE tylko na maszynie, ktora sekretu
+            // nie ma ustawionego, i czerwienialy komus innemu bez zadnej zmiany w kodzie.
+            // Pusty klucz liczy sie jako brak (patrz `KluczPanelu.Ustawiony`), co ma
+            // wlasny test tuz obok.
+            b.UseSetting("Admin:Token", adminToken ?? "");
         }).CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
 
     private static FormUrlEncodedContent Formularz(string klucz) =>
