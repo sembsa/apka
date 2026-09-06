@@ -450,6 +450,30 @@ label { display: block; margin-bottom: 0.35rem; color: var(--tresc-cicha); }
 
 .panel-wyloguj button:hover { background: var(--karta); }
 
+/* Historia wersji: domyslnie zwinieta, bo przy przegladzie kilkudziesieciu projektow
+   liczy sie gestosc. Rozwija sie tam, gdzie akurat cos sprawdzamy. */
+.panel-historia { margin-top: 0.35rem; font-size: 0.85rem; }
+.panel-historia summary { cursor: pointer; color: var(--tresc-cicha); }
+
+.panel-historia ol {
+    margin: 0.35rem 0 0;
+    padding-left: 1.1rem;
+    display: grid;
+    gap: 0.2rem;
+}
+
+/* Odstep miedzy elementami wiersza robimy tutaj, a nie encjami w szablonie —
+   inaczej odstepy znikaja przy zawijaniu i skladaja sie z marginesami. */
+.panel-historia li > * + * { margin-left: 0.4rem; }
+
+.panel-znacznik {
+    padding: 0.05rem 0.35rem;
+    font-size: 0.75rem;
+    color: var(--akcent);
+    background: var(--akcent-tlo);
+    border-radius: var(--promien);
+}
+
 .panel-wejscie {
     display: grid;
     gap: 0.5rem;

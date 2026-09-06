@@ -154,6 +154,93 @@ public class PanelDaneTests : IDisposable
         Assert.Equal(0, dane.Podsumuj(dane.Wczytaj()).ObceKatalogi);
     }
 
+    [Fact]
+    public void Wiersz_niesie_historie_wersji_z_kosztem_i_data()
+    {
+        // Panel pokazywal SUME kosztu projektu i liczbe wersji — czyli nie dalo sie
+        // odpowiedziec na pytanie, ktore zadaje sie najczesciej: KTORA runda byla
+        // droga. Trzy wersje po 0,10 i jedna po 2,00 wygladaly w panelu tak samo
+        // jak cztery po 0,55.
+        var store = new ProjectStore(Path.Combine(_root, Guid.NewGuid().ToString()));
+        var powstala = new DateTimeOffset(2026, 9, 6, 9, 30, 0, TimeSpan.Zero);
+        store.Save(store.Create(SourceKind.Idea) with
+        {
+            Versions =
+            [
+                new VersionMeta(1, "s", "d", 0.10m, [], null, null, powstala),
+                new VersionMeta(2, "s", "d", 2.00m, ["cennik"], 1, null, powstala.AddHours(1)),
+            ],
+            CurrentVersion = 1,
+        });
+
+        var w = Assert.Single(Dane().Wczytaj());
+
+        Assert.Equal([1, 2], w.Wersje.Select(v => v.Numer));
+        Assert.Equal([0.10m, 2.00m], w.Wersje.Select(v => v.Koszt));
+        Assert.Equal(powstala.AddHours(1), w.Wersje[1].Powstala);
+        Assert.Equal(1, w.Wersje[1].NaBazie);
+        Assert.Equal(1, w.Wersje[1].OsieroconychKotwic);
+    }
+
+    [Fact]
+    public void Historia_zaznacza_ktora_wersja_jest_biezaca()
+    {
+        // Po powrocie do starszej wersji „biezaca" przestaje znaczyc „ostatnia"
+        // (kontrakt 5.1). Panel bez tego znacznika pokazywalby historie, z ktorej
+        // nie wynika, co klient WIDZI.
+        var store = new ProjectStore(Path.Combine(_root, Guid.NewGuid().ToString()));
+        store.Save(store.Create(SourceKind.Idea) with
+        {
+            Versions = [new VersionMeta(1, "s", "d", 0.1m, []), new VersionMeta(2, "s", "d", 0.1m, [])],
+            CurrentVersion = 1,
+        });
+
+        var w = Assert.Single(Dane().Wczytaj());
+
+        Assert.True(w.Wersje[0].Biezaca);
+        Assert.False(w.Wersje[1].Biezaca);
+    }
+
+    [Fact]
+    public void Liczba_wersji_bierze_sie_z_historii_a_nie_z_osobnego_pola()
+    {
+        // Jedno zrodlo prawdy: gdyby licznik byl osobnym polem, mogl rozjechac sie
+        // z lista i panel przeczylby sam sobie w dwoch miejscach ekranu.
+        var store = new ProjectStore(Path.Combine(_root, Guid.NewGuid().ToString()));
+        store.Save(store.Create(SourceKind.Idea) with
+        {
+            Versions = [new VersionMeta(1, "s", "d", 0.1m, []), new VersionMeta(2, "s", "d", 0.1m, [])],
+            CurrentVersion = 2,
+        });
+
+        Assert.Equal(2, Assert.Single(Dane().Wczytaj()).Wersji);
+    }
+
+    [Fact]
+    public void Uszkodzony_projekt_ma_pusta_historie_zamiast_wybuchac()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, "zepsuty-2"));
+        File.WriteAllText(Path.Combine(_root, "zepsuty-2", "project.json"), "nie-json");
+
+        var w = Assert.Single(Dane().Wczytaj(), w => w.Blad is not null);
+
+        Assert.Empty(w.Wersje);
+        Assert.Equal(0, w.Wersji);
+    }
+
+    [Theory]
+    [InlineData(1, "1 osierocona kotwica")]
+    [InlineData(2, "2 osierocone kotwice")]
+    [InlineData(5, "5 osieroconych kotwic")]
+    [InlineData(12, "12 osieroconych kotwic")]
+    [InlineData(22, "22 osierocone kotwice")]
+    public void Kotwice_odmieniaja_sie_po_polsku(int ile, string oczekiwane)
+    {
+        // Przymiotnik odmienia sie razem z rzeczownikiem. „2 osierocona kotwice"
+        // na ekranie ogladanym codziennie kluje w oczy tak samo jak „2 projektów".
+        Assert.Equal(oczekiwane, $"{ile} {Odmiana.OsieroconeKotwice(ile)}");
+    }
+
     public void Dispose()
     {
         DirectoryOps.Delete(_root);
@@ -169,7 +256,9 @@ public class PanelDaneTests : IDisposable
 public class StanKosztuTests
 {
     private static WierszPanelu Wiersz(decimal wydano, int wersji, string? blad = null) =>
-        new("id", "active", "", 0, 15, wydano, 8m, wersji, wersji, DateTime.Now, blad);
+        new("id", "active", "", 0, 15, wydano, 8m,
+            [.. Enumerable.Range(1, wersji).Select(n => new WersjaPanelu(n, 0m, null, null, 0, n == wersji))],
+            wersji, DateTime.Now, blad);
 
     [Fact]
     public void Swiezy_projekt_jeszcze_nic_nie_kosztowal_i_to_jest_prawda_a_nie_luka()

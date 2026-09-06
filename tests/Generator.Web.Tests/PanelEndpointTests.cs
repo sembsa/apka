@@ -31,7 +31,13 @@ public class PanelEndpointTests : IClassFixture<WebApplicationFactory<Program>>,
         {
             Description = "Kwiaciarnia Anna, ul. Polna 3, tel. 600-100-200",
             SpentUsd = 2.50m,
-            Versions = [new VersionMeta(1, "s", "d", 2.50m, [])],
+            Versions =
+            [
+                new VersionMeta(1, "s", "d", 0.50m, [], null, null,
+                    new DateTimeOffset(2026, 9, 6, 9, 0, 0, TimeSpan.Zero)),
+                new VersionMeta(2, "s", "d", 2.00m, ["cennik"], 1, null,
+                    new DateTimeOffset(2026, 9, 6, 10, 0, 0, TimeSpan.Zero)),
+            ],
             CurrentVersion = 1,
         };
         store.Save(_projekt);
@@ -234,6 +240,49 @@ public class PanelEndpointTests : IClassFixture<WebApplicationFactory<Program>>,
         var naZmyslona = await klient.PostAsync("/zmyslona-trasa", null);
 
         Assert.Equal(naZmyslona.StatusCode, naWyloguj.StatusCode);
+    }
+
+    [Fact]
+    public async Task Historia_wersji_pokazuje_koszt_kazdej_rundy_z_osobna()
+    {
+        // Sedno tej zmiany: z samej sumy „2.50 USD" nie da sie odczytac, ze jedna
+        // runda kosztowala cztery razy wiecej niz druga. Panel ma odpowiadac na
+        // pytanie „ktora runda byla droga", bo to jest pytanie, ktore zadajemy.
+        var tresc = await Wejdz(Klient(Klucz), Klucz);
+
+        Assert.Contains("0.50 USD", tresc);
+        Assert.Contains("2.00 USD", tresc);
+    }
+
+    [Fact]
+    public async Task Historia_mowi_ktora_wersje_widzi_klient()
+    {
+        // Projekt w tym tescie wrocil do v1, wiec „biezaca" NIE jest ostatnia
+        // (kontrakt 5.1). Historia bez tego znacznika nie mowi, co klient WIDZI.
+        var tresc = await Wejdz(Klient(Klucz), Klucz);
+
+        Assert.Contains("data-test=\"wersja-biezaca\"", tresc);
+    }
+
+    [Fact]
+    public async Task Historia_pokazuje_osierocone_kotwice_bo_to_sygnal_ze_cos_sie_psuje()
+    {
+        var tresc = await Wejdz(Klient(Klucz), Klucz);
+
+        Assert.Contains("osierocona", tresc);
+    }
+
+    [Fact]
+    public async Task Numery_wersji_sa_podstawione_a_nie_wypisane_doslownie()
+    {
+        // Razor traktuje `v@w.WersjaBiezaca` jak ADRES E-MAIL i zostawia jako tekst.
+        // Panel przez to drukowal doslowne „podglad v@w.WersjaBiezaca", a testy tego
+        // nie widzialy, bo sprawdzaly `href`, nie napis. Ten test patrzy na to, co
+        // czyta czlowiek.
+        var tresc = await Wejdz(Klient(Klucz), Klucz);
+
+        Assert.DoesNotContain("v@", tresc);
+        Assert.Contains("podgląd v1", tresc);
     }
 
     public void Dispose()

@@ -25,6 +25,29 @@ public enum StanKosztu
 }
 
 /// <summary>
+/// Jedna wersja w historii projektu — tyle, ile panel potrafi powiedziec bez
+/// schodzenia na dysk. Powstalo z pytania, na ktore panel dotad NIE odpowiadal:
+/// ktora runda byla droga. Suma kosztu projektu i liczba wersji wygladaly tak samo
+/// przy czterech rundach po 0,55 USD i przy trzech po 0,10 z jedna po 2,00.
+/// </summary>
+/// <param name="Powstala">
+/// `null` dla wersji sprzed wprowadzenia stempla czasu (kontrakt 6.2) — panel
+/// pokazuje wtedy myslnik, a nie zmyslona date.
+/// </param>
+/// <param name="NaBazie">
+/// Numer wersji, z ktorej ta powstala. Rozny od `Numer - 1` po powrocie do starszej
+/// wersji — i wtedy wlasnie jest najbardziej potrzebny, bo tlumaczy, czemu historia
+/// nie jest linia prosta.
+/// </param>
+public record WersjaPanelu(
+    int Numer,
+    decimal Koszt,
+    DateTimeOffset? Powstala,
+    int? NaBazie,
+    int OsieroconychKotwic,
+    bool Biezaca);
+
+/// <summary>
 /// Jeden wiersz panelu: tyle o projekcie klienta, ile my — dwoje ludzi po naszej
 /// stronie — potrzebujemy, zeby wiedziec, co ten klient ma i ile nas kosztowal.
 ///
@@ -49,11 +72,15 @@ public record WierszPanelu(
     int RundyLimit,
     decimal Wydano,
     decimal Budzet,
-    int Wersji,
+    IReadOnlyList<WersjaPanelu> Wersje,
     int WersjaBiezaca,
     DateTime OstatniZapis,
     string? Blad = null)
 {
+    /// Liczona z historii, nie trzymana obok niej: osobne pole moglo rozjechac sie
+    /// z lista i panel przeczylby sam sobie w dwoch miejscach ekranu.
+    public int Wersji => Wersje.Count;
+
     /// Jedno miejsce, ktore decyduje, co znaczy zero — komorka tabeli i podsumowanie
     /// musza mowic to samo, inaczej panel sam sobie przeczy w dwoch miejscach ekranu.
     public StanKosztu Koszt => this switch
@@ -130,7 +157,9 @@ public class PanelDane(ProjectPaths paths)
                 RundyLimit: m.RoundsLimit,
                 Wydano: m.SpentUsd,
                 Budzet: m.BudgetUsd,
-                Wersji: m.Versions.Count,
+                Wersje: [.. m.Versions.Select(v => new WersjaPanelu(
+                    v.Number, v.CostUsd, v.CreatedAt, v.BasedOn,
+                    v.OrphanedAnchors.Count, v.Number == m.CurrentVersion))],
                 WersjaBiezaca: m.CurrentVersion,
                 OstatniZapis: zapis);
         }
@@ -139,7 +168,7 @@ public class PanelDane(ProjectPaths paths)
             // `ProjectStore.Load` opakowuje i uszkodzony JSON, i blad wejscia-wyjscia
             // w `InvalidDataException`. Lapiemy przy KAZDYM projekcie osobno, zeby
             // jeden zly plik nie zabral z soba calej listy.
-            return new WierszPanelu(id, "?", "", 0, 0, 0m, 0m, 0, 0, zapis, Blad: ex.Message);
+            return new WierszPanelu(id, "?", "", 0, 0, 0m, 0m, [], 0, zapis, Blad: ex.Message);
         }
     }
 }
@@ -158,4 +187,14 @@ public static class Odmiana
     };
 
     public static string Maja(int n) => n % 10 == 1 && n % 100 != 11 ? "ma" : "mają";
+
+    /// „1 osierocona kotwica", „2 osierocone kotwice", „5 osieroconych kotwic".
+    /// Przymiotnik odmienia sie razem z rzeczownikiem, wiec zwracamy oba naraz —
+    /// sklejanie ich osobno w widoku dawaloby „2 osierocona kotwice".
+    public static string OsieroconeKotwice(int n) => (n % 10, n % 100) switch
+    {
+        (1, not 11) => "osierocona kotwica",
+        (2 or 3 or 4, not (12 or 13 or 14)) => "osierocone kotwice",
+        _ => "osieroconych kotwic",
+    };
 }

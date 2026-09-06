@@ -139,11 +139,48 @@
                                odcina otwartej stronie dostep do `window.opener`. *@
                             <a href="/preview/@w.Id/@w.WersjaBiezaca/" target="_blank" rel="noopener"
                                data-test="podglad">
-                                podgląd v@w.WersjaBiezaca
+                                podgląd v@(w.WersjaBiezaca)
                             </a>
                             <span class="panel-brak">z @w.Wersji</span>
                             <a href="/editor/@w.Id" target="_blank" rel="noopener"
                                data-test="edytor">edytor</a>
+
+                            @* `details`, nie skrypt: historia jest potrzebna przy jednym
+                               projekcie naraz, a rozwijana lista bez JS dziala tez wtedy,
+                               gdy cokolwiek innego na stronie padnie. *@
+                            <details class="panel-historia">
+                                <summary>historia</summary>
+                                <ol>
+                                    @foreach (var v in w.Wersje)
+                                    {
+                                        <li data-test="@(v.Biezaca ? "wersja-biezaca" : "wersja")">
+                                            <strong>v@(v.Numer)</strong>
+                                            @if (v.Biezaca)
+                                            {
+                                                @* Po powrocie do starszej wersji „biezaca" przestaje
+                                                   znaczyc „ostatnia" (kontrakt 5.1) — bez tego znacznika
+                                                   z historii nie wynika, co klient WIDZI. *@
+                                                <span class="panel-znacznik">u klienta</span>
+                                            }
+                                            <span>@(v.Koszt > 0m ? Kwota(v.Koszt) : "nie zmierzono")</span>
+                                            @if (v.Powstala is { } kiedy)
+                                            {
+                                                <span class="panel-brak">@kiedy.LocalDateTime.ToString("MM-dd HH:mm", CultureInfo.InvariantCulture)</span>
+                                            }
+                                            @if (v.NaBazie is { } baza && baza != v.Numer - 1)
+                                            {
+                                                @* Pokazujemy TYLKO wtedy, gdy historia nie jest linia
+                                                   prosta — czyli gdy ta informacja cos tlumaczy. *@
+                                                <span class="panel-brak">z v@(baza)</span>
+                                            }
+                                            @if (v.OsieroconychKotwic > 0)
+                                            {
+                                                <span class="ostrzezenie">@v.OsieroconychKotwic @Odmiana.OsieroconeKotwice(v.OsieroconychKotwic)</span>
+                                            }
+                                        </li>
+                                    }
+                                </ol>
+                            </details>
                         }
                     </td>
                     <td>@w.OstatniZapis.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)</td>
