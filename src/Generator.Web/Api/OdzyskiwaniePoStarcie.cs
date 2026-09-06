@@ -59,9 +59,20 @@ public class OdzyskiwaniePoStarcie(ProjectPaths paths, JobQueue kolejka)
     {
         var store = paths.Store(id);
         var meta = store.Load();
-        if (meta.ActiveJobId is not { } jobId) return;
+        if (meta.ActiveJob is not { } zadanie) return;
 
-        kolejka.ZarejestrujPrzerwane(jobId, id);
+        // Runda mogla sie UDAC i zginac dopiero przy czyszczeniu znacznika: wersja
+        // jest wtedy zatwierdzona i klient ma ja w historii. Ogloszenie „przerwana"
+        // byloby wtedy klamstwem o rzeczy, ktora klient widzi na wlasne oczy —
+        // ta sama klasa bledu co dlug 3. Rozstrzyga liczba wersji sprzed rundy.
+        if (meta.Versions.Count > zadanie.VersionsBefore)
+        {
+            kolejka.ZarejestrujZakonczone(zadanie.JobId, id);
+            store.Save(meta with { ActiveJob = null });
+            return;
+        }
+
+        kolejka.ZarejestrujPrzerwane(zadanie.JobId, id);
 
         // `CurrentVersion == 0` to przerwana WERSJA PIERWSZA — snapshotu numer 0 nie
         // ma i naiwne „przywroc biezaca" rzucaloby tu `DirectoryNotFoundException`,
@@ -71,6 +82,6 @@ public class OdzyskiwaniePoStarcie(ProjectPaths paths, JobQueue kolejka)
         if (meta.CurrentVersion > 0)
             new VersionStore(paths.Dir(id)).Restore(meta.CurrentVersion);
 
-        store.Save(meta with { ActiveJobId = null });
+        store.Save(meta with { ActiveJob = null });
     }
 }

@@ -30,9 +30,9 @@ public record VersionMeta(
     IReadOnlyList<string>? ChangedAnchors = null,
     DateTimeOffset? CreatedAt = null);
 
-/// <param name="ActiveJobId">
-/// Identyfikator zadania, ktore JEST W LOCIE dla tego projektu — zapisywany na dysk
-/// ZANIM klient dostanie ten identyfikator, i czyszczony po zakonczeniu.
+/// <param name="ActiveJob">
+/// Zadanie, ktore JEST W LOCIE dla tego projektu — zapisywane na dysk ZANIM klient
+/// dostanie identyfikator, i czyszczone po zakonczeniu.
 ///
 /// Kolejka zyje w pamieci procesu, wiec restart gubi zadanie. Bez tego pola
 /// `GET /api/jobs/{id}` po restarcie oddaje 404, czyli „nie znam takiego zadania"
@@ -48,6 +48,17 @@ public record VersionMeta(
 /// Kontrakt 5.1: po powrocie „aktualna" przestaje znaczyc „ostatnia", wiec
 /// `Versions[^1]` jest bledem w kazdym miejscu, ktore pyta o biezaca wersje.
 /// </param>
+/// <summary>
+/// Zadanie w locie, zapamietane na dysku (patrz `ProjectMeta.ActiveJob`).
+/// </summary>
+/// <param name="VersionsBefore">
+/// Ile wersji mial projekt, ZANIM to zadanie ruszylo. Bez tej liczby odzyskiwanie
+/// po restarcie nie odroznia rundy PRZERWANEJ od rundy, ktora sie UDALA i zginela
+/// dopiero przy czyszczeniu znacznika — i oglaszaloby „przerwana" o rundzie, ktorej
+/// wynik klient ma w historii. To ta sama klasa klamstwa co dlug 3.
+/// </param>
+public record ActiveJob(string JobId, int VersionsBefore);
+
 public record ProjectMeta(
     string Id,
     string Token,
@@ -63,7 +74,7 @@ public record ProjectMeta(
     string Description = "",
     string? SourceUrl = null,
     string? ChosenProposal = null,
-    string? ActiveJobId = null)
+    ActiveJob? ActiveJob = null)
 {
     /// Jedyna droga do „wersji biezacej". Uzywaj tego zamiast Versions[^1].
     ///

@@ -46,7 +46,8 @@ public class ProjectApi(ProjectPaths paths, JobQueue queue, ILogger<ProjectApi> 
     {
         var store = paths.Store(id);
         var jobId = Guid.NewGuid().ToString();
-        store.Save(store.Load() with { ActiveJobId = jobId });
+        var przed = store.Load();
+        store.Save(przed with { ActiveJob = new ActiveJob(jobId, przed.Versions.Count) });
 
         try
         {
@@ -63,19 +64,21 @@ public class ProjectApi(ProjectPaths paths, JobQueue queue, ILogger<ProjectApi> 
                     // sprzed niej jest juz nieaktualna i nadpisanie nia cofneloby
                     // efekt calej rundy.
                     var po = store.Load();
-                    if (po.ActiveJobId == jobId) store.Save(po with { ActiveJobId = null });
+                    if (po.ActiveJob?.JobId == jobId) store.Save(po with { ActiveJob = null });
                 }
             });
         }
         catch (Exception)
         {
-            // `Enqueue` odmowil (projekt ma juz zadanie). Znacznik nie moze zostac,
-            // bo zablokowalby projekt na zawsze — i to za zadanie, ktore nigdy nie
-            // ruszylo. Sprzatanie nie moze przeslonic prawdziwego bledu.
+            // `Enqueue` odmowil, bo projekt ma juz zadanie — a straz `MaAktywne` wyzej
+            // NIE JEST zamkiem, wiec ta droga jest osiagalna w wyscigu. Wracamy do
+            // znacznika SPRZED naszej proby, a nie do `null`: pod nim kryje sie
+            // zadanie, ktore naprawde biegnie, i wyzerowanie go zgubiloby cudza runde
+            // przy restarcie. Sprzatanie nie moze przeslonic prawdziwego bledu.
             try
             {
                 var po = store.Load();
-                if (po.ActiveJobId == jobId) store.Save(po with { ActiveJobId = null });
+                if (po.ActiveJob?.JobId == jobId) store.Save(po with { ActiveJob = przed.ActiveJob });
             }
             catch (Exception) { }
             throw;

@@ -43,7 +43,7 @@ public class OdzyskiwanieHttpTests : IClassFixture<WebApplicationFactory<Program
             Status = ProjectStatus.Active,
             Versions = [v1],
             CurrentVersion = 1,
-            ActiveJobId = jobId,
+            ActiveJob = new ActiveJob(jobId, 1),
         };
         store.Save(meta);
         return (id, meta.Token, jobId);

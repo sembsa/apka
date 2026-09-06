@@ -54,7 +54,7 @@ public class OdzyskiwaniePoStarcieTests : IDisposable
             Status = ProjectStatus.Active,
             Versions = [v1],
             CurrentVersion = 1,
-            ActiveJobId = jobId,
+            ActiveJob = new ActiveJob(jobId, 1),
         });
         return (id, jobId);
     }
@@ -112,7 +112,7 @@ public class OdzyskiwaniePoStarcieTests : IDisposable
 
         Odzyskiwanie().Wykonaj();
 
-        Assert.Null(new ProjectStore(Path.Combine(_root, id)).Load().ActiveJobId);
+        Assert.Null(new ProjectStore(Path.Combine(_root, id)).Load().ActiveJob?.JobId);
         Assert.False(_kolejka.MaAktywne(id));
     }
 
@@ -131,15 +131,46 @@ public class OdzyskiwaniePoStarcieTests : IDisposable
         store.Save(store.Create(SourceKind.Idea) with
         {
             Id = id, Status = ProjectStatus.Draft, Versions = [], CurrentVersion = 0,
-            ActiveJobId = jobId,
+            ActiveJob = new ActiveJob(jobId, 0),
         });
 
         Odzyskiwanie().Wykonaj();
 
         Assert.Equal("failed", _kolejka.Get(jobId)!.Status);
         var po = store.Load();
-        Assert.Null(po.ActiveJobId);
+        Assert.Null(po.ActiveJob);
         Assert.Equal(ProjectStatus.Draft, po.Status);
+    }
+
+    [Fact]
+    public void Runda_ktora_zdazyla_zatwierdzic_wersje_nie_jest_ogloszona_jako_przerwana()
+    {
+        // Awaria mogla przyjsc PO zatwierdzeniu wersji, a przed wyczyszczeniem
+        // znacznika. Wersja jest wtedy na dysku i klient ma ja w historii —
+        // „runda przerwana" byloby klamstwem o rzeczy, ktora widzi na wlasne oczy.
+        // Rozstrzyga liczba wersji sprzed rundy, zapisana razem ze znacznikiem.
+        var id = Guid.NewGuid().ToString();
+        var store = new ProjectStore(Path.Combine(_root, id));
+        var wersje = new VersionStore(Path.Combine(_root, id));
+        Directory.CreateDirectory(wersje.WorkDir);
+        File.WriteAllText(Path.Combine(wersje.WorkDir, "index.html"), "wersja 1");
+        var v1 = wersje.Commit(1, "s", 0.1m, [], null, []);
+        File.WriteAllText(Path.Combine(wersje.WorkDir, "index.html"), "wersja 2");
+        var v2 = wersje.Commit(2, "s", 0.2m, [], 1, []);
+
+        var jobId = Guid.NewGuid().ToString();
+        store.Save(store.Create(SourceKind.Idea) with
+        {
+            Id = id, Status = ProjectStatus.Active, Versions = [v1, v2], CurrentVersion = 2,
+            ActiveJob = new ActiveJob(jobId, VersionsBefore: 1),
+        });
+
+        Odzyskiwanie().Wykonaj();
+
+        Assert.Equal("succeeded", _kolejka.Get(jobId)!.Status);
+        Assert.Null(store.Load().ActiveJob);
+        // I nic nie cofamy: work/ nalezy juz do wersji 2.
+        Assert.Equal("wersja 2", File.ReadAllText(Path.Combine(wersje.WorkDir, "index.html")));
     }
 
     [Fact]

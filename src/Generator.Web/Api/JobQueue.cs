@@ -57,6 +57,17 @@ public class JobQueue : IDisposable
         _jobs[jobId] = new JobView(jobId, "failed", new JobFailureView("halted", 1));
     }
 
+    /// <summary>
+    /// To samo, ale dla zadania, ktore ZDAZYLO ZROBIC SWOJE, zanim proces zginal:
+    /// wersja jest zatwierdzona i klient ma ja w historii. Ogloszenie takiej rundy
+    /// jako przerwanej byloby klamstwem o rzeczy, ktora klient widzi.
+    /// </summary>
+    public void ZarejestrujZakonczone(string jobId, string projectId)
+    {
+        _zadaniaProjektow[jobId] = projectId;
+        _jobs[jobId] = new JobView(jobId, "succeeded", null);
+    }
+
     /// <exception cref="JobRunningException">projekt ma juz zadanie w kolejce</exception>
     public string Enqueue(string projectId, Func<string, CancellationToken, Task> praca) =>
         Enqueue(projectId, Guid.NewGuid().ToString(), praca);

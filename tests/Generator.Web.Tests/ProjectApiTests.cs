@@ -94,7 +94,7 @@ public class ProjectApiTests : IDisposable
 
         var jobId = await api.ApplyCommentsAsync(p.Id, 1, [Uwaga("k1")]);
 
-        Assert.Equal(jobId, new ProjectStore(Path.Combine(_root, p.Id)).Load().ActiveJobId);
+        Assert.Equal(jobId, new ProjectStore(Path.Combine(_root, p.Id)).Load().ActiveJob?.JobId);
         brama.SetResult();
     }
 
@@ -108,7 +108,7 @@ public class ProjectApiTests : IDisposable
 
         await Poczekaj(api, await api.ApplyCommentsAsync(p.Id, 1, [Uwaga("k1")]));
 
-        Assert.Null(new ProjectStore(Path.Combine(_root, p.Id)).Load().ActiveJobId);
+        Assert.Null(new ProjectStore(Path.Combine(_root, p.Id)).Load().ActiveJob?.JobId);
     }
 
     [Fact]
@@ -127,7 +127,7 @@ public class ProjectApiTests : IDisposable
             () => api.ApplyCommentsAsync(p.Id, 1, [Uwaga("k2")]));
 
         // Slad nalezy do PIERWSZEGO zadania, nie do odrzuconego.
-        Assert.Equal(pierwsze, new ProjectStore(Path.Combine(_root, p.Id)).Load().ActiveJobId);
+        Assert.Equal(pierwsze, new ProjectStore(Path.Combine(_root, p.Id)).Load().ActiveJob?.JobId);
         brama.SetResult();
     }
 
