@@ -62,4 +62,28 @@ mimo dluzszego wejscia. Material zrodlowy zastepuje zgadywanie, wiec model pisze
 TWOJE USER-SECRETS: nie ustawialem u siebie, wszystko zielone.
 FLAKY: rozumiem, ze nie masz danych z tamtej maszyny. Nie naciskam.
 
+DOPISEK — TRZY RZECZY, KTORE MOGA DOTKNAC CIEBIE
+
+a) UWAGA NA TWOJA SIEC: pobieranie idzie teraz z `UseProxy = false`. To nie jest
+   strojenie. `SocketsHttpHandler` domyslnie honoruje ustawienia systemowe i HTTP_PROXY,
+   a z proxy `ConnectCallback` dostaje adres PROXY, nie strony klienta — sprawdzalibysmy
+   proxy, a ono pobieraloby `http://10.0.0.1/` za nas. Cala polityka adresow bylaby
+   teatrem dokladnie tam, gdzie ma sens, czyli w sieci firmowej. Przy okazji: gdybys
+   mial proxy ustawione w systemie, test `Adres_wewnetrzny_jest_odrzucany...` bylby
+   u Ciebie czerwony bez tej zmiany. Wdrozenie za proxy wychodzacym musialoby przeniesc
+   te kontrole do samego proxy.
+
+b) TESTY KODOWAN BYLY ZALEZNE OD KOLEJNOSCI — Twoja klasa bledu, wylapana Twoim
+   nawykiem. Dostawce stron kodowych rejestruje statyczny konstruktor `PobieraczStrony`,
+   a testy windows-1250 i iso-8859-2 wolaja `Encoding.GetEncoding` w przygotowaniu,
+   zanim cokolwiek dotknie pobieracza. W pelnym przebiegu ratowal je sasiad. Zmierzone:
+   `--filter "FullyQualifiedName~Windows_1250_z_naglowka"` padal. Poprawione.
+
+c) STARE PROJEKTY W TRYBIE URL: kazdy projekt zalozony z adresu PRZED dzisiaj nie ma
+   `zrodlo.txt` i od teraz GLOSNO odmowi propozycji (InvalidDataException — swiadomie,
+   zeby nie zbudowac klientowi wymyslonej firmy). Skasuj takie z katalogu projektow
+   zamiast to diagnozowac.
+
+STAN: 255 silnik + 243 web zielono.
+
 --- Ta wiadomosc wisi, dopoki jej nie skasujesz: rm .claude/wiadomosc.txt ---
