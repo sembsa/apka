@@ -68,6 +68,18 @@ builder.Services.AddRazorComponents()
 
 var app = builder.Build();
 
+// Sprzatanie po poprzednim procesie — PRZED przyjeciem pierwszego zadania.
+// Kolejka zyje w pamieci, wiec restart (u nas: kazdy deploy) gubi runde w locie.
+// Bez tego przegladarka klienta odpytuje `jobId` sprzed awarii i dostaje czterysta
+// czwórke, czyli „nie znam takiego zadania" za runde, ktora zostala oplacona.
+// Zadanie NIE jest wznawiane — patrz `OdzyskiwaniePoStarcie`.
+//
+// Wolane wprost, nie jako IHostedService: test ma przechodzic dokladnie ta sama
+// droga co aplikacja, bez budowania hosta.
+new OdzyskiwaniePoStarcie(
+    app.Services.GetRequiredService<ProjectPaths>(),
+    app.Services.GetRequiredService<JobQueue>()).Wykonaj();
+
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
 {

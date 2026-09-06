@@ -81,6 +81,56 @@ public class ProjectApiTests : IDisposable
     private readonly JobQueue _queue = new();
     private readonly ZapisujacyLogger _log = new();
 
+    [Fact]
+    public async Task Zadanie_w_locie_zostawia_slad_na_dysku_zanim_klient_dostanie_identyfikator()
+    {
+        // Dlug 4. Kolejka zyje w pamieci procesu, wiec bez tego sladu restart
+        // zamienia zadanie klienta w czterysta czwórke. Sprawdzamy przy ZATRZYMANYM
+        // zadaniu, czyli dokladnie w chwili, w ktorej awaria bylaby najbolesniejsza.
+        var (api, runner) = Zbuduj();
+        var p = await Gotowy(api);
+        var brama = new TaskCompletionSource();
+        runner(p.Id).Wstrzymaj = brama;
+
+        var jobId = await api.ApplyCommentsAsync(p.Id, 1, [Uwaga("k1")]);
+
+        Assert.Equal(jobId, new ProjectStore(Path.Combine(_root, p.Id)).Load().ActiveJobId);
+        brama.SetResult();
+    }
+
+    [Fact]
+    public async Task Po_zakonczeniu_zadania_slad_znika()
+    {
+        // Znacznik, ktory zostaje, blokuje projekt na zawsze: odzyskiwanie po starcie
+        // uznaloby zakonczona runde za przerwana i cofneloby work/ do poprzedniej wersji.
+        var (api, _) = Zbuduj();
+        var p = await Gotowy(api);
+
+        await Poczekaj(api, await api.ApplyCommentsAsync(p.Id, 1, [Uwaga("k1")]));
+
+        Assert.Null(new ProjectStore(Path.Combine(_root, p.Id)).Load().ActiveJobId);
+    }
+
+    [Fact]
+    public async Task Odmowa_kolejki_nie_zostawia_sladu_po_zadaniu_ktore_nie_ruszylo()
+    {
+        // Drugie zadanie tego samego projektu jest odrzucane (plan, sekcja 7).
+        // Gdyby zostawialo po sobie znacznik, projekt zostalby zablokowany za runde,
+        // ktorej nigdy nie bylo.
+        var (api, runner) = Zbuduj();
+        var p = await Gotowy(api);
+        var brama = new TaskCompletionSource();
+        runner(p.Id).Wstrzymaj = brama;
+        var pierwsze = await api.ApplyCommentsAsync(p.Id, 1, [Uwaga("k1")]);
+
+        await Assert.ThrowsAsync<JobRunningException>(
+            () => api.ApplyCommentsAsync(p.Id, 1, [Uwaga("k2")]));
+
+        // Slad nalezy do PIERWSZEGO zadania, nie do odrzuconego.
+        Assert.Equal(pierwsze, new ProjectStore(Path.Combine(_root, p.Id)).Load().ActiveJobId);
+        brama.SetResult();
+    }
+
     public void Dispose()
     {
         _queue.Dispose();

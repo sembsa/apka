@@ -37,10 +37,39 @@ public class JobQueue : IDisposable
 
     public bool MaAktywne(string projectId) => _aktywne.ContainsKey(projectId);
 
-    /// <exception cref="JobRunningException">projekt ma juz zadanie w kolejce</exception>
-    public string Enqueue(string projectId, Func<string, CancellationToken, Task> praca)
+    /// <summary>
+    /// Wpisuje zadanie, ktorego ten proces NIGDY nie widzial, od razu jako przerwane.
+    /// Jedyny wolajacy to `OdzyskiwaniePoStarcie`.
+    ///
+    /// Po restarcie przegladarka klienta odpytuje `jobId` sprzed awarii. Bez tego
+    /// wpisu trasa oddaje 404 („nie znam takiego zadania"), bo kolejka zyje w pamieci.
+    /// Rejestrujemy takze PRZYPISANIE DO PROJEKTU — `GET /api/jobs/{id}` sprawdza
+    /// token projektu zadania, wiec sam status bez tego przypisania i tak konczylby
+    /// sie czterysta czwórka.
+    ///
+    /// `halted`, nie `retrying`: powtorki nie bedzie, bo nikt jej nie zamowil,
+    /// a `retrying` kazaloby UI czekac na wynik, ktory nigdy nie przyjdzie
+    /// (patrz `JobViewExtensions.Trwa`).
+    /// </summary>
+    public void ZarejestrujPrzerwane(string jobId, string projectId)
     {
-        var jobId = Guid.NewGuid().ToString();
+        _zadaniaProjektow[jobId] = projectId;
+        _jobs[jobId] = new JobView(jobId, "failed", new JobFailureView("halted", 1));
+    }
+
+    /// <exception cref="JobRunningException">projekt ma juz zadanie w kolejce</exception>
+    public string Enqueue(string projectId, Func<string, CancellationToken, Task> praca) =>
+        Enqueue(projectId, Guid.NewGuid().ToString(), praca);
+
+    /// <summary>
+    /// Wariant z identyfikatorem podanym Z GORY. Potrzebny, bo znacznik zadania
+    /// w locie musi trafic na dysk ZANIM klient dostanie identyfikator — inaczej
+    /// awaria w oknie miedzy kolejka a zapisem zostawia klienta z identyfikatorem,
+    /// ktorego dysk nigdy nie widzial, i po restarcie znowu jest 404.
+    /// </summary>
+    /// <exception cref="JobRunningException">projekt ma juz zadanie w kolejce</exception>
+    public string Enqueue(string projectId, string jobId, Func<string, CancellationToken, Task> praca)
+    {
         if (!_aktywne.TryAdd(projectId, jobId)) throw new JobRunningException(projectId);
 
         // `_jobs` przed `TryWrite`, nigdy odwrotnie: konsument moze podniesc zadanie

@@ -30,6 +30,58 @@ public class ProjectApi(ProjectPaths paths, JobQueue queue, ILogger<ProjectApi> 
         return Task.FromResult(ToView(meta));
     }
 
+
+    /// <summary>
+    /// Kolejkuje zadanie i ZOSTAWIA PO NIM SLAD NA DYSKU. Jedyna droga do kolejki
+    /// z tej klasy — trzy sciezki (propozycje, wersja pierwsza, runda uwag) roznia
+    /// sie praca, a nie tym, jak zadanie ma przezyc awarie procesu.
+    ///
+    /// Kolejnosc jest tu cala trescia: identyfikator powstaje PRZED kolejka, zapis
+    /// na dysk wyprzedza `Enqueue`, a `Enqueue` wyprzedza oddanie identyfikatora
+    /// klientowi. Odwrotna kolejnosc zostawialaby klienta z identyfikatorem, ktorego
+    /// dysk nigdy nie widzial — i po restarcie znowu bylaby czterysta czwórka
+    /// (patrz `OdzyskiwaniePoStarcie`).
+    /// </summary>
+    private string Zakolejkuj(string id, Func<string, CancellationToken, Task> praca)
+    {
+        var store = paths.Store(id);
+        var jobId = Guid.NewGuid().ToString();
+        store.Save(store.Load() with { ActiveJobId = jobId });
+
+        try
+        {
+            return queue.Enqueue(id, jobId, async (j, ct) =>
+            {
+                try
+                {
+                    await praca(j, ct);
+                }
+                finally
+                {
+                    // Wczytujemy PONOWNIE, a nie zapisujemy zapamietanego rekordu:
+                    // praca wlasnie zapisala wersje, koszt i status, wiec `meta`
+                    // sprzed niej jest juz nieaktualna i nadpisanie nia cofneloby
+                    // efekt calej rundy.
+                    var po = store.Load();
+                    if (po.ActiveJobId == jobId) store.Save(po with { ActiveJobId = null });
+                }
+            });
+        }
+        catch (Exception)
+        {
+            // `Enqueue` odmowil (projekt ma juz zadanie). Znacznik nie moze zostac,
+            // bo zablokowalby projekt na zawsze — i to za zadanie, ktore nigdy nie
+            // ruszylo. Sprzatanie nie moze przeslonic prawdziwego bledu.
+            try
+            {
+                var po = store.Load();
+                if (po.ActiveJobId == jobId) store.Save(po with { ActiveJobId = null });
+            }
+            catch (Exception) { }
+            throw;
+        }
+    }
+
     public Task<ProjectView> GetAsync(string id) => Task.FromResult(ToView(Wczytaj(id)));
 
     public Task<string> RequestProposalsAsync(string id)
@@ -57,7 +109,7 @@ public class ProjectApi(ProjectPaths paths, JobQueue queue, ILogger<ProjectApi> 
             throw new InvalidOperationException(
                 $"projekt {id} ma juz komplet szkicow — pokaz istniejace zamiast zamawiac nowe");
 
-        return Task.FromResult(queue.Enqueue(id, async (jobId, ct) =>
+        return Task.FromResult(Zakolejkuj(id, async (jobId, ct) =>
         {
             var wynik = await paths.Engine(id).RunProposalsAsync(paths.Store(id).Load(), ct);
             if (!wynik.Succeeded) { Awaria(jobId, id, wynik.Failure!); return; }
@@ -137,7 +189,7 @@ public class ProjectApi(ProjectPaths paths, JobQueue queue, ILogger<ProjectApi> 
         if (meta.ChosenProposal is null)
             throw new InvalidOperationException($"projekt {id}: klient nie wybral propozycji");
 
-        return Task.FromResult(queue.Enqueue(id, async (jobId, ct) =>
+        return Task.FromResult(Zakolejkuj(id, async (jobId, ct) =>
         {
             var wynik = await paths.Engine(id).RunFirstVersionAsync(paths.Store(id).Load(), ct);
             if (!wynik.Succeeded) { Awaria(jobId, id, wynik.Failure!); return; }
@@ -206,7 +258,7 @@ public class ProjectApi(ProjectPaths paths, JobQueue queue, ILogger<ProjectApi> 
         var silnikowe = comments.Select(ToComment).ToList();
         store.Uzgodnij(version, silnikowe);
 
-        return Task.FromResult(queue.Enqueue(id, async (jobId, ct) =>
+        return Task.FromResult(Zakolejkuj(id, async (jobId, ct) =>
         {
             var wynik = await paths.Engine(id).RunRoundAsync(paths.Store(id).Load(), silnikowe, ct);
             if (!wynik.Succeeded) { Awaria(jobId, id, wynik.Failure!); return; }

@@ -30,6 +30,19 @@ public record VersionMeta(
     IReadOnlyList<string>? ChangedAnchors = null,
     DateTimeOffset? CreatedAt = null);
 
+/// <param name="ActiveJobId">
+/// Identyfikator zadania, ktore JEST W LOCIE dla tego projektu — zapisywany na dysk
+/// ZANIM klient dostanie ten identyfikator, i czyszczony po zakonczeniu.
+///
+/// Kolejka zyje w pamieci procesu, wiec restart gubi zadanie. Bez tego pola
+/// `GET /api/jobs/{id}` po restarcie oddaje 404, czyli „nie znam takiego zadania"
+/// komus, kto wlasnie za nie zaplacil. Ten jeden zapis pozwala po starcie
+/// odpowiedziec prawde: runda zostala przerwana (patrz `OdzyskiwaniePoStarcie`).
+///
+/// Zadanie NIE jest wznawiane. Proces `claude` zginal razem z aplikacja, wiec
+/// wznowienie znaczyloby uruchomienie rundy DRUGI RAZ — drugi raz zaplacone,
+/// przy ryzyku zdublowanej wersji.
+/// </param>
 /// <param name="CurrentVersion">
 /// Wersja, ktora klient oglada i do ktorej trafiaja nowe uwagi. 0 = brak wersji.
 /// Kontrakt 5.1: po powrocie „aktualna" przestaje znaczyc „ostatnia", wiec
@@ -49,7 +62,8 @@ public record ProjectMeta(
     int CurrentVersion = 0,
     string Description = "",
     string? SourceUrl = null,
-    string? ChosenProposal = null)
+    string? ChosenProposal = null,
+    string? ActiveJobId = null)
 {
     /// Jedyna droga do „wersji biezacej". Uzywaj tego zamiast Versions[^1].
     ///
