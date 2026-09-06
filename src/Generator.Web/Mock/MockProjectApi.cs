@@ -3,6 +3,7 @@ using Generator.Engine.Versioning;
 using Generator.Web.Api;
 using Generator.Web.Contracts;
 using Generator.Web.Preview;
+using Generator.Engine.Sources;
 
 namespace Generator.Web.Mock;
 
@@ -76,8 +77,18 @@ public class MockProjectApi : IProjectApi
     /// </summary>
     public string SnapshotRoot { get; set; } = Path.GetTempPath();
 
+    /// <summary>
+    /// Atrapa NIE pobiera strony klienta — praca nad UI ma dzialac bez sieci. Ta flaga
+    /// wlacza jedyna galaz, ktorej brak pobierania by nie pokazal: adres, ktorego nie
+    /// da sie uzyc. Bez niej ekranu bledu nie da sie ani obejrzec, ani przetestowac.
+    /// </summary>
+    public string? BladZrodla { get; set; }
+
     public Task<ProjectView> CreateAsync(string source, string description)
     {
+        if (BladZrodla is not null && source.Equals("url", StringComparison.OrdinalIgnoreCase))
+            throw new PobranieNieudaneException(BladZrodla);
+
         var p = new ProjectView(
             Guid.NewGuid().ToString(),
             Guid.NewGuid().ToString("N"),

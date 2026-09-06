@@ -7,6 +7,7 @@ using Generator.Web.Components.Pages;
 using Generator.Web.Panel;
 using Generator.Web.Preview;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Generator.Engine.Sources;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -31,6 +32,11 @@ var claudeCmd = builder.Configuration["Projects:ClaudeCmd"] ?? "claude";
 
 builder.Services.AddSingleton(new ProjectPaths(snapshotRoot, claudeCmd));
 builder.Services.AddSingleton<JobQueue>();
+
+// Osobna rejestracja, nie `new` w ProjectApi: to jest jedyne miejsce w calej aplikacji,
+// ktore siega do OBCEJ sieci pod adres podany przez klienta. Ma byc widoczne w skladzie
+// zaleznosci i podmienialne w testach HTTP, zeby nie chodzily do internetu.
+builder.Services.AddSingleton<IZrodloStrony>(_ => new ZrodloStrony());
 
 // Ruling 9: mock zostaje. Praca nad UI bez zainstalowanego `claude` i galezie
 // `failed` z /dev/wynik-rundy stoja na nim. Domyslnie WYLACZONY.
@@ -60,7 +66,8 @@ else
     builder.Services.AddSingleton<IProjectApi>(sp => new ProjectApi(
         sp.GetRequiredService<ProjectPaths>(),
         sp.GetRequiredService<JobQueue>(),
-        sp.GetRequiredService<ILogger<ProjectApi>>()));
+        sp.GetRequiredService<ILogger<ProjectApi>>(),
+        sp.GetRequiredService<IZrodloStrony>()));
 }
 
 builder.Services.AddRazorComponents()

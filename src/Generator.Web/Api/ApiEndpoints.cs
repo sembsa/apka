@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Generator.Web.Contracts;
 using Generator.Web.Preview;
+using Generator.Engine.Sources;
 
 namespace Generator.Web.Api;
 
@@ -23,11 +24,16 @@ public static class ApiEndpoints
         // nie dochodzi do sklejania sciezki.
         var grupa = app.MapGroup("/api");
 
-        grupa.MapPost("/projects", async (NowyProjekt body, IProjectApi api) =>
-        {
-            var p = await api.CreateAsync(body.Source, body.Description);
-            return Results.Created($"/api/projects/{p.Id}", p);
-        });
+        // Jedyna trasa BEZ `Chroniony` (projektu jeszcze nie ma, wiec nie ma tokenu),
+        // ale `Zamien` potrzebna tak samo jak reszta: od kiedy zalozenie projektu
+        // POBIERA strone klienta, moze sie nie udac z powodu, ktory lezy po jego
+        // stronie — i wtedy nalezy mu sie 422, a nie 500 „nasza awaria".
+        grupa.MapPost("/projects", (NowyProjekt body, IProjectApi api) =>
+            Zamien(async () =>
+            {
+                var p = await api.CreateAsync(body.Source, body.Description);
+                return Results.Created($"/api/projects/{p.Id}", p);
+            }));
 
         grupa.MapGet("/projects/{id:guid}", (string id, IProjectApi api, HttpContext ctx) =>
             Chroniony(id, api, ctx, p => Task.FromResult(Results.Ok(p))));
@@ -149,6 +155,13 @@ public static class ApiEndpoints
         catch (ProjectFrozenException e) { return Results.Conflict(e.Message); }
         catch (StaleVersionException e) { return Results.Conflict(e.Message); }
         catch (JobRunningException e) { return Results.Conflict(e.Message); }
+
+        // Nie udalo sie pobrac strony, ktora klient podal (zly adres, adres wewnetrzny,
+        // 404, plik zamiast strony, za duzo). To blad TRESCI ZADANIA, nie awaria serwera
+        // i nie konflikt stanu: 422 mowi „przyjalem zadanie, ale tego, co w nim jest,
+        // nie da sie uzyc". Komunikat idzie do klienta CELOWO — bez niego nie wie,
+        // czy poprawic adres, czy probowac pozniej.
+        catch (ZrodloException e) { return Results.UnprocessableEntity(e.Message); }
 
         // Kolejka zamknieta = proces sie zamyka. To nie jest blad zadania klienta,
         // wiec nie 500: 503 mowi „sprobuj za chwile" i tak to rozumie kazdy klient HTTP.

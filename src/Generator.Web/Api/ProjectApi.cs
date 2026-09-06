@@ -1,6 +1,7 @@
 using Generator.Engine.Jobs;
 using Generator.Engine.Gates;
 using Generator.Engine.Model;
+using Generator.Engine.Sources;
 using Generator.Engine.Storage;
 using Generator.Web.Contracts;
 
@@ -8,12 +9,29 @@ namespace Generator.Web.Api;
 
 /// Kontrakt 1 w procesie. Blazor Server wola to bezposrednio (postep idzie
 /// obwodem SignalR), a ApiEndpoints jest cienka warstwa HTTP nad tym samym.
-public class ProjectApi(ProjectPaths paths, JobQueue queue, ILogger<ProjectApi> logger) : IProjectApi
+public class ProjectApi(
+    ProjectPaths paths, JobQueue queue, ILogger<ProjectApi> logger, IZrodloStrony zrodlo) : IProjectApi
 {
-    public Task<ProjectView> CreateAsync(string source, string description)
+    /// <summary>
+    /// W trybie „mam strone, ale slaba" strona jest pobierana TUTAJ, synchronicznie,
+    /// zanim projekt w ogole powstanie. Dwa powody:
+    ///
+    /// - Literowka w adresie to jedyna rzecz, ktora klient moze naprawic SAM, i moze to
+    ///   zrobic tylko TERAZ, przy formularzu. W zadaniu propozycji ta sama porazka
+    ///   wraca po minutach jako „zadanie nieudane", czego UI nie odroznia od awarii
+    ///   modelu — klient dostawalby komunikat o naszej awarii za swoja literowke.
+    /// - Nieudane pobranie nie zostawia po sobie projektu: katalog powstaje dopiero
+    ///   po tym, jak tresc jest w reku.
+    ///
+    /// Kosztem jest oczekiwanie (do 10 s) w zadaniu HTTP. Formularz i tak pokazuje
+    /// „Tworze…", wiec klient nie patrzy w martwy ekran.
+    /// </summary>
+    public async Task<ProjectView> CreateAsync(string source, string description)
     {
         var kind = source.Equals("url", StringComparison.OrdinalIgnoreCase)
             ? SourceKind.Url : SourceKind.Idea;
+
+        var tresc = kind == SourceKind.Url ? await zrodlo.WyciagnijAsync(description) : null;
 
         // ProjectStore.Create nadaje wlasny GUID, a katalog musimy znac wczesniej.
         // Nadpisujemy Id na nazwe katalogu: inaczej meta.Id i folder rozjezdzaja
@@ -27,7 +45,11 @@ public class ProjectApi(ProjectPaths paths, JobQueue queue, ILogger<ProjectApi> 
             SourceUrl = kind == SourceKind.Url ? description : null,
         };
         store.Save(meta);
-        return Task.FromResult(ToView(meta));
+
+        if (tresc is not null)
+            File.WriteAllText(GenerationService.SciezkaZrodla(paths.Dir(id)), tresc);
+
+        return ToView(meta);
     }
 
 

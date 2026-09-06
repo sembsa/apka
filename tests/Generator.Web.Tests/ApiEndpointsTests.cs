@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Xunit;
+using Generator.Engine.Sources;
 
 namespace Generator.Web.Tests;
 
@@ -25,6 +26,10 @@ public class ApiEndpointsTests : IClassFixture<WebApplicationFactory<Program>>, 
     /// PRAWDZIWY ProjectApi, atrapowany tylko silnik. Wariant z `Projects:UseMock`
     /// bylby latwiejszy, ale testowalby parytet mocka z kontraktem zamiast kodu,
     /// ktory pojdzie na produkcje — a to wlasnie mock ma prawo sie rozjechac.
+    /// Zrodlo-atrapa. Bez tej podmiany test zakladajacy projekt z adresu wyszedlby
+    /// do PRAWDZIWEGO internetu — a testy maja byc powtarzalne i dzialac bez sieci.
+    private readonly ProjectApiTests.ZrodloAtrapa _zrodlo = new();
+
     public ApiEndpointsTests(WebApplicationFactory<Program> factory)
     {
         _domyslny = factory;
@@ -37,8 +42,56 @@ public class ApiEndpointsTests : IClassFixture<WebApplicationFactory<Program>>, 
                 uslugi.AddSingleton(new ProjectPaths(_root, id => new FakeRunner(
                     new Generator.Engine.Storage.ProjectStore(Path.Combine(_root, id)),
                     new Generator.Engine.Versioning.VersionStore(Path.Combine(_root, id)))));
+
+                uslugi.RemoveAll<IZrodloStrony>();
+                uslugi.AddSingleton<IZrodloStrony>(_zrodlo);
             });
         });
+    }
+
+    [Fact]
+    public async Task Projekt_z_adresu_dostaje_tresc_strony_na_dysk()
+    {
+        _zrodlo.Tresc = "H1: Kwiaciarnia Konwalia\n- Bukiety ślubne od 150 zł";
+
+        var odp = await _app.CreateClient().PostAsJsonAsync("/api/projects",
+            new { source = "url", description = "https://konwalia.example/" });
+
+        odp.EnsureSuccessStatusCode();
+        var projekt = await odp.Content.ReadFromJsonAsync<ProjectView>();
+
+        Assert.Equal("https://konwalia.example/", Assert.Single(_zrodlo.Adresy));
+        Assert.Contains("Bukiety ślubne",
+            await File.ReadAllTextAsync(
+                Generator.Engine.Jobs.GenerationService.SciezkaZrodla(Path.Combine(_root, projekt!.Id))));
+    }
+
+    [Fact]
+    public async Task Adresu_ktorego_nie_da_sie_pobrac_nie_zamieniamy_na_500_ani_na_projekt()
+    {
+        // 422, nie 500: zadanie przyszlo poprawne, tylko tresc w nim jest nie do uzycia.
+        // 500 mowilby klientowi „to nasza awaria" o jego literowce w adresie.
+        _zrodlo.Blad = new PobranieNieudaneException("strona odpowiedziala kodem 404");
+        var byloPrzed = Directory.Exists(_root) ? Directory.GetDirectories(_root).Length : 0;
+
+        var odp = await _app.CreateClient().PostAsJsonAsync("/api/projects",
+            new { source = "url", description = "https://nie-ma-takiej.example/" });
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, odp.StatusCode);
+
+        // Nieudane pobranie nie zostawia po sobie projektu-widma.
+        var jestPo = Directory.Exists(_root) ? Directory.GetDirectories(_root).Length : 0;
+        Assert.Equal(byloPrzed, jestPo);
+    }
+
+    [Fact]
+    public async Task Projekt_z_pomyslu_nie_dotyka_zadnej_sieci()
+    {
+        var odp = await _app.CreateClient().PostAsJsonAsync("/api/projects",
+            new { source = "idea", description = "kwiaciarnia w Nowym Sączu" });
+
+        odp.EnsureSuccessStatusCode();
+        Assert.Empty(_zrodlo.Adresy);
     }
 
     [Fact]

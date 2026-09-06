@@ -8,6 +8,7 @@ using Generator.Web.Api;
 using Generator.Web.Contracts;
 using Microsoft.Extensions.Logging;
 using Xunit;
+using Generator.Engine.Sources;
 
 namespace Generator.Web.Tests;
 
@@ -81,6 +82,23 @@ public class ProjectApiTests : IDisposable
     private readonly JobQueue _queue = new();
     private readonly ZapisujacyLogger _log = new();
 
+    /// Zrodlo-atrapa: zaden test tej klasy nie ma prawa wejsc do sieci. `Tresc`
+    /// udaje udane pobranie, `Blad` — nieudane.
+    private readonly ZrodloAtrapa _zrodlo = new();
+
+    internal sealed class ZrodloAtrapa : IZrodloStrony
+    {
+        public string Tresc { get; set; } = "H1: Kwiaciarnia Konwalia\n- Bukiety ślubne od 150 zł";
+        public ZrodloException? Blad { get; set; }
+        public List<string> Adresy { get; } = [];
+
+        public Task<string> WyciagnijAsync(string adres, CancellationToken ct = default)
+        {
+            Adresy.Add(adres);
+            return Blad is not null ? Task.FromException<string>(Blad) : Task.FromResult(Tresc);
+        }
+    }
+
     [Fact]
     public async Task Zadanie_w_locie_zostawia_slad_na_dysku_zanim_klient_dostanie_identyfikator()
     {
@@ -153,7 +171,7 @@ public class ProjectApiTests : IDisposable
             runnery[id] = r;
             return r;
         });
-        return (new ProjectApi(paths, _queue, _log), id => runnery[id]);
+        return (new ProjectApi(paths, _queue, _log, _zrodlo), id => runnery[id]);
     }
 
     private static async Task Poczekaj(ProjectApi api, string jobId)
@@ -682,7 +700,7 @@ public class ProjectApiTests : IDisposable
         var paths = new LamliwyZapis(_root, id => new FakeRunner(
             new ProjectStore(Path.Combine(_root, id)),
             new VersionStore(Path.Combine(_root, id))));
-        return (new ProjectApi(paths, _queue, _log), paths);
+        return (new ProjectApi(paths, _queue, _log, _zrodlo), paths);
     }
 
     private static CommentDto Uwaga(string id) =>
