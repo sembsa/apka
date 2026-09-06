@@ -47,10 +47,30 @@ public static class EkstraktorTresci
         if (opisJedno.Length > 0) sb.AppendLine($"OPIS: {opisJedno}");
 
         // `body` bywa null przy skrajnie zepsutym wejsciu — wtedy zostaje sam tytul.
-        if (dokument.Body is not null) Przejdz(dokument.Body, sb);
+        foreach (var korzen in Korzenie(dokument)) Przejdz(korzen, sb);
 
         var wynik = sb.ToString().Trim();
         return wynik.Length <= MaxZnakow ? wynik : wynik[..MaxZnakow];
+    }
+
+    /// <summary>
+    /// Od czego zaczac chodzenie po drzewie. Zmierzone na zywej stronie: dla
+    /// pl.wikipedia.org caly limit 12 tys. znakow schodzil na menu („Przejdz do
+    /// zawartosci", „Losuj artykul", „Portal wikipedystow"), zanim ekstraktor dotarl
+    /// do jednego zdania o miescie. Strona z `main`/`article` sama mowi, gdzie ma
+    /// tresc — korzystamy z tego.
+    ///
+    /// Stopka dolacza ZAWSZE, takze wtedy: to tam siedzi adres, telefon i godziny.
+    /// Strona bez `main` (czyli typowa strona malej firmy, o ktora w tym trybie chodzi)
+    /// idzie po calym `body` jak dotad — tam nawigacja jest krotka i tez cos znaczy.
+    /// </summary>
+    private static IEnumerable<IElement> Korzenie(IDocument dokument)
+    {
+        var glowna = dokument.QuerySelector("main") ?? dokument.QuerySelector("article");
+        if (glowna is null)
+            return dokument.Body is null ? [] : [dokument.Body];
+
+        return [glowna, .. dokument.QuerySelectorAll("footer").Where(f => !glowna.Contains(f))];
     }
 
     /// <summary>

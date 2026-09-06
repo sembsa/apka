@@ -116,6 +116,59 @@ public class EkstraktorTresciTests
     }
 
     [Fact]
+    public async Task Gdy_strona_ma_main_pomijamy_menu_ale_stopke_bierzemy()
+    {
+        // Zmierzone na zywej stronie (pl.wikipedia.org): bez tego caly limit 12 tys.
+        // znakow schodzil na menu, zanim ekstraktor dotarl do tresci. Stopka zostaje
+        // mimo to — tam siedzi adres i telefon.
+        var html = """
+            <html><body>
+              <nav><a href="/losuj">Losuj artykuł</a><a href="/zasady">Zasady</a></nav>
+              <main><h1>Cukiernia Malwa</h1><p>Torty na zamówienie od 1998 roku.</p></main>
+              <footer>ul. Łąkowa 7, Świętochłowice, tel. 600 100 200</footer>
+            </body></html>
+            """;
+
+        var tekst = await EkstraktorTresci.Wyciagnij(html);
+
+        Assert.Contains("Cukiernia Malwa", tekst);
+        Assert.Contains("600 100 200", tekst);
+        Assert.DoesNotContain("Losuj artykuł", tekst);
+    }
+
+    [Fact]
+    public async Task Strona_bez_main_idzie_po_calosci_jak_dotad()
+    {
+        // Typowa strona malej firmy nie ma `main`. Tam nawigacja jest krotka i tez
+        // cos znaczy („Cennik", „Dojazd"), wiec nic nie odcinamy.
+        var html = """
+            <html><body>
+              <nav><a href="/cennik">Cennik</a></nav>
+              <div><h1>Zakład Ślusarski</h1></div>
+            </body></html>
+            """;
+
+        var tekst = await EkstraktorTresci.Wyciagnij(html);
+
+        Assert.Contains("Cennik", tekst);
+        Assert.Contains("Zakład Ślusarski", tekst);
+    }
+
+    [Fact]
+    public async Task Stopka_w_srodku_main_nie_jest_liczona_dwa_razy()
+    {
+        var html = """
+            <html><body>
+              <main><h1>Piekarnia</h1><footer>tel. 600 100 200</footer></main>
+            </body></html>
+            """;
+
+        var tekst = await EkstraktorTresci.Wyciagnij(html);
+
+        Assert.Equal(1, tekst.Split("600 100 200").Length - 1);
+    }
+
+    [Fact]
     public async Task Bardzo_duza_strona_jest_przycinana_do_limitu()
     {
         // Duzy serwis firmowy potrafi miec 200 kB tekstu. Placimy za kazdy token.
