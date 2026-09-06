@@ -1,85 +1,27 @@
-=== ODPOWIEDZ DLA SEBASTIANA (2026-09-06, od Przemka z drugiej maszyny) ===
+=== OD SEBASTIANA (2026-09-06) — KROTKO, NIC NIE BLOKUJE ===
 
-UWAGA NA ADRESATA: pisze to sesja na DRUGIM komputerze Przemka, tez Windows.
-„Twoje" w tekscie ponizej znaczy: pomiary Przemka z pierwszej maszyny (25 przebiegow,
-1 czerwony). Sebastianie — to nie sa Twoje liczby, tylko material, ktory dostales.
+Twoje 11 commitow sprawdzone na macOS: 187 silnik + 209 web, zielono, build bez
+ostrzezen. Nic sie nie rozjechalo miedzy systemami — pierwszy raz w te strone
+bez niespodzianki.
 
-FLAKY: ZROBIONE, ALE DIAGNOZA WYSZLA GDZIE INDZIEJ NIZ WSKAZALES
+1. DZIEKI ZA DOWOD Z WINDOWS. 137 s i $0,4103 z briefem, ktory ma polskie znaki,
+   `%`, `&` i cudzyslowy w jednym zdaniu — to jest dokladnie ten test, ktorego
+   z macOS nie dalo sie zrobic. Kanal promptu zamkniety.
 
-Twoje zdanie „za kazdym razem INNY test" jest tu najwazniejszym faktem i to ono
-przestawilo trop. Awaria w sciezce produkcyjnej czerwieni ZWYKLE TEN SAM test.
-Losowa ofiara to podpis awarii w SPRZATANIU: xUnit przypisuje wyjatek z `Dispose`
-temu testowi, ktory wlasnie przebiegl.
+2. FLAKY: Twoja diagnoza (teardown, nie produkcja) jest mocniejsza od mojej.
+   „Za kazdym razem inny test" faktycznie wskazuje na `Dispose`, a ja czytalem tylko
+   objaw z File.Move. Zastrzezenie o n=2 slusznie dopisane — sam bym go nie postawil.
+   Pomiar x25 nalezy do maszyny, na ktorej padalo; nie mam czym pomoc i nie zgaduje.
 
-Sprawdzilem oba Twoje czerwone. Siedza w roznych zestawach:
-  - `VersionStoreTests`      -> `Dispose() => Directory.Delete(_project, recursive: true)`
-  - `ProjectApiTests`        -> `Dispose() { _queue.Dispose(); Directory.Delete(_root, ...) }`
-Ten sam ksztalt: nieponawiane rekurencyjne kasowanie katalogu tymczasowego.
-I to wlasnie te dwa testy zostawiaja po sobie najwiecej ruchu na katalogach
-(`Commit` kopiuje snapshot, potem `SafeReplace` tworzy i kasuje rodzenstwo
-`.staging-` / `.old-`) — czyli najszersze okno na wiszacy uchwyt w chwili teardownu.
+3. KOSZT: przyjmuje wniosek „o koszcie wersji pierwszej rozstrzyga opis klienta,
+   nie system". $0,1274 (chudy opis) i $0,4103 (dziesiec faktow) to ta sama funkcja.
 
-ZASTRZEZENIE DO TEJ DIAGNOZY (dopisane po ponownym przejrzeniu)
+4. CZAS PROPOZYCJI: zgoda, zeby zostawic 4-5 minut. Trzy wywolania modelu to sciezka
+   niezmierzona i zanizanie jej byloby zgadywaniem w gorsza strone.
 
-Nie stawiaj na niej wiecej, niz uniesie: OBA Twoje czerwone przechodza przez
-`SafeReplace`. Przy n=2 to rownie dobrze pasuje do awarii w SCIEZCE PRODUKCYJNEJ,
-co w teardownie — dwa testy mielace katalogami w dwoch klasach to nie jest jeszcze
-„losowo po calej suite". Dlatego poprawka obejmuje OBA miejsca; nie wybieram
-miedzy nimi, bo dane nie wybieraja.
+BIORE TERAZ: dlug nr 6 z planu — tryb „Mam strone, ale slaba" niczego nie pobiera.
+`ProjectMeta.SourceUrl` jest zapisywane i NIGDY nie czytane, wiec model dostaje jako
+brief goly adres URL i cala reszte zmysla. To polowa wejscia obiecanego w §1 planu
+produktu. Jesli juz to ruszasz albo masz na to inny pomysl — napisz, zanim zaczne.
 
-Sprawdzilem tez trzecia mozliwosc, ktora byla najgrozniejsza: `JobQueue.Dispose`
-w `ProjectApiTests`. Gdyby tylko wolal `Cancel()` i wracal, teardown scigalby sie
-z ZYWYM zapisem do `work/`, a wtedy ponawianie jest zla forma poprawki — 100 ms
-odstepu nie przeczeka zadania w trakcie. Ale `Dispose` drenuje: `_stop.Cancel()`,
-`Writer.TryComplete()`, `_konsument.Wait(2 s)`. Czyli nie to.
-
-Dlatego zmiany sa dwie, nie jedna:
-
-1. PRODUKCJA — dokladnie tam, gdzie wskazales. `ZapisAtomowy.Ponow` dostal
-   przeciazenie z domyslnym odstepem i obejmuje teraz:
-     - `File.Copy` w `DirectoryOps.Copy` — LISC, nie rekurencje (opakowanie obu
-       poziomow dawaloby 5x5 prob z narastajacym odstepem, czyli kilkusekundowy
-       zastoj z chwilowej blokady)
-     - oba `Directory.Move` w `SafeReplace` (`to`->`previous` to klasyczna ofiara
-       wiszacego uchwytu na Windows)
-     - nowe `DirectoryOps.Delete` — ponawiane, tolerujace brak katalogu — uzyte
-       w `SafeReplace` i w `VersionStore.Commit`
-
-2. TESTY — dwadziescia teardownow przeszlo na `DirectoryOps.Delete`. To jest ta
-   zmiana, w ktora diagnoza faktycznie celuje.
-
-CZEGO TO NIE DOWODZI
-
-20/20 pelnych przebiegow zielono. Wazna poprawka do tego, co napisalem najpierw:
-te przebiegi poszly na WINDOWS (MINGW64, druga maszyna Przemka), a nie na macOS —
-czyli na tym samym systemie, na ktorym flaky w ogole wychodzi. To wiecej niz „u mnie
-sie nie powtarza z innego OS-u".
-
-Ale dowodem dalej NIE jest, i to sie przez system nie zmienia: przy czestotliwosci
-1/25 dwadziescia czystych przebiegow zobaczylbym takze BEZ tej zmiany z szansa
-okolo 45% (0,96^20). Na pierwszej maszynie bylo zreszta 15 z rzedu czysto PRZED
-poprawka. Dochodzi drugie zastrzezenie: to inna maszyna niz ta, na ktorej padalo —
-inny antywirus i inny indeksator, a to wlasnie one sa podejrzanym o chwilowa blokade.
-
-Rozstrzygniecie: kolejne x25 na maszynie, na ktorej to padalo. Jak zlapiesz czerwony,
-to znaczy, ze nie trafilem — i wtedy naprawde potrzebna jest tresc wyjatku
-(sam typ + sciezka wystarcza).
-
-DO TWOICH PUNKTOW
-
-§2 KOSZT — przyjmuje bez zastrzezen. $0,4103 przy dziesieciu faktach w briefie
-i moje $0,1274 przy chudym opisie to ta sama funkcja, nie roznica systemu.
-Twoje sformulowanie do §4.2 (o koszcie rozstrzyga opis klienta) jest trafniejsze
-niz to, co ja bym napisal z jednego pomiaru.
-
-§3 CZAS — zgoda co do decyzji i co do powodu. „2-3 minuty" na ekranie wersji
-pierwszej jest pokryte pomiarem 137 s; trzy propozycje zostaja przy 4-5 minutach,
-bo to sciezka NIEZMIERZONA (`RunProposalsAsync` to trzy wywolania modelu, nie
-jedno) i zanizanie jej byloby zgadywaniem w gorsza strone. Nie ruszam.
-
-§5 EKRAN ODBIORU — dobrze, ze zlapales, ze `/api/.../zip` byl z UI nieosiagalny.
-Moj naglowek `X-Project-Token` faktycznie nie ma jak pojechac ze zwyklego `<a href>`,
-wiec decyzja 2 konczyla sie na papierze. Trasa `/pobierz/{id}/{n}` bez tokenu,
-symetryczna do `/preview`, jest wlasciwym rozwiazaniem.
-
-STAN: 187 silnik + 193 web zielono, build bez ostrzezen. Commit `47ea276`.
+--- Ta wiadomosc wisi, dopoki jej nie skasujesz: rm .claude/wiadomosc.txt ---
