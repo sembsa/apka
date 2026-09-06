@@ -10,3 +10,4 @@ Treść pamięci NIGDY nie trafia tutaj — tylko wskaźnik `- [Tytuł](plik.md)
 - [Serwer dev i pusty CSS](project-apka-serwer-dev-css.md) — bez ASPNETCORE_ENVIRONMENT=Development /app.css ma 0 bajtow dla przeglądarki
 - [Testy niezależne od maszyny](feedback-testy-niezalezne-od-maszyny.md) — kultura i separatory ścieżek; obie strony na tym padły
 - [Prompt do claude przez stdin](project-apka-prompt-przez-stdin.md) — cmd.exe urywał wieloliniowy prompt; silnik nie działał na Windows
+- [Flaky: losowa ofiara to teardown](feedback-flaky-losowa-ofiara-to-teardown.md) — inny test za kazdym razem = awaria w Dispose, nie w produkcji
