@@ -2838,9 +2838,12 @@ Kolejność mniej więcej według tego, co pęknie pierwsze.
    > i nieograniczony wzrost `_jobs`.
 5. **TOCTOU między `MaAktywne` a `Restore`/`Save`** w powrocie i wyborze propozycji.
    Sprawdzenie nie jest zamkiem; między nim a zapisem inna karta może wejść do kolejki.
-6. **Tryb „istniejąca strona" niczego nie pobiera.** `ProjectMeta.SourceUrl` jest zapisywane
-   i nigdy nie czytane — prompt powstaje z samego opisu. To luka w §1 planu produktu,
-   czyli w połowie obiecanego wejścia.
+6. ~~**Tryb „istniejąca strona" niczego nie pobiera.**~~ **ZAMKNIĘTE 2026-09-06.**
+   `POST /api/projects` z `source: "url"` pobiera stronę, wyciąga z niej tekst i zapisuje
+   jako `zrodlo.txt`; propozycje i wersja pierwsza dostają go w ogrodzonym cytacie.
+   Polityka adresów (SSRF) sprawdza adres po rozwiązaniu DNS i przy każdym przekierowaniu.
+   Zmierzone żywym przebiegiem: fakty ze strony trafiają do wszystkich trzech szkiców,
+   a wstrzyknięte w tę samą stronę polecenie nie zostaje wykonane. Szczegóły w kontrakcie §1.
 7. **`VersionMeta.SnapshotDir` trzyma ścieżkę bezwzględną**, więc zmiana `Projects:Root`
    osieroca istniejące projekty.
 8. **`/preview/*` nie wymaga tokenu** — chroni go nieodgadywalny GUID. Świadome, opisane
