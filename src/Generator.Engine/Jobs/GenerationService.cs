@@ -349,7 +349,9 @@ public partial class GenerationService(IClaudeRunner runner, ProjectStore projec
                 [], 0m));
         }
 
-        return RunAsync(meta, [], m => PromptBuilder.BuildBrief(m.Description, ReadChosenSketch(m)),
+        return RunAsync(meta,
+            [],
+            m => PromptBuilder.BuildBrief(OpisDoPromptu(m), ReadChosenSketch(m), CzytajZrodlo(m)),
             consumesRound: false, ct);
     }
 
@@ -385,6 +387,40 @@ public partial class GenerationService(IClaudeRunner runner, ProjectStore projec
     /// roboczym zepsulyby wersje pierwsza.
     private string ProposalsDir => Path.Combine(projects.Dir, "proposals");
 
+    /// Tresc obecnej strony klienta, wyciagnieta przy zakladaniu projektu. Obok work/
+    /// z tego samego powodu co proposals/: VersionStore kopiuje CALY katalog roboczy,
+    /// wiec plik z materialem zrodlowym trafilby do snapshotu i do paczki klienta.
+    public static string SciezkaZrodla(string katalogProjektu) =>
+        Path.Combine(katalogProjektu, "zrodlo.txt");
+
+    /// <summary>
+    /// Material zrodlowy dla trybu „mam strone, ale slaba". Projekt z rodzajem `Idea`
+    /// go nie ma i nie potrzebuje.
+    ///
+    /// Projekt `Url` BEZ pliku to zlamany niezmiennik, nie sytuacja do obsluzenia po
+    /// cichu: zalozenie projektu pobiera strone albo sie nie udaje, wiec brak pliku
+    /// znaczy, ze ktos skasowal go spod nas. Cichy `null` dalby wersje zbudowana
+    /// z niczego — klient dostalby wymyslona firme zamiast swojej i nikt by sie nie
+    /// dowiedzial. Ta sama decyzja i ten sam typ wyjatku co przy wybranym szkicu (F3).
+    /// </summary>
+    private PromptBuilder.ObecnaStrona? CzytajZrodlo(ProjectMeta meta)
+    {
+        if (meta.Source != SourceKind.Url) return null;
+
+        var plik = SciezkaZrodla(projects.Dir);
+        if (!File.Exists(plik))
+            throw new InvalidDataException(
+                $"projekt powstal z adresu '{meta.SourceUrl}', ale pliku z trescia strony nie ma: {plik}");
+
+        return new PromptBuilder.ObecnaStrona(meta.SourceUrl ?? "", File.ReadAllText(plik));
+    }
+
+    /// W trybie „mam strone" opis klienta JEST adresem (tak zapisuje go ProjectApi),
+    /// a adres stoi juz w naglowku bloku obecnej strony. Powtarzanie go jako „OPIS
+    /// KLIENTA: https://..." to szum, za ktory placimy tokenami i ktory niczego nie wnosi.
+    private static string? OpisDoPromptu(ProjectMeta meta) =>
+        meta.Source == SourceKind.Url ? null : meta.Description;
+
     /// Jedyne dopuszczalne id szkicu — sluzy ZA RAZ za biala liste w ReadChosenSketch
     /// i za liste do odczytu w CzytajSzkice. Jedno zrodlo prawdy: dwie osobne listy
     /// rozjechalyby sie przy pierwszej zmianie liczby kierunkow.
@@ -418,7 +454,7 @@ public partial class GenerationService(IClaudeRunner runner, ProjectStore projec
         Directory.CreateDirectory(ProposalsDir);
 
         var outcome = await runner.RunAsync(new ClaudeRunRequest(
-            ProposalsDir, PromptBuilder.BuildProposals(meta.Description),
+            ProposalsDir, PromptBuilder.BuildProposals(OpisDoPromptu(meta), CzytajZrodlo(meta)),
             SessionId: Guid.NewGuid().ToString(), IsFirstRun: true,
             SystemAppendix: ClaudeRunner.ProposalsAppendix), ct);
 
